@@ -1,0 +1,23 @@
+# Art & rendering reference — Defense of the Dominion (the user's previous game)
+
+Source: https://github.com/nam-usth/defense-of-the-dominion (screenshots copied here). The user wants Isles of War to reach this level of polish, with the same two-tier **GFX HIGH / LOW** model.
+
+## Graphics
+
+The field, its light and its weather are the desktop game's, with the same shaders and the same textures.
+
+- **The ground** is drawn by a shader from three tiling 512² maps in `assets/textures/`: a noise for the broad patches of grass and dirt, single grass blades and pebbles on crumbly earth for the close-up detail (R height, G tone, BA slope). No part of the field repeats visibly and no mesh or quad is involved. The maps come from the desktop game, so both editions draw the same field: `dotd --dump-ground assets/textures` writes them again. They are data, not pictures: all four channels are read straight, with no colour conversion and no premultiplied alpha (in Chrome they read back from the GPU identical to the PNGs, texel for texel). Until they load the field is a flat colour.
+- **3D grass**: 7 500 tufts of four blades out to r 30 (one mesh, 90 000 triangles), each taking the colour of the ground at its root and swaying in slow gusts. There are none on bare earth, in water or where a nuke has scorched the field.
+- **The light**: a lower sun, soft cloud shadows drifting with the wind, ambient by which way a surface faces, the sky mirrored on polished surfaces. At night the field fades to its own moonlit value instead of going black.
+- **Boulders**: three shapes chiselled from a sphere by 16 random planes, with creased ridges, shaded as stone on HIGH (the ground's maps projected on three axes, lichen on the faces turned up), each on a soft contact shadow.
+- **Rain on the ground**: the field darkens as it soaks and water stands where the ground is low, mirroring the sky, with the rain's rings on it. It dries slowly once the rain stops.
+- **HDR**: the scene renders into a float target (R11G11B10F, RGBA16F if refused) with 4x MSAA on HIGH; a bloom chain and a hue-preserving tone curve composite it before the HUD, and the nuke's heat haze bends the scene there. Without float targets (WebGL 1) it draws straight to the canvas.
+- **Battlefield dust** (Menu → Settings, stored, on by default) is the dust and smoke from gunfire, charred Zerg and the nuke's rolling dust ring. Off, none of it is spawned or drawn. On an Iris Xe the frame rate does not change measurably, even in a nuke's first seconds. Blood, flames, the mushroom cloud, the rockets' trails and a burning bunker's smoke stay.
+- **GFX LOW** turns off shadows, MSAA, the grass and the cloud shadows, draws the field from its broad layers alone in the same tones, and drops HiDPI.
+- **Frame rate**: on an Iris Xe at 1280×720 in a swarm, vsync off, in alternating runs against the build before it (that chip's speed swings with its heat, so only paired runs mean anything), HIGH went from 87 to 158 FPS with the 4x MSAA kept, the scene pass from 9.5 to 3.8 ms; LOW stays near 250 FPS (6% down: more Zerg, the crowding). What did it:
+  - three r128 resolves a multisampled target's depth and stencil as well as its colour, and nothing reads them: ANGLE on Direct3D 11 does that with a draw per sample. Colour only (`_gl.blitFramebuffer` wrapped) took most of it: 14.5 → 5.7 ms in one page, the rest unchanged.
+  - The ground's cache: its dry colour and slope are kept per pixel once the camera has held still for two frames (two RGBA16F passes), and its shader reads those; the rain's part stays live. The same frozen frame with and without it differs by 0.1 levels on average, by more than 8 only over the animated HUD portrait.
+  - The grass is coloured and culled in the vertex shader; deep in the night's dark the ground skips its lights; at night there is no shadow map and no shadow read; the soft shadow filter reads six points first and stops if they agree.
+  - **Auto resolution** (Menu → Settings, stored, on by default): under 50 FPS for two windows of 3 s the 3D scene drops to 85%, then 70% of the resolution, then gives up 4x MSAA, for the session; the HUD stays sharp. The renderer asks the browser for the discrete GPU on a hybrid laptop.
+
+## Project structure

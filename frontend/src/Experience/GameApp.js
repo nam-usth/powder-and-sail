@@ -75,14 +75,29 @@ import { WarFront }                     from './Systems/Match/WarFront.js';
 import { CommanderSystem }              from './Systems/Naval/CommanderSystem.js';
 import { WarFrontHUD }                  from './UI/WarFrontHUD.js';
 import { getAlivePlayerShipCount, getShipCapacity } from './Utils/ShipCapacity.js';
+import { MODES }                        from '../data/modes.js';
+import { UPGRADE_DEFS }                 from '../data/upgrades.js';
 
 // ─────────────────────────────────────────────────────────────
 // GameApp — thin facade that wires controllers + runs the loop.
 // Heavy logic lives in Controllers/, Systems/, and UI/.
 // ─────────────────────────────────────────────────────────────
 export class GameApp {
-  constructor() {
+  /**
+   * @param {object} [opts] mode config (ADR-001). Omitted = classic Open War.
+   * @param {'skirmish'|'harbor'|'battle'} [opts.mode]
+   * @param {object[]} [opts.islands]      island defs (default data/maps.js)
+   * @param {object[]} [opts.playerFleet]  ship specs {cfg, x, z, angle, loadout, hpFrac, maxHp, upgrades, uid}
+   * @param {object[]} [opts.enemyFleet]   ship specs (same shape)
+   * @param {object}   [opts.session]      HarborSession | BattleSession (attach(game) is called at boot)
+   */
+  constructor(opts = {}) {
+    this._opts  = opts;
+    this._mode  = MODES[opts.mode] ? opts.mode : 'skirmish';
+    this._feat  = { ...MODES[this._mode].features, ...(opts.features || {}) };
+    document.body.classList.add('mode-' + this._mode);
     this._state = createGameState();
+    this._state.mode = this._mode;
     audio.load('cannon', 'Assets/Sounds/cannon_body_sfx.mp3');
     audio.load('fire_burning', 'Assets/Sounds/fire_burning_sfx.mp3');
     audio.load('water_splash', 'Assets/Sounds/water_impact_splash_sfx.mp3');
@@ -97,6 +112,7 @@ export class GameApp {
     this._setupBusEvents();
     this._initUI();
     this._debug = new Debug(this._renderer);
+    opts.session?.attach?.(this);
     this._start();
   }
 
@@ -139,12 +155,12 @@ export class GameApp {
     });
 
     // Build islands
-    this._islands = ISLAND_DEFS.map(def => {
+    this._islands = (this._opts.islands || ISLAND_DEFS).map(def => {
       const isl = new IslandEntity(sc, def);
       st.islandBuildings[def.id] = [];
       return isl;
     });
-    st._homeIsland = this._islands[0];
+    st._homeIsland = this._islands.find(i => i.own === 'player') || null;
     window._BUILDINGS = BUILDINGS;
     window._DEFENSES  = DEFENSES;
     window._ALL_DEFS  = [...BUILDINGS, ...DEFENSES];
@@ -158,7 +174,7 @@ export class GameApp {
 
     // Economy + progression
     this._build    = new BuildSystem(sc, st, this._islands, this._vfx, bus);
-    this._build.seedNeutralStarters();   // AP: neutral islands carry scoutable, inheritable producers
+    if (this._mode === 'skirmish') this._build.seedNeutralStarters();   // AP: neutral islands carry scoutable, inheritable producers
     this._empire   = new EmpirePanel(st, this._islands, this._build, bus, this);  // AP: O key / ⚜ button
     this._warFront = new WarFront(st, this._islands, bus, this);   // AS: tug-of-war core
     this._warHUD   = new WarFrontHUD(st);                          // AS: always-visible front bar
@@ -178,24 +194,33 @@ export class GameApp {
   // ── FLEET ───────────────────────────────────────────────────
   _buildFleet() {
     const st = this._state, sc = this._threeScene;
-    st.playerShips = PCFG.map((cfg, i) => {
-      const ship = makeShip(cfg, i, -75, 25 - i * 5.5, 'player', sc);
-      ship.angle = 0;
-      return ship;
-    });
-    st.enemyShips = ECFG.map((cfg, i) => makeShip(cfg, i, 78 - i * 4, -22, 'enemy', sc));
-
-    const es = st.enemyShips;
-    es[0].loadout['L'] = 'demi_can';  es[0].loadout['R'] = 'demi_can';  es[0].loadout['B'] = 'mortar1';
-    es[1].loadout['L'] = 'demi_culv'; es[1].loadout['R'] = 'demi_culv';
-    es[2].loadout['L'] = 'falconet';  es[2].loadout['R'] = 'carronade';
-    es.forEach(s => {
-      Object.keys(s.slotTimers).forEach(sl => s.slotTimers[sl] = 4 + Math.random() * 8);
-      applySpeed(s);
-    });
+    if (this._opts.playerFleet) {
+      st.playerShips = this._opts.playerFleet.map((spec, i) => this._makeFromSpec(spec, i, 'player'));
+    } else {
+      st.playerShips = PCFG.map((cfg, i) => {
+        const ship = makeShip(cfg, i, -75, 25 - i * 5.5, 'player', sc);
+        ship.angle = 0;
+        return ship;
+      });
+    }
+    if (this._opts.enemyFleet) {
+      st.enemyShips = this._opts.enemyFleet.map((spec, i) => this._makeFromSpec(spec, i, 'enemy'));
+    } else if (this._feat.enemies) {
+      st.enemyShips = ECFG.map((cfg, i) => makeShip(cfg, i, 78 - i * 4, -22, 'enemy', sc));
+      const es = st.enemyShips;
+      es[0].loadout['L'] = 'demi_can';  es[0].loadout['R'] = 'demi_can';  es[0].loadout['B'] = 'mortar1';
+      es[1].loadout['L'] = 'demi_culv'; es[1].loadout['R'] = 'demi_culv';
+      es[2].loadout['L'] = 'falconet';  es[2].loadout['R'] = 'carronade';
+      es.forEach(s => {
+        Object.keys(s.slotTimers).forEach(sl => s.slotTimers[sl] = 4 + Math.random() * 8);
+        applySpeed(s);
+      });
+    } else {
+      st.enemyShips = [];
+    }
 
     st.allShips    = [...st.playerShips, ...st.enemyShips];
-    st.shipUpgrades = st.playerShips.map(() => ({ spd: 0, hp: 0, rof: 0 }));
+    st.shipUpgrades = st.playerShips.map(s => ({ spd: 0, hp: 0, rof: 0, ...(s._upgrades || {}) }));
     st.allShips.forEach(s => { this._overlay.build(s); this._wake.addShip(s); });
     // AU: RTS command layer — per-ship orders, fleets as control groups
     this._orders = new OrderSystem(st, this._islands, {
@@ -254,7 +279,7 @@ export class GameApp {
       this._graphicsHigh = !!on;
       if (!on) this._ocean.setReflection(null, null);
     };
-    window.buyShip      = hull => this._buyShip(hull);
+    window.buyShip      = hull => this._feat.buyShips ? this._buyShip(hull) : this._showMsg(T.useShipyard || 'Build ships in the Shipyard', 1800);
     window.rebuildFort  = islId => this._bldCtrl.startFortRebuild(islId);
     window.repairBuilding  = (id, islId) => this._bldCtrl.repair(id, islId);
     window.rebuildBuilding = (id, islId) => this._bldCtrl.rebuild(id, islId);
@@ -351,8 +376,10 @@ export class GameApp {
     });
     bus.on('building:cell_clicked', ({ instance, island }) =>
       this._islandPanel.showBuildingDetail(instance, island));
-    bus.on('game:win',  ({ reason }) => this._endGame(true, reason));
-    bus.on('game:lose', ({ reason }) => this._endGame(false, reason));
+    // AW: in battle/harbor the MissionSystem / session own the outcome —
+    // legacy emitters (all islands captured, …) must not end the mode.
+    bus.on('game:win',  ({ reason }) => { if (this._mode === 'skirmish') this._endGame(true, reason); });
+    bus.on('game:lose', ({ reason }) => { if (this._mode === 'skirmish') this._endGame(false, reason); });
   }
 
   // ── GAME EVENTS ─────────────────────────────────────────────
@@ -574,6 +601,69 @@ export class GameApp {
     this._hud.rebuild();
   }
 
+  // ── SHIP SPECS (AW: roster ships / mission enemies) ─────────
+  /**
+   * Build a ship from a spec: { cfg:{nm,col,spd,sc,hull,disp}, x, z, angle,
+   * loadout, hpFrac, maxHp, upgrades, uid }. Upgrades replay LoadoutPanel math.
+   */
+  _makeFromSpec(spec, rank, team) {
+    const st = this._state;
+    const ship = makeShip(spec.cfg, rank, spec.x ?? 0, spec.z ?? 0, team, this._threeScene, st);
+    ship.angle = spec.angle ?? (team === 'player' ? 0 : Math.PI);
+    if (spec.uid) ship.uid = spec.uid;
+    if (spec.hullId) ship.hullId = spec.hullId;
+    if (spec.loadout) Object.keys(ship.loadout).forEach(sl => { if (sl in spec.loadout) ship.loadout[sl] = spec.loadout[sl]; });
+    const maxHp = spec.maxHp || 100;
+    ship.maxHp = maxHp;
+    ship.hp = Math.max(1, Math.round(maxHp * (spec.hpFrac ?? 1)));
+    const up = spec.upgrades || {};
+    UPGRADE_DEFS.forEach(u => {
+      const lv = up[u.id] || 0;
+      for (let k = 0; k < lv; k++) {
+        if (u.id === 'spd') ship.baseSpd *= (1 + u.perLv);
+        if (u.id === 'hp')  { ship.maxHp = Math.round(ship.maxHp * (1 + u.perLv)); ship.hp = Math.round(ship.hp * (1 + u.perLv)); }
+        if (u.id === 'rof') ship.rofMult = (ship.rofMult ?? 1) * (1 - u.perLv);
+      }
+    });
+    ship.hp = Math.min(ship.hp, ship.maxHp);
+    ship._upgrades = { ...up };
+    if (team === 'enemy') Object.keys(ship.slotTimers).forEach(sl => ship.slotTimers[sl] = 3 + Math.random() * 6);
+    applySpeed(ship);
+    return ship;
+  }
+
+  /** Add a player ship mid-game (shipyard launch in harbor). */
+  spawnPlayerShip(spec) {
+    const st = this._state;
+    const ship = this._makeFromSpec(spec, st.playerShips.length, 'player');
+    st.playerShips.push(ship);
+    st.allShips.push(ship);
+    st.shipUpgrades.push({ spd: 0, hp: 0, rof: 0, ...(ship._upgrades || {}) });
+    const f = this._fleet?.findFleetWithRoom?.() || this._fleet?.createFleet?.();
+    if (f) ship.fleetId = f.id;
+    this._overlay.build(ship);
+    this._wake.addShip(ship);
+    if (this._physics.ready) this._physics.addShip(ship);
+    this._fog.addShip(ship);
+    this._hud?.rebuild();
+    return ship;
+  }
+
+  /** Remove a player ship without sinking VFX (sent to the shipyard / scrapped). */
+  removePlayerShip(ship) {
+    const st = this._state;
+    if (!ship) return;
+    const i = st.playerShips.indexOf(ship);
+    ship.alive = false;
+    this._orders?.onShipDestroyed?.(ship);
+    this._fog.removeShip?.(ship);
+    bus.emit('ship:removed', { ship });
+    if (i >= 0) { st.playerShips.splice(i, 1); st.shipUpgrades.splice(i, 1); }
+    st.allShips = st.allShips.filter(s => s !== ship);
+    st.selection = st.selection.filter(s => s !== ship);
+    this._hud?.rebuild();
+  }
+
   _togglePause() {
     const st = this._state;
     st.paused = !st.paused;
@@ -611,6 +701,7 @@ export class GameApp {
   }
 
   _updateObjectivesUI() {
+    if (this._mode !== 'skirmish') return;   // AW: harbor/battle own this panel
     const el = document.getElementById('objectives');
     if (!el) return;
     const st = this._state;
@@ -697,7 +788,7 @@ export class GameApp {
   // ── MAIN LOOP ───────────────────────────────────────────────
   _start() {
     this._overlay.rebuildStaticRings(this._islands);
-    this._showMsg(T.welcomeMsg, 3800);
+    if (this._mode === 'skirmish') this._showMsg(T.welcomeMsg, 3800);
     time.on('tick.gameapp', () => this._update());
   }
 
@@ -724,11 +815,15 @@ export class GameApp {
     const focus = st.camMode === 'fleet' ? this._command.centroid() : null;
     if (st.gameOver) { this._updateFrozenView(dt, t, focus); return; }
 
+    const F = this._feat;
     this._vfx.update(dt);
     this._empire?.tick(dt);   // AP: 1 Hz re-render while open
-    this._warFront?.update(dt);   // AS: continuous tug-of-war pressure
-    this._warHUD?.update();       // AS: refresh front bar
-    this._commander?.update(dt);  // AT: ability cooldowns + heal-over-time
+    if (F.warFront) {
+      this._warFront?.update(dt);   // AS: continuous tug-of-war pressure
+      this._warHUD?.update();       // AS: refresh front bar
+    }
+    if (F.commander) this._commander?.update(dt);  // AT: ability cooldowns + heal-over-time
+    this._opts.session?.update?.(dt);
 
     // Movement: fleet automation issues orders, OrderSystem sails every ship
     this._fleet.update(dt);
@@ -781,27 +876,28 @@ export class GameApp {
     // never in the player's target list before)
     const hostiles = [...st.enemyShips.filter(e => e.alive), ...pirates];
     st.playerShips.forEach(s => this._combat.tickShip(s, hostiles, [...eForts, ...nForts], dt));
-    this._ai.update(dt);
+    if (F.ai) this._ai.update(dt);
     if (pirates.length) {
       const allTargets = [...st.playerShips, ...st.enemyShips].filter(s => s.alive);
       pirates.forEach(p => this._combat.tickShip(p, allTargets, [], dt));
     }
     this._islands.forEach(isl => {
+      if (isl.def.decor) return;   // AW: scenery rocks never shoot
       const targets = isl.own === 'enemy' ? st.playerShips : isl.own === 'player' ? st.enemyShips : [...st.playerShips, ...st.enemyShips];
       this._combat.tickIsland(isl, targets, dt);
       isl.updateFire(dt, this._vfx);  // AF7: tick persistent fort fire
     });
 
     // Systems
-    this._build.update(dt);
-    this._capture.update(dt);
-    this._events.update(dt);
+    if (F.build)     this._build.update(dt);
+    if (F.capture)   this._capture.update(dt);
+    if (F.seaEvents) this._events.update(dt);
     this._aura.update(dt, t);
-    this._economy.update(dt);
-    this._trade.update(dt);
-    this._wave.update(dt);
-    this._revive.update(dt);
-    this._bldCtrl.tickFortRebuild(dt);
+    if (F.economy)   this._economy.update(dt);
+    if (F.trade)     this._trade.update(dt);
+    if (F.waves)     this._wave.update(dt);
+    if (F.revive)    this._revive.update(dt);
+    if (F.build)     this._bldCtrl.tickFortRebuild(dt);
 
     // Stats
     if (!st.gameOver) { st.statsTimer += dt; st.stats.timeSec = Math.floor(st.statsTimer); }

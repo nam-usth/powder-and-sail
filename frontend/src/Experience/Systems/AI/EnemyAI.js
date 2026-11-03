@@ -72,12 +72,13 @@ export class EnemyAI {
     const forts = this._islands.filter(i => !i.down && i.own === 'player');
     alive.forEach(s => this._combat.tickShip(s, st.playerShips.filter(p => p.alive), forts, dt));
 
-    this._tickBuild(dt, st);
+    if (st.mode !== 'battle') this._tickBuild(dt, st);
     this._tickRepair(dt, st);
   }
 
   // ── Strategy decision ─────────────────────────────────────────
   _retargetInterval() {
+    if (this._state.mode === 'battle') return this._engaged ? 2 + Math.random() * 1.5 : 1;
     // Faster decisions during combat, slower during buildup/retreat
     return (this._strat === STRAT.ENGAGE || this._strat === STRAT.SIEGE)
       ? 4 + Math.random() * 3
@@ -85,6 +86,7 @@ export class EnemyAI {
   }
 
   _decideStrategy(alive, st) {
+    if (st.mode === 'battle') { this._decideBattle(alive, st); return; }
     const avgHP   = alive.reduce((a, s) => a + s.hp / s.maxHp, 0) / alive.length;
     const wave    = st.waveNumber || 1;
     const player  = st.playerShips.filter(s => s.alive);
@@ -121,6 +123,31 @@ export class EnemyAI {
       this._strat = best[0];
       this._stratTimer = 0;
     }
+  }
+
+  // AW: Sea Battle — guard the start point (or the fort) until the player
+  // comes within aggro range, then engage and stay engaged. Retreat to the
+  // fort when badly hurt. No raiding/expanding: the mission is the map.
+  _decideBattle(alive, st) {
+    if (!this._guard) {
+      this._guard = {
+        x: alive.reduce((a, s) => a + s.x, 0) / alive.length,
+        z: alive.reduce((a, s) => a + s.z, 0) / alive.length,
+      };
+    }
+    const player = st.playerShips.filter(s => s.alive);
+    const forts  = this._islands.filter(i => i.own === 'enemy' && !i.down && !i.def.decor);
+    const avgHP  = alive.reduce((a, s) => a + s.hp / s.maxHp, 0) / alive.length;
+    const aggro  = st.battleAggro || 70, a2 = aggro * aggro;
+    const near = (a, b, r2) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2 < r2;
+    if (!this._engaged) {
+      this._engaged = !!st.battleAlwaysEngage || player.some(p =>
+        alive.some(e => near(p, e, a2)) || forts.some(f => near(p, f, (f.r + aggro * .6) ** 2)));
+    }
+    const strat = (avgHP < 0.2 && forts.length) ? STRAT.RETREAT
+                : (this._engaged && player.length) ? STRAT.ENGAGE
+                : STRAT.BUILDUP;
+    if (strat !== this._strat) { this._strat = strat; this._stratTimer = 0; }
   }
 
   _assignTargets(alive, st) {
@@ -164,6 +191,8 @@ export class EnemyAI {
         primaryZ = tgt.z + (Math.random() - 0.5) * 4;
       }
     }
+
+    if (strat === STRAT.BUILDUP && this._guard) { primaryX = this._guard.x; primaryZ = this._guard.z; }
 
     // Build wolfpack fan assignments
     const approach = Math.atan2(primaryX - alive[0].x, primaryZ - alive[0].z);

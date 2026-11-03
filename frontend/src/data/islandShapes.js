@@ -16,7 +16,7 @@ export const GRID   = 10;
 export const SHAPES = ['CRESCENT', 'ATOLL', 'FORTRESS', 'SPRAWL'];
 
 // ── Seeded PRNG (mulberry32) — deterministic, no Math.random() ──
-function makePrng(seed) {
+export function makePrng(seed) {
   let s = seed >>> 0;
   return () => {
     s += 0x6D2B79F5;

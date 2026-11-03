@@ -36,6 +36,7 @@ export class CaptureSystem {
     const within = (ships, isl, R) => ships.some(s => s.alive && (s.x-isl.x)**2 + (s.z-isl.z)**2 < R*R);
 
     this._islands.forEach(isl=>{
+      if (isl.def.decor) return;   // AW: scenery rocks cannot be captured
       const id = isl.def.id;
       if(!this._progress[id]) this._progress[id] = { progress:0, attacker:null };
       const prog = this._progress[id];

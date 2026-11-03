@@ -1,6 +1,8 @@
 import { GameApp }                  from './Experience/GameApp.js';
 import { AURA_LEVELS }              from './data/constants.js';
 import { setLang, getLang, LANGS }  from './i18n.js';
+import { toasts }                   from './Experience/UI/ToastQueue.js';
+window._toast = (m, d, t) => toasts.show(m, d, t);
 
 // ─────────────────────────────────────────────────────────────
 // main.js — bootstrap only.
@@ -329,8 +331,14 @@ window.addEventListener('DOMContentLoaded', () => {
       if (label) label.textContent = `${loaded} / ${total}`;
     });
 
-    resources.on('ready', () => {
-      window._game = new GameApp();
+    resources.on('ready', async () => {
+      // AW / ADR-001: one mode per page load — harbor (default), battle, skirmish
+      let opts = { mode: 'skirmish' };
+      try {
+        const { buildModeOptions } = await import('./Experience/Modes/boot.js');
+        opts = buildModeOptions(location);
+      } catch (e) { console.error('[boot] mode setup failed, falling back to Open War', e); }
+      window._game = new GameApp(opts);
       // Re-apply GFX settings now that renderer + overlay exist
       Object.entries(loadGfx()).forEach(([k, v]) => applyGfx(k, v));
       if (screen) { screen.style.opacity = '0'; setTimeout(() => screen.style.display = 'none', 520); }

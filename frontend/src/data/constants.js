@@ -34,6 +34,9 @@ export const FLEET_LINE_GAP   = 5.5;  // distance between ships in line-ahead fo
 // Build grid — AF8: 10×10 grid, shape-masked to island type
 export const BUILD_GRID_SIZE  = 10;      // 10×10 = 100 cells max (≥50 valid per shape)
 export const BUILD_CELL_WORLD = 2.4;     // tighter cell spacing for larger grid
+// AW-art: world height of the island build deck (flat terrain plateau the
+// grid cells lie on). Building models stand on it; RING_Y (1.6) sits just above.
+export const BUILD_DECK_Y     = 1.5;
 
 // Wave system
 export const WAVE_INT = 120; // seconds between waves (2 min — gives time to rebuild)

@@ -1,0 +1,51 @@
+/* ── AW: per-mode HUD visibility (ADR-001) ─────────────────────────
+   body.mode-<id> is set by GameApp; body[data-mode] by boot.js earlier,
+   so both are matched to avoid a flash of the wrong HUD. */
+
+/* Harbor: no war — hide war-front, waves, combat abilities, revive, empire */
+body.mode-harbor #warfront, body[data-mode="harbor"] #warfront,
+body.mode-harbor #cmd-bar,  body[data-mode="harbor"] #cmd-bar,
+body.mode-harbor #ab-revive, body[data-mode="harbor"] #ab-revive,
+body.mode-harbor #ab-empire, body[data-mode="harbor"] #ab-empire,
+body.mode-harbor #score-chip, body[data-mode="harbor"] #score-chip,
+body.mode-harbor .ri:has(#rv-l), body[data-mode="harbor"] .ri:has(#rv-l),
+body.mode-harbor #wave-alert, body[data-mode="harbor"] #wave-alert,
+body.mode-harbor #objectives, body[data-mode="harbor"] #objectives,
+body.mode-harbor #fog-btn, body[data-mode="harbor"] #fog-btn,
+body.mode-harbor #rng-btn, body[data-mode="harbor"] #rng-btn,
+body.mode-harbor #capture-bars, body[data-mode="harbor"] #capture-bars,
+body.mode-harbor #harbor-btn, body[data-mode="harbor"] #harbor-btn { display: none !important; }
+
+/* Sea Battle: no economy, no building */
+body.mode-battle #ab-build,    body[data-mode="battle"] #ab-build,
+body.mode-battle #ab-research, body[data-mode="battle"] #ab-research,
+body.mode-battle #ab-loadout,  body[data-mode="battle"] #ab-loadout,
+body.mode-battle #ab-revive,   body[data-mode="battle"] #ab-revive,
+body.mode-battle #ab-empire,   body[data-mode="battle"] #ab-empire,
+body.mode-battle #econ-bar,    body[data-mode="battle"] #econ-bar,
+body.mode-battle #warfront,    body[data-mode="battle"] #warfront,
+body.mode-battle #trade-btn,   body[data-mode="battle"] #trade-btn,
+body.mode-battle #fog-btn,     body[data-mode="battle"] #fog-btn,
+body.mode-battle #upgrade-panel, body[data-mode="battle"] #upgrade-panel,
+body.mode-battle #build-hint,  body[data-mode="battle"] #build-hint,
+body.mode-battle #harbor-btn,  body[data-mode="battle"] #harbor-btn,
+body.mode-battle #island-panel, body[data-mode="battle"] #island-panel { display: none !important; }
+
+/* Battle: mission objective card sits where the war-front card was */
+body.mode-battle #objectives { min-width: 210px; }
+body.mode-battle #objectives .obj-done { color: var(--verd, #7eb150); }
+
+.retreat-btn {
+  position: fixed; top: 64px; right: 16px; z-index: 30;
+  min-height: 34px; padding: 6px 14px;
+  font-family: var(--display, serif); font-size: 11px; letter-spacing: .14em;
+  color: #f0d8c8; background: linear-gradient(180deg, rgba(120,30,30,.92), rgba(70,16,16,.92));
+  border: 1px solid rgba(220,120,100,.55); border-radius: 3px; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0,0,0,.35);
+}
+.retreat-btn:hover { filter: brightness(1.15); }
+.retreat-btn:focus-visible { outline: 2px solid var(--brass, #e8b840); outline-offset: 2px; }
+@media (max-width: 760px) { .retreat-btn { top: auto; bottom: 12px; right: 12px; } }
+
+/* Open War (skirmish): a way back to the harbor */
+#harbor-btn { font-size: 14px; }
