@@ -4,7 +4,7 @@
 // roster ships, the Shipyard / World Chart UI, and leaving for battle.
 
 import { ISLAND_DEFS }              from '../../data/maps.js';
-import { HULLS, SAVE_INTERVAL_SEC, OFFLINE_REPORT_MIN_SEC, MOORING_REGEN_FRAC } from '../../data/harbor.js';
+import { HULLS, SAVE_INTERVAL_SEC, OFFLINE_REPORT_MIN_SEC, MOORING_REGEN_FRAC, HARBOR_ECONOMY } from '../../data/harbor.js';
 import { TECH_TREE }                from '../../data/upgrades.js';
 import { saveProfile }              from '../../Meta/Profile.js';
 import { applyOffline }             from '../../Meta/HarborEconomy.js';
@@ -54,6 +54,8 @@ export class HarborSession {
 
   /** Mooring slot i of n: a ring round the harbor, bows along the tangent. */
   _moored(rs, i, n) {
+    const b = this.game?._islands?.[0]?.berths;
+    if (b && b.length) { const k = b[i % b.length]; return shipSpec(rs, k.x, k.z, k.angle); }
     const a = -Math.PI / 2 + (i / Math.max(1, n)) * Math.PI * 2 + 0.35;
     const R = HOME_DEF.r + 11 + (i % 2) * 3;
     return shipSpec(rs, Math.cos(a) * R, Math.sin(a) * R, a + Math.PI / 2);
@@ -63,6 +65,7 @@ export class HarborSession {
   attach(game) {
     this.game = game;
     const st = game._state, p = this.profile;
+    st.econRateMult = HARBOR_ECONOMY.rateMult;      // harbor clock (EconomySystem / HUD read it)
     const home = game._islands[0];
     st.resWood = p.res.wood;
     st.resGold = p.res.gold;
@@ -78,6 +81,13 @@ export class HarborSession {
     game._recalcFortStats(home);
     game._overlay.rebuildStaticRings(game._islands);
     game._aura.rebuild();
+
+    // Berths on the harbor piers (big HARBOR island) — re-moor the fleet there.
+    if (home.berths?.length) st.playerShips.forEach((ship, i) => {
+      const k = home.berths[i % home.berths.length];
+      ship.x = k.x; ship.z = k.z; ship.angle = k.angle; ship.speed = 0;
+      ship.mesh?.position.set(k.x, ship.mesh.position.y, k.z);
+    });
 
     st.camDist = 58;
     game._cam.jumpTo(home.x + 4, home.z + 10);

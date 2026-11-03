@@ -15,6 +15,24 @@ campaign chart between them. Mechanical touchstones are the 2010s browser
 run while you are away, fleets that carry damage home). All names, art,
 characters and setting are original to this project.
 
+## Setting
+The age of sail, c. 1570–1720 (late 16th, 17th and early 18th century). The
+player is a free captain with a harbor of their own, fighting across five seas
+(`frontend/src/data/factions.js`):
+
+| Sea | Powers met there |
+|---|---|
+| The Caribbean | Brethren of the Coast (buccaneers), the Spanish Crown's armada, French navy & corsairs |
+| The Atlantic Lanes | Honourable Saltwind Company (fictional English chartered company), French |
+| The Indian Ocean | Estado da Índia (Portugal), Malabar corsairs |
+| The Spice Straits | Spice Company of the Seven Provinces (fictional Dutch company), Orang Laut raiders of Malacca–Singapore |
+| The South China Sea (Biển Đông) | Red Banner Fleet (Chinese pirates), Gulf of Tonkin raiders (Vietnam), Portuguese Macau |
+
+Company names are fictional analogues; no film-franchise names or characters.
+Ships follow their culture: European square-riggers, Chinese/Vietnamese junks,
+Indian dhows/ghurabs, Malay praus. Everything visual and audible is period:
+wood, canvas, brass, parchment, ink, black powder — no sci-fi UI language.
+
 ## Pillars
 1. **My island, my harbor** — a persistent home that keeps producing while you
    are away; every building is a choice about space (grid + adjacency).

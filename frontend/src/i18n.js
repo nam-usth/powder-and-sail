@@ -11,6 +11,18 @@ export const LANGS = {
 
 const STRINGS = {
   en: {
+    // ── AW: Harbor / Sea Battle ───────────────────────────────
+    shipReady:       (nm) => `⚓ ${nm} is ready to sail`,
+    yourFleet:       'Your Fleet',
+    battleAbandoned: 'Your last battle was abandoned — the fleet returned to port.',
+    useShipyard:     'Ships are built in the Shipyard (Y)',
+    retreat:         '⚑ Retreat',
+    retreatHint:     'Leave the battle (counts as a defeat, keeps half the plunder)',
+    retreatConfirm:  'Retreat to the harbor? The battle counts as lost and you keep half the plunder.',
+    noShipsToRetry:  'No ships left afloat — repair them in the Shipyard.',
+    objLabels:       { sink: 'Enemy ships sunk', forts: 'Forts destroyed', survive: 'Hold out', capture: 'Islands taken' },
+    objTypes:        { sink_all: 'Sink every enemy ship', destroy_forts: 'Destroy the enemy forts', survive: 'Keep a ship afloat until time runs out', capture: 'Capture the marked island' },
+    campaignWon:     'The Citadel of Storms has fallen — you are Admiral of the Isles!',
     // ── GameApp messages ──────────────────────────────────────
     welcomeMsg:        '⚓ Drag to select ships · Right-click to command · 1–9 fleets · ? for help',
     fleetSailing:      (nm) => `${nm} sailing...`,
@@ -104,6 +116,18 @@ const STRINGS = {
   },
 
   vi: {
+    // ── AW: Đảo nhà / Hải chiến ───────────────────────────────
+    shipReady:       (nm) => `⚓ ${nm} đã sẵn sàng ra khơi`,
+    yourFleet:       'Hạm đội của bạn',
+    battleAbandoned: 'Trận trước đã bị bỏ dở — hạm đội đã về cảng.',
+    useShipyard:     'Đóng tàu tại Xưởng tàu (Y)',
+    retreat:         '⚑ Rút lui',
+    retreatHint:     'Rời trận (tính là thua, giữ một nửa chiến lợi phẩm)',
+    retreatConfirm:  'Rút về cảng? Trận này sẽ tính là thua và bạn giữ một nửa chiến lợi phẩm.',
+    noShipsToRetry:  'Không còn tàu nào nổi — hãy sửa chữa ở Xưởng tàu.',
+    objLabels:       { sink: 'Tàu địch bị đánh chìm', forts: 'Pháo đài bị phá', survive: 'Cầm cự', capture: 'Đảo chiếm được' },
+    objTypes:        { sink_all: 'Đánh chìm toàn bộ tàu địch', destroy_forts: 'Phá hủy các pháo đài địch', survive: 'Giữ ít nhất một tàu nổi đến hết giờ', capture: 'Chiếm hòn đảo được đánh dấu' },
+    campaignWon:     'Thành Bão Tố đã thất thủ — bạn là Đô đốc Quần đảo!',
     // ── GameApp messages ──────────────────────────────────────
     welcomeMsg:        '⚓ Kéo chuột để chọn tàu · Chuột phải để ra lệnh · 1–9 hạm đội · ? để xem trợ giúp',
     noShipsSelected:   'Chưa chọn tàu — kéo khung, click vào tàu, hoặc bấm 1–9',

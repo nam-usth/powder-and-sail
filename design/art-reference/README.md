@@ -21,3 +21,32 @@ The field, its light and its weather are the desktop game's, with the same shade
   - **Auto resolution** (Menu → Settings, stored, on by default): under 50 FPS for two windows of 3 s the 3D scene drops to 85%, then 70% of the resolution, then gives up 4x MSAA, for the session; the HUD stays sharp. The renderer asks the browser for the discrete GPU on a hybrid laptop.
 
 ## Project structure
+
+---
+
+# Harbor mood reference — `harbor-mood-reference.webp`
+
+Provided by the user (a screenshot of a commercial mobile game, © Disney).
+**Reference for mood and composition only — never trace, copy, or reuse any of
+its art, characters, logos or UI.** What we take from it:
+
+- **One big home island wrapped around a natural harbor bay** — the sea comes
+  *into* the island; the town sits on terraces around the water.
+- **Many wooden piers/jetties** reaching into the bay, ships moored at berths.
+- **Stone sea walls, bastions and watchtowers** along the coastline; a fortified
+  gate/lighthouse on the outer point; a battery on a rocky islet at the mouth.
+- Paved stone plazas, stairs and ramps between terraces; buildings in clusters
+  with crates, barrels, carts as clutter; a parade ground of sand.
+- **Satellite rocky islets** and reefs around the mouth of the bay.
+- Water: bright turquoise shallows over sand → teal → deep blue, foam lines at
+  every shore, visible wave texture; drifting cloud wisps in the foreground.
+- High oblique camera (~50°), warm saturated painterly grading, soft shadows.
+- Small level badges/plaques next to buildings; round icon bubbles over things
+  that need attention (ship ready, upgrade done).
+
+# Battle HUD reference — `battle-hud-reference.png`
+User-provided screenshot of the original browser game's sea battle (reference
+only). Our combat core already covers it; adopted ideas: a top **versus bar**
+(player fleet name + total hull bar · battle clock · enemy fleet name + bar,
+with level/strength badges), broadside firing cones on the selected ship, open
+calm sea with long white wakes.

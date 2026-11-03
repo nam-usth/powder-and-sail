@@ -2,8 +2,9 @@
 // Glue between the profile's pending battle and a GameApp in mode 'battle':
 // builds the mission map + fleets, runs the MissionSystem, banks the result.
 
-import { HULLS }                 from '../../data/harbor.js';
+import { HULLS, BATTLE, PRODUCE_AT_SEA } from '../../data/harbor.js';
 import { saveProfile }           from '../../Meta/Profile.js';
+import { applyOffline }          from '../../Meta/HarborEconomy.js';
 import { getMission, makePatrol, applyBattleResult } from '../../Meta/Campaign.js';
 import { gotoMode }              from '../../Meta/ModeRouter.js';
 import { MissionSystem, fmt }    from '../Systems/Match/MissionSystem.js';
@@ -32,7 +33,7 @@ export class BattleSession {
     const p = this.profile, b = p.battle;
     if (!b || (missionIdFromUrl && b.missionId !== missionIdFromUrl)) return null;
     if (b.started) return null;                          // reload mid-battle → forfeit (GDD)
-    const mission = b.missionId === 'patrol' ? makePatrol(p, b.seed || 1) : getMission(b.missionId);
+    const mission = b.missionId === 'patrol' ? makePatrol(p, b.seed || 1, b.shipUids) : getMission(b.missionId);
     if (!mission) return null;
     const ships = b.shipUids.map(u => p.fleet.find(s => s.uid === u)).filter(s => s && s.status === 'ready');
     if (!ships.length) return null;
@@ -44,14 +45,19 @@ export class BattleSession {
     const sp = mission.spawn || { x: -70, z: 0 };
     const n = ships.length;
     const playerFleet = ships.map((rs, i) => shipSpec(rs, sp.x - (i % 2) * 6, sp.z + (i - (n - 1) / 2) * 7, sp.angle ?? Math.PI / 2));
-    const enemyFleet  = (mission.enemies || []).map((e, i) => enemySpec(e, i));
-    return { mode: 'battle', islands: mission.islands || [], playerFleet, enemyFleet, session: this };
+    const enemyFleet  = (mission.enemies || []).map((e, i) => enemySpec(e, i, mission.faction));
+    const islands = (mission.islands || []).map(d => ({ faction: d.own === 'enemy' ? mission.faction : undefined, region: mission.region, ...d }));
+    return { mode: 'battle', islands, playerFleet, enemyFleet, session: this };
   }
 
   attach(game) {
     this.game = game;
     const st = game._state, m = this.mission;
-    st.battleAggro = m.aggro || 70;
+    st.battleAggro = m.aggro || BATTLE.aggro;                       // data/harbor.js BATTLE knobs
+    st.battleFortRegen = m.fortRegen ?? BATTLE.fortRegen;
+    st.battleFortRebuild = BATTLE.fortRebuild;
+    st.battleFortShipRegen = BATTLE.fortShipRegen;
+    st.selArcs = true;          // broadside cones on the selected ships
     st.battleAlwaysEngage = m.objective?.type === 'survive';
     restoreResearch(st, this.profile.harbor.researched);
     this.missionSys = new MissionSystem(st, game._islands, m, bus, (e, i) => this._spawnEnemy(e, i));
@@ -65,7 +71,7 @@ export class BattleSession {
 
   _spawnEnemy(e, i) {
     const g = this.game, st = g._state;
-    const ship = g._makeFromSpec(enemySpec(e, i), st.enemyShips.length, 'enemy');
+    const ship = g._makeFromSpec(enemySpec(e, i, this.mission.faction), st.enemyShips.length, 'enemy');
     st.enemyShips.push(ship); st.allShips.push(ship);
     bus.emit('ship:spawned', { ship });
     g._vfx.playSound?.('warning');
@@ -104,6 +110,8 @@ export class BattleSession {
         nm: rs.nm, hullId: rs.hullId,
       };
     });
+    // The harbor kept working while the fleet was at sea (offline rules, capped).
+    if (PRODUCE_AT_SEA) applyOffline(this.profile, this.now());
     const summary = applyBattleResult(this.profile, this.mission, {
       won, retreated: reason === 'retreat', timeSec: Math.round(this.missionSys.time),
       ships: shipsOut,
@@ -170,6 +178,25 @@ export class BattleSession {
       if (confirm(T.retreatConfirm || 'Retreat to the harbor? The battle counts as lost.')) this.retreat();
     });
     document.body.appendChild(btn);
+
+    // Versus bar (top centre): your fleet hull · clock · enemy fleet hull
+    const vs = document.createElement('div');
+    vs.id = 'vs-bar'; vs.className = 'vs-bar';
+    vs.innerHTML =
+      '<div class="vs-side vs-you"><span class="vs-badge" id="vs-you-n"></span><span class="vs-name" id="vs-you-nm"></span>' +
+      '<div class="vs-track"><div class="vs-fill" id="vs-you-fill"></div></div></div>' +
+      '<div class="vs-clock" id="vs-clock">0:00</div>' +
+      '<div class="vs-side vs-foe"><div class="vs-track"><div class="vs-fill" id="vs-foe-fill"></div></div>' +
+      '<span class="vs-name" id="vs-foe-nm"></span><span class="vs-badge" id="vs-foe-n"></span></div>';
+    document.body.appendChild(vs);
+    const F = this.mission.faction;
+    import('../../data/factions.js').then(({ factionOf }) => {
+      const f = factionOf(F);
+      const lang = document.body.classList.contains('lang-vi');
+      document.getElementById('vs-foe-nm').textContent = (lang && f.vi) ? f.vi : f.nm;
+      vs.style.setProperty('--foe', f.css || '#a03030');
+    }).catch(() => { document.getElementById('vs-foe-nm').textContent = this.mission.nm; });
+    document.getElementById('vs-you-nm').textContent = T.yourFleet || 'Your Fleet';
     this._renderHud();
   }
 
@@ -188,5 +215,22 @@ export class BattleSession {
       `<div class="obj" style="opacity:.85">${esc(OT[m.objective.type] || '')}</div>` + lines +
       `<div class="obj">🚢 ${afloat} / ${this.roster.length} · ⏱ ${fmt(ms.time)}${m.parTime ? ` <span style="opacity:.6">(par ${fmt(m.parTime)})</span>` : ''}</div>`;
     if (html !== this._lastHud) { el.innerHTML = html; this._lastHud = html; }
+    this._renderVs();
+  }
+
+  _renderVs() {
+    const st = this.game._state;
+    const sum = ships => ships.reduce((a, s) => [a[0] + (s.alive ? Math.max(0, s.hp) : 0), a[1] + s.maxHp, a[2] + (s.alive ? 1 : 0)], [0, 0, 0]);
+    const [ph, pm, pn] = sum(st.playerShips), [eh, em, en] = sum(st.enemyShips);
+    const set = (id, v) => { const e = document.getElementById(id); if (e) e.style.width = (v * 100).toFixed(1) + '%'; };
+    set('vs-you-fill', pm ? ph / pm : 0);
+    set('vs-foe-fill', em ? eh / em : 0);
+    const n1 = document.getElementById('vs-you-n'), n2 = document.getElementById('vs-foe-n'), c = document.getElementById('vs-clock');
+    if (n1) n1.textContent = pn;
+    if (n2) n2.textContent = en + (this.missionSys.wavesPending() ? '+' : '');
+    if (c) {
+      const o = this.mission.objective;
+      c.textContent = o.type === 'survive' ? fmt(Math.max(0, o.seconds - this.missionSys.time)) : fmt(this.missionSys.time);
+    }
   }
 }

@@ -213,6 +213,28 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   initGfxToggles();
 
+  // AW: GFX HIGH / LOW chip + Q hotkey (two-tier model, design/art-reference)
+  function setQuality(q) {
+    saveGfx({ quality: q, shadows: q === 'high' ? 'on' : 'off' });
+    applyGfx('quality', q);
+    applyGfx('shadows', q === 'high' ? 'on' : 'off');
+    window._gfxQuality = q;
+    const v = document.getElementById('gfx-chip-val');
+    if (v) { v.textContent = q.toUpperCase(); v.style.color = q === 'high' ? 'var(--verd, #7eb150)' : 'var(--brass, #e8b840)'; }
+    ['tog-quality', 'tog-shadows'].forEach(gid => document.getElementById(gid)?.querySelectorAll('.stog-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.val === (gid === 'tog-quality' ? q : (q === 'high' ? 'on' : 'off')))));
+  }
+  window.setGfxQuality = setQuality;
+  window._gfxQuality = loadGfx().quality;
+  document.getElementById('gfx-chip')?.addEventListener('click', () => setQuality(loadGfx().quality === 'high' ? 'low' : 'high'));
+  window.addEventListener('keydown', e => {
+    if (e.target?.tagName === 'INPUT' || e.target?.tagName === 'TEXTAREA' || e.ctrlKey || e.metaKey || e.altKey) return;
+    const bst = window._game?._state;
+    if (bst?.buildMode && bst?.selectedDefense) return;   // Q/E rotate a defense while placing it
+    if (e.key === 'q' || e.key === 'Q') setQuality(loadGfx().quality === 'high' ? 'low' : 'high');
+  });
+  setTimeout(() => { const v = document.getElementById('gfx-chip-val'); if (v) { const q = loadGfx().quality; v.textContent = q.toUpperCase(); v.style.color = q === 'high' ? 'var(--verd, #7eb150)' : 'var(--brass, #e8b840)'; } }, 0);
+
   // ── Settings modal ───────────────────────────────────────────
   function buildLangButtons() {
     const host = document.getElementById('lang-btns'); if (!host) return;

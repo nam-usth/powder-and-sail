@@ -117,7 +117,12 @@ export class OverlaySystem {
   sync(ship){
     const e=this._data.find(e=>e.ship===ship);if(!e)return;
     if(!ship.alive){ e.gs.forEach(g=>g.visible=false); return; }  // always hide dead ships
-    if(!this._state.ovrOn)return;
+    const st=this._state;
+    // AW: broadside cones follow the SELECTED player ships even with the
+    // overlay off (battle mode default; st.selArcs) — like the classic game.
+    const sel = !st.ovrOn && st.selArcs && ship.team==='player' && st.selection.includes(ship);
+    if(!st.ovrOn && !sel){ if(e._selVis){ e.gs.forEach(g=>g.visible=false); e._selVis=false; } return; }
+    e._selVis = sel;
     e.gs.forEach(g=>{g.position.set(ship.x,0,ship.z);g.rotation.y=ship.angle;g.visible=true;});
   }
   setVisible(ship, vis){ const e=this._data.find(e=>e.ship===ship);if(e)e.gs.forEach(g=>g.visible=vis); }

@@ -49,3 +49,25 @@ body.mode-battle #objectives .obj-done { color: var(--verd, #7eb150); }
 
 /* Open War (skirmish): a way back to the harbor */
 #harbor-btn { font-size: 14px; }
+
+/* GFX chip (HIGH / LOW) */
+#gfx-chip { width: auto; padding: 0 10px; font-family: var(--mono, monospace); font-size: 10px; letter-spacing: .12em; white-space: nowrap; }
+#gfx-chip b { font-weight: 600; margin-left: 4px; }
+@media (max-width: 760px) { #gfx-chip { padding: 0 6px; } }
+
+/* Battle versus bar — top centre (structure; period skin by the HUD pass) */
+.vs-bar { position: fixed; top: 62px; left: 50%; transform: translateX(-50%); z-index: 25;
+  display: flex; align-items: center; gap: 10px; pointer-events: none;
+  font-family: var(--display, serif); color: #f3e6c4; text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+.vs-side { display: flex; align-items: center; gap: 6px; }
+.vs-name { font-size: 12px; letter-spacing: .06em; white-space: nowrap; max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.vs-badge { min-width: 22px; height: 22px; display: grid; place-items: center; font-size: 11px;
+  border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e9c873, #8a6420); color: #2a1a08; text-shadow: none; }
+.vs-track { width: 200px; height: 12px; border: 2px solid #6b4a22; border-radius: 3px; background: rgba(30,18,8,.75); overflow: hidden; }
+.vs-you .vs-fill { height: 100%; background: linear-gradient(180deg, #8fd07a, #3f8a34); transition: width .3s; margin-left: auto; }
+.vs-foe .vs-fill { height: 100%; background: linear-gradient(180deg, color-mix(in srgb, var(--foe, #a03030) 70%, #fff), var(--foe, #a03030)); transition: width .3s; }
+.vs-you .vs-track { display: flex; }
+.vs-clock { min-width: 64px; padding: 4px 10px; text-align: center; font-size: 16px; font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #3a2614, #1f140a); border: 2px solid #8a6a32; border-radius: 4px; }
+body.mode-battle #hud-top { top: 96px; }
+@media (max-width: 760px) { .vs-track { width: 90px; } .vs-name { display: none; } }
