@@ -1,0 +1,42 @@
+# CCGS project configuration — single source of truth for project settings.
+# See .claude/docs/effects-map.md for full schema.
+
+schema_version: 1
+
+framework:
+  version: 1.2.0
+  last_upgraded: 2026-11-03
+
+project:
+  name: Isles of War
+  genre: naval strategy (island builder + real-time sea battle)
+  kind: game
+  stage: production
+
+# engine.name is left unset on purpose: the harness only routes Godot / Unity /
+# Unreal specialists. This project is a custom browser engine (Three.js r128 +
+# Rapier, plain ES modules, no bundler) — see docs/engine-reference/threejs/VERSION.md.
+# Code root: frontend/src/   Tests: test/ (browser runner) + tools/smoke_test.py
+
+platform:
+  targets: [web, pwa]
+  multiplayer: false
+
+performance:
+  target_framerate: 60
+
+commands:
+  serve: node tools/serve.mjs 8080
+  test: open http://localhost:8080/test/ (or python3 tools/smoke_test.py)
+
+modes:
+  # minimal = jam speed, game-brief instead of full GDDs. The two new pillars
+  # (Harbor island builder, Sea Battle) are held to the standard tier below.
+  rigor: minimal
+  automation: guided
+
+workflow_overrides:
+  system_overrides:
+    harbor: standard
+    sea-battle: standard
+    campaign-meta: standard

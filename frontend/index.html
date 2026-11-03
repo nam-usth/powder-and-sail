@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#060f1a">
+<link rel="manifest" href="manifest.json">
+<title>Isles of War</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Cinzel: EN display headers | Be Vietnam Pro: VI display headers (full diacritic support) | Inter: body | JetBrains Mono: numbers -->
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;700;800&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/styles/main.css?v=av1">
+<link rel="stylesheet" href="src/styles/hud.css?v=av3">
+</head>
+<body class="theme-admiralty">
+<!-- ── AA: Loading screen — hidden as soon as Resources fires ready ── -->
+<div id="loading-screen" style="
+  position:fixed;inset:0;z-index:99999;
+  background:#060f1a;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:18px;font-family:'Cinzel',serif;
+  transition:opacity .5s ease;
+">
+  <div style="color:#e8b840;font-size:22px;letter-spacing:.22em;font-weight:700">ISLES OF WAR</div>
+  <div style="width:220px;height:4px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden">
+    <div id="loading-bar" style="height:100%;width:0%;background:#e8b840;border-radius:2px;transition:width .2s ease"></div>
+  </div>
+  <div id="loading-label" style="color:#a08060;font-size:11px;letter-spacing:.18em">LOADING…</div>
+</div>
+<canvas id="canvas"></canvas>
+<div id="ui">
+  <!-- TOP HEADER — brand · action buttons · econ · utility -->
+  <div id="top-header">
+    <div class="th-left">
+      <span class="hl">⚓ ISLES OF WAR</span>
+    </div>
+    <div class="th-center">
+      <button class="actbtn" id="ab-build"    data-panel="bp"            title="Build [B]">
+        <span class="ab-ic">🏗</span><span class="ab-lbl">Build</span><span class="ab-key">B</span>
+      </button>
+      <button class="actbtn" id="ab-research" data-panel="rp"            title="Research [R]">
+        <span class="ab-ic">🔬</span><span class="ab-lbl">Research</span><span class="ab-key">R</span>
+      </button>
+      <button class="actbtn" id="ab-loadout"  data-panel="lp"            title="Loadout [L]">
+        <span class="ab-ic">⚙</span><span class="ab-lbl">Loadout</span><span class="ab-key">L</span>
+      </button>
+      <button class="actbtn" id="ab-revive"   data-panel="revive-panel"  title="Revive [V]">
+        <span class="ab-ic">⚱</span><span class="ab-lbl">Revive</span><span class="ab-key">V</span>
+      </button>
+      <button class="actbtn" id="ab-empire"   data-panel="empire-panel"  title="Empire Overview [O]">
+        <span class="ab-ic">⚜</span><span class="ab-lbl">Empire</span><span class="ab-key">O</span>
+      </button>
+    </div>
+    <div class="th-right">
+      <div id="econ-bar">
+        <div class="ri" title="Wood">
+          <span class="ri-lbl">🪵</span><span class="rv w" id="rv-w">200</span>
+        </div>
+        <div class="ri" title="Gold">
+          <span class="ri-lbl">🪙</span><span class="rv g" id="rv-g">100</span>
+        </div>
+        <div class="ri" title="Loot points">
+          <span class="ri-lbl">💰</span><span class="rv l" id="rv-l">0</span>
+        </div>
+        <div class="ri" id="score-chip" title="Forts captured">
+          <span class="ri-lbl">⚐</span><span class="rv" id="score-txt" style="color:var(--brass-deep)">0 / 5</span>
+        </div>
+      </div>
+      <button class="utilbtn" id="help-btn"  title="Controls [?]">?</button>
+      <button class="utilbtn" id="pause-btn" title="Pause [Esc]">❚❚</button>
+      <button class="utilbtn" id="settings-btn" title="Settings">
+        <!-- SVG gear icon -->
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path fill-rule="evenodd" clip-rule="evenodd" d="M6.5 1h3l.4 1.6a5 5 0 0 1 1.24.72l1.56-.52 1.5 2.6-1.22 1a5.06 5.06 0 0 1 0 1.24l1.22 1-1.5 2.6-1.56-.52a5 5 0 0 1-1.24.72L9.5 15h-3l-.4-1.6a5 5 0 0 1-1.24-.72l-1.56.52-1.5-2.6 1.22-1a5.06 5.06 0 0 1 0-1.24l-1.22-1 1.5-2.6 1.56.52A5 5 0 0 1 6.1 2.6L6.5 1zM8 10.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" fill="currentColor"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- Status line (under header) -->
+  <div id="hud-top">
+    <span id="status-text">Drag to select ships · right-click to command</span>
+  </div>
+
+  <!-- Objectives panel (top-left, below brand) -->
+  <div id="objectives" style="
+    position:fixed;top:60px;left:12px;
+    background:rgba(6,15,26,.82);border:1px solid #2e6090;border-radius:6px;
+    padding:10px 14px;color:#a0b8d0;font-family:'Inter',sans-serif;font-size:11px;
+    line-height:1.8;z-index:300;pointer-events:none;
+    min-width:180px;
+  "></div>
+
+
+  <!-- Market panel -->
+  <div id="market-panel" style="
+    display:none;position:fixed;bottom:80px;right:16px;
+    background:rgba(6,15,26,.94);border:1px solid #2e6090;border-radius:8px;
+    padding:16px 18px;color:#c8a84c;font-family:'Inter',sans-serif;font-size:13px;
+    min-width:240px;z-index:500;
+  ">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <b style="font-family:'Cinzel',serif;letter-spacing:.08em">MARKET</b>
+      <span id="market-close" style="cursor:pointer;color:#607090">✕</span>
+    </div>
+    <div id="market-prices" style="margin-bottom:12px;line-height:1.8;color:#a0b0c0"></div>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button id="sell-wood-btn" class="utilbtn" style="flex:1" title="Sell 50 wood for gold">Sell 50 🪵</button>
+      <button id="buy-wood-btn"  class="utilbtn" style="flex:1" title="Buy 50 wood with gold">Buy 50 🪵</button>
+    </div>
+    <div id="market-routes" style="color:#608040;font-size:11px;margin-top:8px"></div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settings-modal">
+    <div class="help-card" style="min-width:340px;max-width:440px">
+      <div class="help-hdr">
+        <b id="settings-title">⚙ Settings</b>
+        <span class="help-x" onclick="document.getElementById('settings-modal').classList.remove('open')">✕</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:20px;padding-top:4px">
+
+        <!-- Language -->
+        <div>
+          <div id="settings-lang-label" class="settings-section-label">LANGUAGE</div>
+          <div id="lang-btns" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+        </div>
+
+        <!-- Graphics -->
+        <div>
+          <div class="settings-section-label" id="settings-gfx-label">GRAPHICS</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+
+            <!-- Range display style -->
+            <div class="settings-row">
+              <span class="settings-row-label" id="lbl-range-style">Range display</span>
+              <div class="settings-toggle-group" id="tog-range-style">
+                <button class="stog-btn active" data-val="filled" id="lbl-filled">Filled</button>
+                <button class="stog-btn" data-val="edge" id="lbl-edge">Edge only</button>
+              </div>
+            </div>
+
+            <!-- Render quality -->
+            <div class="settings-row">
+              <span class="settings-row-label" id="lbl-quality">Render quality</span>
+              <div class="settings-toggle-group" id="tog-quality">
+                <button class="stog-btn active" data-val="high" id="lbl-high">High</button>
+                <button class="stog-btn" data-val="low" id="lbl-low">Low</button>
+              </div>
+            </div>
+
+            <!-- Shadows -->
+            <div class="settings-row">
+              <span class="settings-row-label" id="lbl-shadows">Shadows</span>
+              <div class="settings-toggle-group" id="tog-shadows">
+                <button class="stog-btn active" data-val="on" id="lbl-shon">On</button>
+                <button class="stog-btn" data-val="off" id="lbl-shoff">Off</button>
+              </div>
+            </div>
+
+            <!-- AQ: UI Theme -->
+            <div class="settings-row">
+              <span class="settings-row-label" id="lbl-theme">UI Theme</span>
+              <div class="settings-toggle-group" id="tog-theme">
+                <button class="stog-btn active" data-val="admiralty" id="lbl-th-adm">Admiralty</button>
+                <button class="stog-btn" data-val="parchment" id="lbl-th-par">Parchment</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Cannon tooltip (shown on hover in loadout) -->
+  <div id="cannon-tip"></div>
+  <div id="help-modal">
+    <div class="help-card">
+      <div class="help-hdr">
+        <b>🎮 CONTROLS</b>
+        <span class="help-x" onclick="document.getElementById('help-modal').classList.remove('open')">✕</span>
+      </div>
+      <div class="help-grid">
+        <div class="help-col">
+          <div class="help-sec">SELECT</div>
+          <div><kbd>Click</kbd> Select ship</div>
+          <div><kbd>Drag</kbd> Box-select</div>
+          <div><kbd>Shift</kbd>+click/drag Add</div>
+          <div><kbd>Dbl-click</kbd> Same hull on screen</div>
+          <div><kbd>F2</kbd> / <kbd>Ctrl</kbd>+<kbd>A</kbd> All ships</div>
+          <div><kbd>1</kbd>–<kbd>9</kbd> Recall fleet (twice: centre)</div>
+          <div><kbd>Ctrl</kbd>+<kbd>1–9</kbd> Assign fleet</div>
+          <div><kbd>Shift</kbd>+<kbd>1–9</kbd> Add to fleet</div>
+        </div>
+        <div class="help-col">
+          <div class="help-sec">ORDERS</div>
+          <div><kbd>Right-click</kbd> Move / attack / siege</div>
+          <div><kbd>Shift</kbd>+right-click Queue waypoint</div>
+          <div><kbd>A</kbd> Attack-move</div>
+          <div><kbd>P</kbd> Patrol</div>
+          <div><kbd>S</kbd> Stop · <kbd>H</kbd> Hold</div>
+          <div><kbd>F</kbd> Formation · <kbd>T</kbd> Stance</div>
+          <div><kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> Commander abilities</div>
+        </div>
+        <div class="help-col">
+          <div class="help-sec">CAMERA</div>
+          <div><kbd>Arrows</kbd> / screen edge Pan</div>
+          <div><kbd>Middle-drag</kbd> Grab-pan</div>
+          <div><kbd>Scroll</kbd> Zoom</div>
+          <div><kbd>Space</kbd> Centre on selection</div>
+          <div><kbd>Minimap</kbd> Click: look · right-click: order</div>
+          <div><kbd>G</kbd> Cycle your islands</div>
+        </div>
+        <div class="help-col">
+          <div class="help-sec">PANELS &amp; VIEW</div>
+          <div><kbd>B</kbd> Build · <kbd>R</kbd> Research</div>
+          <div><kbd>L</kbd> Loadout · <kbd>V</kbd> Revive</div>
+          <div><kbd>O</kbd> Empire · <kbd>M</kbd> Market</div>
+          <div><kbd>Tab</kbd> Range overlay</div>
+          <div><kbd>Alt</kbd> Tactical view (hold)</div>
+          <div><kbd>Shift</kbd>+<kbd>F</kbd> Fog of war</div>
+          <div><kbd>Esc</kbd> Cancel / close / pause</div>
+          <div><kbd>?</kbd> Toggle this help</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="raid-bar">
+    <span class="raid-label">⚡ RAIDING</span>
+    <span id="raid-nm" style="color:#c8e6ff;font-weight:bold"></span>
+    <div id="rpbg"><div id="rpfill" style="width:0%"></div></div>
+    <span id="raid-cargo" style="color:#40d8ff;font-size:10px"></span>
+  </div>
+
+
+  <!-- Loadout panel -->
+  <div class="panel" id="lp">
+    <div class="ph"><span class="pt" id="lp-title">⚙ FLEET LOADOUT</span><span class="px" id="lp-close">✕</span></div>
+    <div class="lp-tabs" id="lp-tabs"></div>
+    <div class="lpbody" id="lp-body-root">
+      <!-- Content rendered by LoadoutPanel.js -->
+    </div>
+  </div>
+
+  <!-- Research panel -->
+  <div class="panel" id="rp">
+    <div class="ph"><span class="pt">🔬 RESEARCH TREE</span><span class="px" onclick="togglePanel('rp')">✕</span></div>
+    <div id="rp-content"></div>
+  </div>
+
+  <!-- Build panel -->
+  <div class="panel" id="bp">
+    <div class="ph"><span class="pt">🏗 ISLAND CONSTRUCTION</span><span class="px" onclick="togglePanel('bp')">✕</span></div>
+    <div id="bp-content"></div>
+  </div>
+
+  <div id="build-hint">🏗 Click a green cell on your island to build</div>
+
+  <!-- Revive panel -->
+  <div id="revive-panel">
+    <b>⚓ SHIP REPAIR DOCK</b>
+    <div id="revive-list"></div>
+    <div style="color:#5a8ab8;font-size:9px;margin-top:6px">Revive at Home Port · 60s build time</div>
+  </div>
+
+  <!-- Aura upgrade panel -->
+  <div id="upgrade-panel">
+    <b>⚓ HOME PORT</b>
+
+    <div style="font-family:var(--display);font-size:9px;letter-spacing:.18em;color:var(--ink-2);margin-bottom:5px">REPAIR AURA</div>
+    <div class="upg-row">
+      <span class="upg-label">Aura Range</span>
+      <span class="upg-level" id="upg-aura-lv">Lv1</span>
+      <button class="upg-btn" id="upg-aura-btn" onclick="upgradeAura()">80🪵</button>
+    </div>
+    <div class="upg-row">
+      <span class="upg-label">Regen Rate</span>
+      <span class="upg-level" id="upg-regen-lv">Lv1</span>
+      <button class="upg-btn" id="upg-regen-btn" onclick="upgradeRegen()">60🪙</button>
+    </div>
+    <div class="aura-info" id="aura-info">Range: 20u · 4 HP/s</div>
+
+    <div style="border-top:1px solid var(--ink-3);margin:10px 0 6px"></div>
+    <div style="font-family:var(--display);font-size:9px;letter-spacing:.18em;color:var(--ink-2);margin-bottom:5px">RECRUIT SHIPS <span style="color:var(--ink-3);font-size:8px">(Barracks expand max fleet)</span></div>
+    <div id="fleet-capacity" style="font-family:var(--mono);font-size:10px;color:var(--verd);margin-bottom:6px">Fleet: 5 / 5 max</div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div class="upg-row">
+        <span class="upg-label">Sloop (light)</span>
+        <button class="upg-btn" onclick="buyShip('light')">🪵100 🪙60</button>
+      </div>
+      <div class="upg-row">
+        <span class="upg-label">Brigantine (std)</span>
+        <button class="upg-btn" onclick="buyShip('standard')">🪵180 🪙120</button>
+      </div>
+      <div class="upg-row">
+        <span class="upg-label">Galleon (heavy)</span>
+        <button class="upg-btn" onclick="buyShip('heavy')">🪵300 🪙200</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="range-legend"></div>
+  <div id="wave-alert"></div>
+  <div id="msg"></div>
+  <div id="isl-tip"></div>
+
+  <!-- End screen -->
+  <div id="endscreen">
+    <div id="end-title" class="win">🏆 VICTORY!</div>
+    <div id="end-sub"></div>
+    <div id="end-score"></div>
+    <div id="stats-content" style="margin-top:10px;min-width:320px"></div>
+    <button id="view-map-btn" onclick="document.getElementById('endscreen').classList.remove('show')">View Map</button>
+    <button id="restart-btn" onclick="location.reload()">⚓ Play Again</button>
+  </div>
+
+  <!-- Tutorial overlay (first-launch) -->
+  <div id="tutorial-overlay" style="
+    display:none;position:fixed;inset:0;background:rgba(4,12,24,.90);
+    align-items:center;justify-content:center;z-index:800;pointer-events:all;
+  ">
+    <div style="max-width:480px;background:#0a1828;border:1px solid #2e6090;border-radius:10px;padding:28px 32px;color:#c0d4e8;font-family:'Inter',sans-serif;font-size:13px;line-height:1.8">
+      <div style="font-family:'Cinzel',serif;font-size:18px;color:#e8b840;letter-spacing:.12em;margin-bottom:16px;text-align:center">⚓ ISLES OF WAR</div>
+      <div id="tut-steps">
+        <div class="tut-step" data-step="0">
+          <b style="color:#e8b840">1 — Command your fleet</b><br>
+          Drag a box (or click a ship) to select. <b>Right-click</b> the sea to sail, an enemy ship to attack,
+          an island to besiege it. <kbd>Shift</kbd>+right-click queues waypoints; <kbd>Space</kbd> centres the camera.
+        </div>
+        <div class="tut-step" data-step="1" style="display:none">
+          <b style="color:#e8b840">2 — Fleets, formations &amp; stances</b><br>
+          <kbd>Ctrl</kbd>+<kbd>1–9</kbd> saves the selection as a fleet, <kbd>1–9</kbd> recalls it.
+          <kbd>F</kbd> cycles Line Ahead / Line Abreast / Wedge; <kbd>T</kbd> cycles Aggressive / Defensive / Hold Fire.
+          Ships fight broadside-on: they circle a target keeping their strongest side toward it.
+        </div>
+        <div class="tut-step" data-step="2" style="display:none">
+          <b style="color:#e8b840">3 — Capture, build &amp; research</b><br>
+          Right-click a neutral island (or an enemy one whose fort is down) to capture it.<br>
+          <kbd>B</kbd> opens the build dock on your island; <kbd>R</kbd> opens Research.
+        </div>
+        <div class="tut-step" data-step="3" style="display:none">
+          <b style="color:#e8b840">4 — Push the War Front</b><br>
+          Capturing islands, sinking ships and out-producing the enemy push the front bar (top).
+          Reach 100% to win; at 0% you lose.
+        </div>
+        <div class="tut-step" data-step="4" style="display:none">
+          <b style="color:#e8b840">5 — Market &amp; Fog</b><br>
+          Press <kbd>M</kbd> to open the Market — trade wood for gold.<br>
+          Press <kbd>Shift</kbd>+<kbd>F</kbd> to toggle Fog of War. <kbd>?</kbd> shows every control.
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:20px;gap:12px">
+        <button id="tut-skip" style="padding:8px 20px;background:rgba(46,96,144,.3);border:1px solid #2e6090;border-radius:4px;color:#6080a0;cursor:pointer;font-family:inherit">Skip</button>
+        <button id="tut-next" style="padding:8px 28px;background:linear-gradient(180deg,#f7eccc,#c8a84c);border:none;border-radius:4px;color:#1a1000;font-weight:600;cursor:pointer;font-family:inherit;font-size:13px">Next →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause overlay -->
+  <div id="pause-overlay" style="display:none;position:absolute;inset:0;background:rgba(4,12,24,.85);flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:40;pointer-events:all">
+    <div style="color:#e8b840;font-size:36px;font-weight:bold;letter-spacing:.15em">⏸ PAUSED</div>
+    <button onclick="window._game&&window._game._togglePause()" style="padding:10px 32px;background:rgba(46,96,144,.5);border:1px solid #4a8ab8;border-radius:6px;color:#c8e6ff;font-size:13px;cursor:pointer;font-family:inherit">Resume (Esc)</button>
+    <button onclick="location.reload()" style="padding:10px 32px;background:rgba(46,96,144,.3);border:1px solid #2e6090;border-radius:6px;color:#8ab4d8;font-size:13px;cursor:pointer;font-family:inherit">⚓ Main Menu</button>
+    <div style="color:#4a6080;font-size:10px;margin-top:8px">Press Esc to resume</div>
+  </div>
+
+  <!-- Island capture progress bars (injected by CaptureSystem) -->
+  <div id="capture-bars"></div>
+
+  <!-- AV: bottom command console — chart · selection · orders -->
+  <div id="console">
+    <section class="con-panel" id="con-map">
+      <div id="minimap">
+        <canvas id="mmcvs" width="148" height="148"></canvas>
+        <div id="mmlbl">CHART</div>
+      </div>
+      <div id="view-bar">
+        <button class="vbtn cam-mode-btn"        id="cam-fleet-btn"  data-cam="fleet"  title="Follow selected ships">⚓</button>
+        <button class="vbtn cam-mode-btn"        id="cam-island-btn" data-cam="island" title="Focus island [click island]">🏝</button>
+        <button class="vbtn cam-mode-btn active" id="cam-free-btn"   data-cam="free"   title="Free camera [arrows · screen edge · middle-drag]">🗺</button>
+        <button class="vbtn" id="rng-btn"   title="Vision range (cycles ×1–×3)">🔭<span id="rng-lvl">×1</span></button>
+        <button class="vbtn" id="fog-btn"   title="Fog of War: OFF [Shift+F]">🌫</button>
+        <button class="vbtn" id="trade-btn" title="Market [M]">⚖</button>
+      </div>
+    </section>
+    <section class="con-panel" id="con-sel">
+      <div id="fleet-panel"></div>
+    </section>
+    <section class="con-panel" id="con-cmd"></section>
+  </div>
+</div>
+
+<!-- Import map: resolves bare "three" specifier for ES modules -->
+<script type="importmap">
+  { "imports": { "three": "./vendor/three/build/three.module.js" } }
+</script>
+<!-- Game entry point as ES module -->
+<script type="module" src="src/main.js?v=av1"></script>
+</body>
+</html>

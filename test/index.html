@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IOW — Test Suite</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    background: #0a0f1a;
+    color: #c8d8e8;
+    padding: 24px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-family: Georgia, serif;
+    font-size: 20px;
+    letter-spacing: .14em;
+    color: #e8b840;
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    font-size: 11px;
+    color: #4a6a8a;
+    margin-bottom: 24px;
+    letter-spacing: .08em;
+  }
+
+  /* Summary bar */
+  .summary {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 18px;
+    background: #111928;
+    border-radius: 6px;
+    margin-bottom: 24px;
+    border: 1px solid #1e3050;
+  }
+
+  .summary-count {
+    font-size: 28px;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  .summary-label {
+    font-size: 11px;
+    color: #4a6a8a;
+    letter-spacing: .1em;
+  }
+
+  .pass-count { color: #40cc80; }
+  .fail-count { color: #ff5252; }
+
+  .progress-bar {
+    flex: 1;
+    height: 6px;
+    background: #1e3050;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #40cc80, #60e8a0);
+    border-radius: 3px;
+    transition: width .4s ease;
+  }
+
+  .progress-fill.has-fail {
+    background: linear-gradient(90deg, #ff5252, #ff7878);
+  }
+
+  /* Suite */
+  .suite {
+    margin-bottom: 20px;
+    border: 1px solid #1a2a40;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .suite-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    background: #0d1824;
+    font-size: 12px;
+    font-weight: 600;
+    color: #80b0d8;
+    letter-spacing: .06em;
+    border-bottom: 1px solid #1a2a40;
+  }
+
+  .suite-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    margin-left: auto;
+  }
+
+  .suite-badge.all-pass { background: #1a4030; color: #40cc80; }
+  .suite-badge.has-fail  { background: #401a1a; color: #ff5252; }
+  .suite-badge.pending   { background: #2a2a1a; color: #ccaa40; }
+
+  /* Test rows */
+  .test-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 16px;
+    border-bottom: 1px solid #111820;
+    font-size: 12px;
+  }
+
+  .test-row:last-child { border-bottom: none; }
+
+  .test-icon {
+    width: 16px;
+    flex-shrink: 0;
+    margin-top: 1px;
+    text-align: center;
+  }
+
+  .test-name { flex: 1; color: #c8d8e8; }
+
+  .test-error {
+    display: block;
+    margin-top: 4px;
+    font-size: 11px;
+    color: #ff7878;
+    background: #2a0a0a;
+    padding: 4px 8px;
+    border-radius: 3px;
+    border-left: 2px solid #ff5252;
+    white-space: pre-wrap;
+  }
+
+  .test-row.pass .test-icon { color: #40cc80; }
+  .test-row.fail .test-icon { color: #ff5252; }
+  .test-row.pending .test-icon { color: #ccaa40; }
+
+  /* Status */
+  #status {
+    font-size: 11px;
+    color: #4a6a8a;
+    margin-bottom: 16px;
+    letter-spacing: .06em;
+  }
+
+  #status.running { color: #ccaa40; }
+  #status.done-pass { color: #40cc80; }
+  #status.done-fail { color: #ff5252; }
+
+  .spinner {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  button#rerun {
+    padding: 8px 20px;
+    background: linear-gradient(180deg, #2a4060, #1a2a40);
+    border: 1px solid #2a4a7a;
+    border-radius: 4px;
+    color: #80b8e8;
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    letter-spacing: .08em;
+    margin-bottom: 20px;
+  }
+
+  button#rerun:hover { background: linear-gradient(180deg, #3a5070, #2a3a50); }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<h1>⚓ ISLES OF WAR — TEST SUITE</h1>
+<div class="subtitle">ES Module tests · no bundler · serve the repo root: node tools/serve.mjs 8080</div>
+
+<div id="status" class="running"><span class="spinner">◌</span> Loading modules…</div>
+<button id="rerun" style="display:none" onclick="location.reload()">↻ Re-run</button>
+
+<div class="summary" id="summary" style="display:none">
+  <div>
+    <div class="summary-count pass-count" id="pass-count">0</div>
+    <div class="summary-label">PASSED</div>
+  </div>
+  <div>
+    <div class="summary-count fail-count" id="fail-count">0</div>
+    <div class="summary-label">FAILED</div>
+  </div>
+  <div class="progress-bar">
+    <div class="progress-fill" id="progress-fill"></div>
+  </div>
+  <div>
+    <div class="summary-count" id="total-count" style="color:#80b0d8">0</div>
+    <div class="summary-label">TOTAL</div>
+  </div>
+</div>
+
+<div id="results"></div>
+
+<script type="importmap">
+  { "imports": { "three": "../frontend/vendor/three/build/three.module.js" } }
+</script>
+<script type="module">
+import { runAll }   from './runner.js';
+import './01_EventEmitter.test.js';
+import './02_Ocean.test.js';
+import './03_CombatSystem.test.js';
+import './04_EconomySystem.test.js';
+import './05_ReviveSystem.test.js';
+import './06_ImportGraph.test.js';
+import './07_GameState.test.js';
+import './08_BallisticPhysics.test.js';
+import './09_VFX_AD.test.js';
+import './10_SpringCamera.test.js';
+import './11_NavalCommand.test.js';
+
+// Modules register suites synchronously when imported.
+// runAll() runs them (including async tests) and calls render.
+
+const statusEl = document.getElementById('status');
+
+try {
+  const results = await runAll(render);
+  const allPass = results.fail === 0;
+  statusEl.textContent = allPass
+    ? `✓ All ${results.pass} tests passed`
+    : `✗ ${results.fail} test${results.fail > 1 ? 's' : ''} failed`;
+  statusEl.className = allPass ? 'done-pass' : 'done-fail';
+} catch(e) {
+  statusEl.textContent = `⚠ Runner error: ${e.message}`;
+  statusEl.className = 'done-fail';
+  console.error(e);
+}
+
+document.getElementById('rerun').style.display = 'inline-block';
+
+function render(results) {
+  const total = results.pass + results.fail;
+  const pct   = total ? (results.pass / total * 100).toFixed(0) : 0;
+
+  document.getElementById('pass-count').textContent  = results.pass;
+  document.getElementById('fail-count').textContent  = results.fail;
+  document.getElementById('total-count').textContent = total;
+  document.getElementById('summary').style.display   = 'flex';
+
+  const fill = document.getElementById('progress-fill');
+  fill.style.width = pct + '%';
+  if (results.fail > 0) fill.classList.add('has-fail');
+
+  const container = document.getElementById('results');
+  container.innerHTML = '';
+
+  for (const suite of results.suites) {
+    const suiteFail = suite.tests.filter(t => t.status === 'fail').length;
+    const suitePass = suite.tests.filter(t => t.status === 'pass').length;
+    const pending   = suite.tests.filter(t => t.status === 'pending').length;
+
+    const badgeClass = pending > 0 ? 'pending' : suiteFail > 0 ? 'has-fail' : 'all-pass';
+    const badgeText  = pending > 0
+      ? `${pending} pending`
+      : suiteFail > 0
+        ? `${suiteFail} failed`
+        : `${suitePass} passed`;
+
+    const suiteEl = document.createElement('div');
+    suiteEl.className = 'suite';
+    suiteEl.innerHTML = `
+      <div class="suite-header">
+        <span>📦 ${escHtml(suite.name)}</span>
+        <span class="suite-badge ${badgeClass}">${badgeText}</span>
+      </div>
+    `;
+
+    for (const t of suite.tests) {
+      const row = document.createElement('div');
+      row.className = `test-row ${t.status}`;
+      const icon = t.status === 'pass' ? '✓' : t.status === 'fail' ? '✗' : '○';
+      row.innerHTML = `
+        <span class="test-icon">${icon}</span>
+        <span class="test-name">
+          ${escHtml(t.name)}
+          ${t.error ? `<span class="test-error">${escHtml(t.error)}</span>` : ''}
+        </span>
+      `;
+      suiteEl.appendChild(row);
+    }
+
+    container.appendChild(suiteEl);
+  }
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

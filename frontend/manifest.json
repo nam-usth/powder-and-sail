@@ -1,0 +1,16 @@
+{
+  "name": "Isles of War",
+  "short_name": "IoW",
+  "description": "Naval RTS — command your fleet, capture islands, sink the enemy flagship.",
+  "start_url": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#060f1a",
+  "theme_color": "#060f1a",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "categories": ["games"],
+  "lang": "en"
+}
