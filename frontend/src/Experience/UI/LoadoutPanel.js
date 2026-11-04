@@ -1,4 +1,4 @@
-import { CANNONS, CANNON_BY_ID, CANNON_FILL_COL } from '../../data/cannons.js';
+import { CANNONS, CANNON_BY_ID, CANNON_FILL_COL, canMountCannon, ROMAN_TIER } from '../../data/cannons.js';
 import { HULL_SLOTS } from '../../data/ships.js';
 import { UPGRADE_DEFS } from '../../data/upgrades.js';
 import { applySpeed, calcSpeedMult } from '../World/ShipEntity.js';
@@ -306,7 +306,7 @@ export class LoadoutPanel {
       card.dataset.cannon = cn.id;
       card.innerHTML = `
         <div class="lp2-cn-circle" style="--cn-col:${col}">
-          <div class="lp2-cn-tier">T${cn.t}</div>
+          <div class="lp2-cn-tier">${ROMAN_TIER[cn.tier] || cn.tier}</div>
         </div>
         <div class="lp2-cn-name">${cn.nm}</div>
         <div class="lp2-cn-dps">${dps}/s</div>
@@ -314,12 +314,14 @@ export class LoadoutPanel {
 
       card.addEventListener('click', e => {
         e.stopPropagation();
+        if (!canMountCannon(cn, this._ship)) { this._flashHint(`${cn.nm}: needs a tier ${ROMAN_TIER[cn.tier]} hull or better`); return; }
         this._picked = (this._picked === cn.id) ? null : cn.id;
         this._syncAll();
       });
       card.addEventListener('dblclick', e => {
         e.stopPropagation();
         const s = this._ship;
+        if (!canMountCannon(cn, s)) return;
         (HULL_SLOTS[s.hull]||[]).forEach(sl => {
           if (!s.loadout[sl]) { s.loadout[sl] = cn.id; s.slotTimers[sl] = cn.rof; }
         });
@@ -389,6 +391,9 @@ export class LoadoutPanel {
       const isPk  = picked === cn.id;
       const cnt   = eqCnt[cn.id] || 0;
       card.classList.toggle('picked', isPk);
+      const locked = !canMountCannon(cn, s);
+      card.classList.toggle('locked', locked);
+      card.title = locked ? `Needs a tier ${ROMAN_TIER[cn.tier]} hull (this ship: ${ROMAN_TIER[s.hullTier] || '?'})` : '';
       card.classList.toggle('equipped', cnt > 0);
       const badge = document.getElementById(`lp2-badge-${cn.id}`);
       if (badge) badge.textContent = cnt > 0 ? `×${cnt}` : '';
@@ -413,6 +418,7 @@ export class LoadoutPanel {
     if (!s.alive) return; // S6: disable equip actions for dead/sunk ships
     if (this._picked) {
       const cn = CANNON_BY_ID.get(this._picked);
+      if (!canMountCannon(cn, s)) { this._picked = null; this._syncAll(); return; }
       s.loadout[slotId] = this._picked;
       if (cn) s.slotTimers[slotId] = cn.rof;
       applySpeed(s); this._overlay.build(s);
@@ -466,6 +472,12 @@ export class LoadoutPanel {
     this._lastPreset = preset;
     ships.forEach(ship => {
       const lo = preset.loadout(ship.hull);
+      // AW: a preset gun above the hull's tier falls back to the best one allowed
+      const FALLBACK = ['demi_culv', 'long9', 'carronade', 'swivel'];
+      Object.keys(lo).forEach(sl => {
+        if (!canMountCannon(CANNON_BY_ID.get(lo[sl]), ship))
+          lo[sl] = FALLBACK.find(id => canMountCannon(CANNON_BY_ID.get(id), ship)) || 'swivel';
+      });
       Object.assign(ship.loadout, lo);
       (HULL_SLOTS[ship.hull]||[]).forEach(sl => {
         const cn = CANNON_BY_ID.get(ship.loadout[sl]);

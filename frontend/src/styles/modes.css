@@ -71,3 +71,6 @@ body.mode-battle #objectives .obj-done { color: var(--verd, #7eb150); }
   background: linear-gradient(180deg, #3a2614, #1f140a); border: 2px solid #8a6a32; border-radius: 4px; }
 body.mode-battle #hud-top { top: 96px; }
 @media (max-width: 760px) { .vs-track { width: 90px; } .vs-name { display: none; } }
+
+/* AW: cannons above the ship's hull tier */
+.lp2-cn-card.locked { opacity: .38; filter: grayscale(.8); cursor: not-allowed; }

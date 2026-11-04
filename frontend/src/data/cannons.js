@@ -36,5 +36,34 @@ CANNON_FILL_COL.grapeshot  = 0xc06020;
 CANNON_LINE_COL.chain_shot = 0x80c0ff;
 CANNON_LINE_COL.grapeshot  = 0xff9050;
 
+// ── AW: cannon tiers I–V ─────────────────────────────────────────
+// A hull of tier N (data/harbor.js HULLS.tier) can mount cannons of tier ≤ N.
+// Ships without a hull tier (classic Open War fleets) are unrestricted.
+// Heavier guns also slow the ship (wt → applySpeed), so a big gun on a small
+// hull is a trade-off even where it is allowed.
+const TIER_OF = {
+  swivel: 1, carronade: 1, falconet: 1,
+  long9: 2, demi_culv: 2, chain_shot: 2, grapeshot: 2,
+  demi_can: 3, mortar1: 3,
+};
+CANNONS.push(
+  { id:'long12',       nm:'Long 12',            t:1, cls:'anti-standard', rt:3, dmg:27, rof:21, wt:14, arc:{m:'b_s',  d:80 }, ctr:{t:'standard',b:.4},                  desc:'+40% vs Standard · long-range chaser.' },
+  { id:'carronade32',  nm:'32-pdr Carronade',   t:1, cls:'anti-heavy',    rt:1, dmg:58, rof:17, wt:20, arc:{m:'side', d:120}, ctr:{t:'heavy',   b:.5}, sp:'dodge_ig',   desc:'Smasher · +50% vs Heavy at close range.' },
+  { id:'culverin',     nm:'Culverin',           t:1, cls:'anti-standard', rt:3, dmg:34, rof:21, wt:17, arc:{m:'side', d:110}, ctr:{t:'standard',b:.5},                  desc:'+50% vs Standard · long broadside.' },
+  { id:'mortar2',      nm:'Mortar Mk.II',       t:1, cls:'siege',         rt:2, dmg:78, rof:30, wt:25, arc:{m:'all',  d:360}, ctr:{t:'tower',   b:1.0}, sp:'aoe',       desc:'+100% vs Tower · heavy arc fire · AoE.' },
+  { id:'long24',       nm:'Long 24',            t:1, cls:'anti-heavy',    rt:3, dmg:44, rof:23, wt:22, arc:{m:'side', d:100}, ctr:{t:'heavy',   b:.5}, sp:'arm_pierce', desc:'+50% vs Heavy · armor pierce at long range.' },
+  { id:'cannon_royal', nm:'Cannon Royal',       t:1, cls:'anti-heavy',    rt:2, dmg:82, rof:28, wt:30, arc:{m:'side', d:110}, ctr:{t:'heavy',   b:.7}, sp:'arm_pierce', desc:'42-pounder · +70% vs Heavy · armor pierce.' },
+);
+Object.assign(TIER_OF, { long12: 3, carronade32: 4, culverin: 4, mortar2: 4, long24: 5, cannon_royal: 5 });
+CANNONS.forEach(c => { c.tier = TIER_OF[c.id] || 1; });
+Object.assign(CANNON_FILL_COL, { long12: 0x3070b0, carronade32: 0x208050, culverin: 0x903030, mortar2: 0xb06010, long24: 0x602090, cannon_royal: 0x806010 });
+Object.assign(CANNON_LINE_COL, { long12: 0x60a0ff, carronade32: 0x40d080, culverin: 0xff7070, mortar2: 0xffb040, long24: 0xc070ff, cannon_royal: 0xffd060 });
+
+/** Highest cannon tier a ship may mount (Infinity when it has no hull tier). */
+export const maxCannonTier = ship => (ship && ship.hullTier) ? ship.hullTier : Infinity;
+/** Can this cannon go on this ship? */
+export const canMountCannon = (cn, ship) => !!cn && (cn.tier || 1) <= maxCannonTier(ship);
+export const ROMAN_TIER = ['', 'I', 'II', 'III', 'IV', 'V'];
+
 // B1: O(1) lookup map — use CANNON_BY_ID.get(id) instead of CANNONS.find(x=>x.id===id)
 export const CANNON_BY_ID = new Map(CANNONS.map(c => [c.id, c]));

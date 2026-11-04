@@ -612,6 +612,7 @@ export class GameApp {
     ship.angle = spec.angle ?? (team === 'player' ? 0 : Math.PI);
     if (spec.uid) ship.uid = spec.uid;
     if (spec.hullId) ship.hullId = spec.hullId;
+    if (spec.cfg?.tier) ship.hullTier = spec.cfg.tier;   // AW: gates cannon tiers
     if (spec.loadout) Object.keys(ship.loadout).forEach(sl => { if (sl in spec.loadout) ship.loadout[sl] = spec.loadout[sl]; });
     const maxHp = spec.maxHp || 100;
     ship.maxHp = maxHp;

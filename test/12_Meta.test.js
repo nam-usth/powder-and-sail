@@ -8,6 +8,8 @@ import { missionState, applyBattleResult, makePatrol, starsFor, rankIndex, getMi
 import { parseMode, modeUrl } from '../frontend/src/Meta/ModeRouter.js';
 import { OFFLINE_MAX_SEC, HULLS, PROFILE_KEY } from '../frontend/src/data/harbor.js';
 import { MISSIONS } from '../frontend/src/data/campaign.js';
+import { CANNON_BY_ID, canMountCannon } from '../frontend/src/data/cannons.js';
+import { resolveHull } from '../frontend/src/Meta/Campaign.js';
 import { WOOD_RATE, GOLD_RATE, WOOD_CAP } from '../frontend/src/data/constants.js';
 
 const T0 = 1_700_000_000_000;
@@ -180,6 +182,28 @@ suite('Meta · Campaign', () => {
       if (m.objective.type === 'sink_all') assert(m.enemies.length > 0, m.id + ' has enemies');
       if (m.objective.type === 'capture') assert(m.objective.islands.every(id => m.islands.some(i => i.id === id)), m.id + ' capture ids');
     });
+  });
+});
+
+suite('Meta · Cannon tiers', () => {
+  test('a hull mounts cannons up to its own tier; tierless ships are unrestricted', () => {
+    const royal = CANNON_BY_ID.get('cannon_royal'), swivel = CANNON_BY_ID.get('swivel');
+    assertEqual(royal.tier, 5);
+    assert(!canMountCannon(royal, { hullTier: 2 }), 'tier II hull cannot take a tier V gun');
+    assert(canMountCannon(royal, { hullTier: 5 }), 'tier V hull can');
+    assert(canMountCannon(swivel, { hullTier: 1 }), 'tier I gun on tier I hull');
+    assert(canMountCannon(royal, {}), 'Open War ships have no hull tier');
+  });
+  test('every mission enemy and starter loadout respects the tier rule', () => {
+    const bad = [];
+    for (const m of MISSIONS) for (const e of [...m.enemies, ...((m.objective.waves || []).flatMap(w => w.ships))]) {
+      const h = resolveHull(e.hull);
+      for (const id of Object.values(e.loadout || {})) {
+        const cn = CANNON_BY_ID.get(id);
+        if (!cn || !canMountCannon(cn, { hullTier: h.tier })) bad.push(`${m.id}:${h.id}:${id}`);
+      }
+    }
+    assertEqual(bad.join(','), '');
   });
 });
 
