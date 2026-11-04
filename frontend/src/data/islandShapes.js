@@ -176,7 +176,8 @@ export const HARBOR = Object.freeze({
   quayHalf: 16,                                   // quay half-length (x)
   piers:  [-13, -6.5, 0, 6.5, 13],                // finger pier x positions
   pierLen: 12,
-  coast:  [[2, 2.6, 0.6], [3, 2.0, 2.1], [5, 1.2, 0.3], [7, 0.7, 1.9], [11, 0.35, 4.0]],   // [k, amp, phase]
+  coast:  [[2, 2.6, 0.6], [3, 2.0, 2.1], [5, 1.0, 0.3], [7, 0.4, 1.9], [11, 0.12, 4.0]],   // [k, amp, phase] (rev 4: high harmonics softened)
+  cornerK: 4.5,                                   // smooth-max radius where the quay cut meets the coast
   islets: [[27.0, 24.0, 2.4], [-29.0, 19.0, 2.0], [30.5, 29.5, 1.1], [-26.5, 25.5, 1.0]],
   cellWorld: 2.4,                                 // = BUILD_CELL_WORLD (pure data module)
   cellMargin: 2.4,                                // cells keep ≥ this from the water (quay strip)
@@ -196,13 +197,23 @@ export function harborCoastR(x, z) {
  * the natural coast takes over.
  */
 export function harborWaterSDF(x, z) {
-  const over = Math.max(0, Math.abs(x) - HARBOR.quayHalf - 2);
+  // rev 4: soft hinge (quadratic smooth-ReLU) so the cut bends back without a kink
+  const v = Math.abs(x) - HARBOR.quayHalf - 2, k = 2.5;
+  const over = v >= k ? v : v <= -k ? 0 : (v + k) * (v + k) / (4 * k);
   return (HARBOR.quayZ - z) + over * 1.3;
+}
+
+/** Smooth max (polynomial, radius k) — rounds the corner where two SDFs meet. */
+export function sdfSmax(a, b, k) { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.max(a, b) + h * h * k * 0.25; }
+
+/** Mainland only (no islets): coast smooth-cut by the quay waterfront. */
+export function harborMainSDF(x, z) {
+  return sdfSmax(Math.hypot(x, z) - harborCoastR(x, z), -harborWaterSDF(x, z), HARBOR.cornerK);
 }
 
 /** Signed distance to HARBOR land (negative on land), islets included. */
 export function harborLandSDF(x, z) {
-  let d = Math.max(Math.hypot(x, z) - harborCoastR(x, z), -harborWaterSDF(x, z));
+  let d = harborMainSDF(x, z);
   for (const [ix, iz, ir] of HARBOR.islets) d = Math.min(d, Math.hypot(x - ix, z - iz) - ir);
   return d;
 }
