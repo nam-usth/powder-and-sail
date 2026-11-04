@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headless smoke test for Isles of War.
+"""Headless smoke test for Powder & Sail.
 Usage: python tools/smoke_test.py [--shot NAME] [--secs N] [--tests]
 Serves the repository root on :8123, loads the game, collects console
 errors/warnings, waits N seconds of gameplay, screenshots, optionally runs

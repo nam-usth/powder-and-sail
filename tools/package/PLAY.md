@@ -1,4 +1,4 @@
-# Isles of War — bản thử nghiệm
+# Powder & Sail — bản thử nghiệm
 
 ## Cách chạy (cần Node.js 18+ hoặc Python 3)
 

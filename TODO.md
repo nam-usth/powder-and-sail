@@ -1,4 +1,4 @@
-# TODO — Isles of War · AV
+# TODO — Powder & Sail · AV
 > Last updated: AU (RTS command layer + repo reorganisation) and AV (HUD revamp) — 2026-10-16
 > Format: [severity] description — *root cause / notes*
 

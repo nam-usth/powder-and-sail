@@ -1,4 +1,4 @@
-# Isles of War
+# Powder & Sail
 
 A browser-based naval real-time strategy game built with Three.js. Plain ES modules, no bundler, runs offline (Three.js r128 and Rapier are vendored in `frontend/vendor/`).
 

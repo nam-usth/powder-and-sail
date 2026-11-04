@@ -1,6 +1,6 @@
-# Isles of War — Đặc tả game (bản kiểm thử)
+# Powder & Sail — Đặc tả game (bản kiểm thử)
 
-> **English summary.** Isles of War is a browser naval strategy game (Three.js, no build step) set in the age of sail, c. 1570–1720, across five seas.
+> **English summary.** Powder & Sail is a browser naval strategy game (Three.js, no build step) set in the age of sail, c. 1570–1720, across five seas.
 > The player owns a persistent **Harbor** island (buildings, production that continues offline for up to 8 h, a Shipyard with 13 hulls in tiers I–V),
 > opens the **World Chart** to pick one of 15 campaign missions, a repeatable Patrol or **Open War**, and fights each mission as a separate real-time **Sea Battle**
 > (objectives: sink all, destroy forts, survive waves, capture). Plunder, rewards and renown flow back to the harbor; sunk ships come home as wrecks to salvage.

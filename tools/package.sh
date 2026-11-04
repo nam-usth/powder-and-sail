@@ -1,8 +1,8 @@
 #!/bin/sh
-# Build a playable zip: dist/IslesOfWar-<date>.zip  (run from the repo root)
+# Build a playable zip: dist/PowderAndSail-<date>.zip  (run from the repo root)
 set -e
 cd "$(dirname "$0")/.."
-NAME="IslesOfWar-$(date +%Y%m%d-%H%M)"
+NAME="PowderAndSail-$(date +%Y%m%d-%H%M)"
 STAGE="dist/$NAME"
 rm -rf "$STAGE"; mkdir -p "$STAGE/tools" "$STAGE/docs"
 cp -r frontend test "$STAGE/"

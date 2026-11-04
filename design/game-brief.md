@@ -1,4 +1,4 @@
-# Game Brief — Isles of War
+# Game Brief — Powder & Sail
 
 > Rigor: `minimal` project-wide; Harbor, Sea Battle and Campaign Meta are held
 > to `standard` via `workflow_overrides.system_overrides` (see `design/gdd/`).

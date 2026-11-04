@@ -1,4 +1,4 @@
-# Balance targets — Isles of War (campaign + harbor)
+# Balance targets — Powder & Sail (campaign + harbor)
 
 Design goal (user): **"not too hard, not too easy for a new player."**
 Results and every changed number: `design/balance/report.md`.

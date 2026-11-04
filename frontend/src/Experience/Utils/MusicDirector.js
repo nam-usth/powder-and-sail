@@ -1,5 +1,5 @@
 // ── MusicDirector.js ────────────────────────────────────────────────
-// Procedural, adaptive music + ambience for Isles of War (Web Audio API).
+// Procedural, adaptive music + ambience for Powder & Sail (Web Audio API).
 // Every note is generated at runtime from the ORIGINAL scores in
 // data/music.js — no audio files, no borrowed melodies.
 //

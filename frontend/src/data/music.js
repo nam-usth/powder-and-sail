@@ -8,7 +8,7 @@
 // tin whistle, bodhrán, castanets, side & field drums, kettledrums, natural
 // trumpets & horns, a string band and oboe. No synth pads.
 //
-// Every tune here is ORIGINAL, written for Isles of War. Melodies are
+// Every tune here is ORIGINAL, written for Powder & Sail. Melodies are
 // [midi, steps] pairs per bar (0 = rest); a "step" is the track's grid unit
 // (an eighth in 6/8 harbor/calm, an eighth in the chart, a sixteenth in
 // battle). Each bar's steps must sum to `stepsPerBar`.

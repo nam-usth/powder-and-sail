@@ -1,4 +1,4 @@
-# Isles of War — Claude Code Game Studios setup
+# Powder & Sail — Claude Code Game Studios setup
 
 Browser naval strategy game, structured with the
 [Claude Code Game Studios](https://github.com/Donchitos/Claude-Code-Game-Studios)
