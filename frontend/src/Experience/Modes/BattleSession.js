@@ -12,6 +12,7 @@ import { shipSpec, enemySpec }   from './shipSpec.js';
 import { restoreResearch }       from './HarborSession.js';
 import { bus }                   from '../EventBus.js';
 import { toasts }                from '../UI/ToastQueue.js';
+import { music }                 from '../Utils/MusicDirector.js';
 import { T }                     from '../../i18n.js';
 
 export class BattleSession {
@@ -66,6 +67,8 @@ export class BattleSession {
     game._cam.jumpTo(sp.x + 25, sp.z);
     st.selection = st.playerShips.filter(s => s.alive);
     this._mountHud();
+    music.setRegion(['caribbean','atlantic','indian','spice','southchina'].includes(m.region) ? m.region : 'caribbean');
+    music.play('battle'); music.ambience('sea');
     toasts.show(`⚔ ${m.nm}`, 3200, 'info');
   }
 
@@ -82,7 +85,13 @@ export class BattleSession {
     if (!this.missionSys || this.done) return;
     const out = this.missionSys.update(dt);
     this._hudT = (this._hudT || 0) + dt;
-    if (this._hudT >= 0.25) { this._hudT = 0; this._renderHud(); }
+    if (this._hudT >= 0.25) {
+      this._hudT = 0; this._renderHud();
+      // music intensity: share of living enemies within 45 u of any of our ships
+      const st = this.game._state, foes = st.enemyShips.filter(s => s.alive), ours = st.playerShips.filter(s => s.alive);
+      const close = foes.filter(e => ours.some(p => (p.x - e.x) ** 2 + (p.z - e.z) ** 2 < 2025)).length;
+      music.setIntensity(foes.length ? Math.min(1, close / Math.max(1, Math.min(foes.length, 3))) : 0);
+    }
     if (out) this.finish(out.won, out.reason);
   }
 
@@ -97,6 +106,7 @@ export class BattleSession {
     g._orders?.stop?.(st.playerShips);
     st.allShips.forEach(s => { s.speed = 0; });
     g._vfx.playSound?.(won ? 'victory' : 'defeat');
+    music.play(won ? 'victory' : 'defeat'); music.setIntensity(0);
 
     const shipsOut = this.roster.map(rs => {
       const live = st.playerShips.find(s => s.uid === rs.uid);

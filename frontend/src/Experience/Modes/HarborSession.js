@@ -14,9 +14,11 @@ import { gotoMode }                 from '../../Meta/ModeRouter.js';
 import { serializeBuildings, restoreBuildings } from './HarborPersistence.js';
 import { shipSpec }                 from './shipSpec.js';
 import { toasts }                   from '../UI/ToastQueue.js';
+import { music }                    from '../Utils/MusicDirector.js';
 import { T }                        from '../../i18n.js';
 
-export const HOME_DEF = { ...ISLAND_DEFS[0], x: 0, z: 0 };
+// AW: the home port is the big HARBOR island wrapped round a bay (World/IslandEntity)
+export const HOME_DEF = { ...ISLAND_DEFS[0], x: 0, z: 0, r: 30, shape: 'HARBOR', nm: 'Home Port' };
 
 export class HarborSession {
   /**
@@ -93,6 +95,7 @@ export class HarborSession {
     game._cam.jumpTo(home.x + 4, home.z + 10);
     st.selectedIslandId = home.def.id;
 
+    music.play('harbor'); music.ambience('harbor');
     this._flush();
     this._bindLifecycle();
     this._mountUI();

@@ -161,12 +161,14 @@ suite('Meta · Campaign', () => {
     assertEqual(starsFor({ won: true, lost: [], timeSec: 190 }, m), 2);
     assertEqual(starsFor({ won: false, lost: [], timeSec: 10 }, m), 0);
   });
-  test('patrol is deterministic per seed and scales with rank', () => {
+  test('patrol is deterministic per seed and scales with the fleet that sails', () => {
     const p = newProfile(T0);
     const a = makePatrol(p, 42), b = makePatrol(p, 42);
     assertEqual(JSON.stringify(a), JSON.stringify(b));
-    p.renown = 400;
-    assert(makePatrol(p, 42).enemies.length > a.enemies.length, 'bigger at high rank');
+    const strength = m => m.enemies.reduce((t, e) => t + (e.hp || 0) + (e.hull ? 1 : 0), 0) + m.enemies.length * 100;
+    // a much stronger fleet gets a patrol at least as big (balance: no death spiral, no free wins)
+    p.fleet.push(...['galleon', 'galleon', 'frigate'].map(h => ({ ...p.fleet[0], uid: 'x' + h + Math.random(), hullId: h })));
+    assert(strength(makePatrol(p, 42)) >= strength(a), 'bigger fleet → no weaker patrol');
     assertEqual(rankIndex(400), 4);
   });
   test('every mission is well formed', () => {
