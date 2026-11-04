@@ -54,6 +54,7 @@ export class BattleSession {
   attach(game) {
     this.game = game;
     const st = game._state, m = this.mission;
+    st.resWood = 0; st.resGold = 0;   // battles have no economy (resources live in the harbor)
     st.battleAggro = m.aggro || BATTLE.aggro;                       // data/harbor.js BATTLE knobs
     st.battleFortRegen = m.fortRegen ?? BATTLE.fortRegen;
     st.battleFortRebuild = BATTLE.fortRebuild;

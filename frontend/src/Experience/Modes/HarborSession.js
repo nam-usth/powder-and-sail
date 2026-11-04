@@ -221,6 +221,12 @@ export class HarborSession {
     catch (e) { console.warn('[Harbor] meta UI unavailable', e); return; }
     const ctx = this.uiCtx();
     this.ui = mod.mountHarborUI(ctx);
+    // World Chart gets its own music; back to the harbor theme when it closes
+    const ch = this.ui?.chart;
+    if (ch) for (const fn of ['open', 'close']) {
+      const orig = ch[fn]?.bind(ch);
+      if (orig) ch[fn] = (...a) => { const r = orig(...a); music.play(ch.isOpen?.() ? 'chart' : 'harbor'); return r; };
+    }
     if (this.offline.seconds >= OFFLINE_REPORT_MIN_SEC) mod.showOfflineReport?.(this.offline);
     if (this._abandoned) toasts.show(T.battleAbandoned || 'Your last battle was abandoned — the fleet returned to port.', 4200, 'info');
     const last = this.profile.lastResult;

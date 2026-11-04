@@ -136,6 +136,9 @@ export class InputController {
     // AU: RTS selection / order / control-group keys come first
     if (!st.gameOver && g._command.handleKey(k, code, raw)) return;
 
+    // AW: economy/building panels do not exist in a Sea Battle (their buttons are
+    // hidden) — block their hotkeys too, or battle-only resources could buy upgrades.
+    if (this._g._mode === 'battle' && ['o', 'r', 'b', 'l', 'v', 'm'].includes(k)) return;
     if (k === 'o') { this._g._empire?.toggle(); return; }   // AP: Empire Overview
 
     if (k === 'escape') {
