@@ -29,13 +29,13 @@ export const REGIONS = [
   { id: 'atlantic',   nm: 'The Atlantic Lanes',  vi: 'Hải lộ Đại Tây Dương', minRenown: 30,  col: '#6f9fd8',
     factions: ['england', 'france'],
     desc: 'The open trade lanes, policed by the armed Indiamen and coastal batteries of the Honourable Saltwind Company.' },
-  { id: 'indian',     nm: 'The Indian Ocean',    vi: 'Ấn Độ Dương',          minRenown: 100, col: '#e8b840',
+  { id: 'indian',     nm: 'The Indian Ocean',    vi: 'Ấn Độ Dương',          minRenown: 80,  col: '#e8b840',
     factions: ['portugal', 'malabar'],
     desc: 'Monsoon seas of the pepper trade: Portuguese carracks out of Goa and the swift ghurabs of the Malabar corsairs.' },
-  { id: 'spice',      nm: 'The Spice Straits',   vi: 'Eo biển Hương liệu',   minRenown: 200, col: '#c97c3a',
+  { id: 'spice',      nm: 'The Spice Straits',   vi: 'Eo biển Hương liệu',   minRenown: 160, col: '#c97c3a',
     factions: ['netherlands', 'malay'],
     desc: 'Clove and nutmeg islands held by the Spice Company castles, and the lanong war-praus of the Orang Laut.' },
-  { id: 'southchina', nm: 'The South China Sea', vi: 'Biển Đông',            minRenown: 330, col: '#cc5566',
+  { id: 'southchina', nm: 'The South China Sea', vi: 'Biển Đông',            minRenown: 260, col: '#cc5566',
     factions: ['chinese', 'vietnamese', 'portugal'],
     desc: 'Typhoon waters ruled by the war junks of the Red Banner Fleet and the raiders of the Gulf of Tonkin.' },
 ];
@@ -57,6 +57,12 @@ const FIT = {
   galH:     { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'swivel' },
   lineH:    { L: 'demi_can', R: 'demi_culv', B: 'long9', S: 'swivel' },
   junkH:    { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'grapeshot' },
+  // tier III–V fits (cannon tier ≤ hull tier, data/cannons.js)
+  frigS3:   { L: 'demi_can', R: 'demi_culv', B: 'long12' },
+  heavyS4:  { L: 'culverin', R: 'culverin', B: 'long12' },
+  lineH4:   { L: 'culverin', R: 'carronade32', B: 'mortar2', S: 'swivel' },
+  junkH4:   { L: 'carronade32', R: 'culverin', B: 'mortar2', S: 'grapeshot' },
+  lineH5:   { L: 'cannon_royal', R: 'long24', B: 'mortar2', S: 'long12' },
 };
 
 export const MISSIONS = [
@@ -81,6 +87,7 @@ export const MISSIONS = [
     objective: { type: 'destroy_forts' },
     enemies: [
       { hull: 'sloop', nm: 'Santa Catalina', x: 40, z: 18, loadout: { L: 'carronade', R: 'swivel' } },
+      { hull: 'sloop', nm: 'San Pedro',      x: 44, z: -20, loadout: FIT.falcL },
     ],
     islands: [
       { id: 'lantern', x: 60, z: 0, r: 10, hp: 170, nm: 'Batería de San Telmo', own: 'enemy', tdmg: 9, trof: 8, shape: 'FORTRESS', seed: 3131 },
@@ -97,7 +104,7 @@ export const MISSIONS = [
       type: 'survive', seconds: 150,
       waves: [
         { at: 4,   ships: [{ hull: 'sloop', nm: 'Le Faucon', x: 90, z: -30, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'La Railleuse', x: 92, z: 30, loadout: FIT.pirateL }] },
-        { at: 55,  ships: [{ hull: 'schooner', nm: 'La Licorne', x: 95, z: 0, loadout: FIT.falcL }, { hull: 'sloop', nm: 'Le Hardi', x: 90, z: -45, loadout: FIT.pirateL }] },
+        { at: 55,  ships: [{ hull: 'schooner', nm: 'La Licorne', x: 95, z: 0, loadout: FIT.falcL }, { hull: 'sloop', nm: 'Le Hardi', x: 90, z: -45, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'La Mouette', x: 92, z: 45, loadout: FIT.falcL }] },
         { at: 100, ships: [{ hull: 'brigantine', nm: 'La Belle Étoile', x: 95, z: 10, loadout: { L: 'carronade', R: 'carronade', B: 'swivel' } }, { hull: 'sloop', nm: 'Le Saint-Malo', x: 90, z: 45, loadout: FIT.pirateL }] },
       ],
     },
@@ -114,9 +121,10 @@ export const MISSIONS = [
     desc: 'A Saltwind Company convoy carries powder and shot to our rivals. Take its escorts apart.',
     objective: { type: 'sink_all' },
     enemies: [
-      { hull: 'brigantine', nm: 'Saltwind Merchant', x: 60, z: 0,   loadout: FIT.culvS },
+      { hull: 'brigantine', nm: 'Saltwind Merchant', x: 60, z: 0,   loadout: FIT.culvS, hp: 155 },
       { hull: 'sloop',      nm: 'Good Hope',         x: 66, z: -16, loadout: { L: 'carronade', R: 'carronade' } },
       { hull: 'sloop',      nm: 'Hector',            x: 66, z: 16,  loadout: FIT.falcL },
+      { hull: 'sloop',      nm: 'Merlin',            x: 74, z: 26,  loadout: FIT.pirateL },
     ],
     islands: [rock('s1', 5, -55, 12, 606, 'CRESCENT'), rock('s2', 5, 55, 12, 707)],
     spawn: { x: -72, z: 0 }, parTime: 220,
@@ -128,11 +136,12 @@ export const MISSIONS = [
     desc: 'Saint-Malo corsairs have taken Gullhaven and its fine anchorage. Knock out their battery, then raise your flag over the island.',
     objective: { type: 'capture', islands: ['gullhaven'] },
     enemies: [
-      { hull: 'brigantine', nm: 'Le Hardi',   x: 44, z: -22, loadout: { L: 'demi_culv', R: 'carronade', B: 'swivel' } },
+      { hull: 'brigantine', nm: 'Le Hardi',   x: 44, z: -22, loadout: { L: 'demi_culv', R: 'carronade', B: 'swivel' }, hp: 170 },
       { hull: 'schooner',   nm: 'La Licorne', x: 48, z: 22,  loadout: FIT.falcL },
+      { hull: 'sloop',      nm: 'Le Furet',   x: 62, z: 26,  loadout: FIT.pirateL },
     ],
     islands: [
-      { id: 'gullhaven', x: 55, z: 0, r: 10, hp: 130, nm: 'Gullhaven', own: 'enemy', tdmg: 8, trof: 9, shape: 'ATOLL', seed: 8181, trait: 'haven' },
+      { id: 'gullhaven', x: 55, z: 0, r: 10, hp: 175, nm: 'Gullhaven', own: 'enemy', tdmg: 11, trof: 9, shape: 'ATOLL', seed: 8181, trait: 'haven' },
       rock('s3', -20, -50, 8, 808),
     ],
     spawn: { x: -70, z: 0 }, parTime: 240,
@@ -145,10 +154,11 @@ export const MISSIONS = [
     objective: { type: 'destroy_forts' },
     enemies: [
       { hull: 'frigate', nm: 'Red Dragon', x: 50, z: 0, loadout: FIT.longS },
+      { hull: 'brigantine', nm: 'Sparrowhawk', x: 58, z: -14, loadout: FIT.culvS },
     ],
     islands: [
-      { id: 'tw_n', x: 65, z: -32, r: 10, hp: 190, nm: 'North Battery', own: 'enemy', tdmg: 12, trof: 7, shape: 'FORTRESS', seed: 9191 },
-      { id: 'tw_s', x: 65, z: 32,  r: 10, hp: 190, nm: 'South Battery', own: 'enemy', tdmg: 12, trof: 7, shape: 'FORTRESS', seed: 9292 },
+      { id: 'tw_n', x: 65, z: -32, r: 10, hp: 240, nm: 'North Battery', own: 'enemy', tdmg: 13, trof: 7, shape: 'FORTRESS', seed: 9191 },
+      { id: 'tw_s', x: 65, z: 32,  r: 10, hp: 240, nm: 'South Battery', own: 'enemy', tdmg: 13, trof: 7, shape: 'FORTRESS', seed: 9292 },
     ],
     spawn: { x: -70, z: 0 }, parTime: 300,
     reward: { wood: 320, gold: 260 }, firstClear: { wood: 260, gold: 220 }, renown: 24, requires: ['straits_1', 'straits_2'],
@@ -163,8 +173,8 @@ export const MISSIONS = [
       type: 'survive', seconds: 180,
       waves: [
         { at: 4,   ships: [{ hull: 'ghurab', nm: 'Monsoon Hawk', x: 90, z: -20, loadout: FIT.grapeL }, { hull: 'dhow', nm: 'Pepper Wind', x: 90, z: 25, loadout: FIT.falcL }] },
-        { at: 60,  ships: [{ hull: 'ghurab', nm: 'Calicut Star', x: 95, z: 0, loadout: FIT.grapeL }, { hull: 'dhow', x: 20, z: -95, loadout: FIT.falcL }, { hull: 'dhow', x: 20, z: 95, loadout: FIT.falcL }] },
-        { at: 120, ships: [{ hull: 'ghurab', nm: 'Tiger of Kannur', x: 95, z: 15, loadout: FIT.grapeL }, { hull: 'ghurab', nm: "Kunjali's Wrath", x: 95, z: -15, loadout: FIT.grapeL }, { hull: 'frigate', nm: 'São Bento', faction: 'portugal', x: 100, z: 0, loadout: FIT.canS }] },
+        { at: 60,  ships: [{ hull: 'ghurab', nm: 'Calicut Star', x: 95, z: 0, loadout: FIT.grapeL }, { hull: 'dhow', x: 20, z: -95, loadout: FIT.falcL }, { hull: 'dhow', x: 20, z: 95, loadout: FIT.falcL }, { hull: 'ghurab', nm: 'Kozhikode', x: 95, z: 30, loadout: FIT.grapeL }] },
+        { at: 120, ships: [{ hull: 'ghurab', nm: 'Tiger of Kannur', x: 95, z: 15, loadout: FIT.grapeL }, { hull: 'ghurab', nm: "Kunjali's Wrath", x: 95, z: -15, loadout: FIT.grapeL }, { hull: 'frigate', nm: 'São Bento', faction: 'portugal', x: 100, z: 0, loadout: FIT.canS }, { hull: 'dhow', nm: 'Mappila', x: 95, z: -40, loadout: FIT.falcL }] },
       ],
     },
     enemies: [],
@@ -178,9 +188,10 @@ export const MISSIONS = [
     desc: 'Three carracks of the Estado da Índia sail from Goa under escort. Break the squadron.',
     objective: { type: 'sink_all' },
     enemies: [
-      { hull: 'galleon',    nm: 'Madre de Deus', x: 70, z: 0,   loadout: FIT.galH },
+      { hull: 'galleon',    nm: 'Madre de Deus', x: 70, z: 0,   loadout: FIT.galH, hp: 290 },
       { hull: 'frigate',    nm: 'São Gabriel',   x: 62, z: -22, loadout: FIT.longS },
-      { hull: 'brigantine', nm: 'Santa Cruz',    x: 62, z: 22,  loadout: FIT.canS },
+      { hull: 'brigantine', nm: 'Santa Cruz',    x: 62, z: 22,  loadout: FIT.longS },
+      { hull: 'frigate',    nm: 'São Rafael',    x: 82, z: -28, loadout: FIT.longS },
       { hull: 'ghurab',     nm: 'Pepper Wind', faction: 'malabar', x: 78, z: 30, loadout: FIT.grapeL },
     ],
     islands: [rock('i3', 0, -60, 12, 1203, 'CRESCENT'), rock('i4', 0, 60, 12, 1204, 'ATOLL')],
@@ -195,9 +206,12 @@ export const MISSIONS = [
     enemies: [
       { hull: 'frigate', nm: 'Flor de la Mar', x: 45, z: -18, loadout: FIT.longS },
       { hull: 'ghurab',  nm: 'Monsoon Hawk', faction: 'malabar', x: 50, z: 20, loadout: FIT.grapeL },
+      { hull: 'frigate', nm: 'Santo António', x: 55, z: 30, loadout: FIT.canS },
+      { hull: 'brigantine', nm: 'São Jorge', x: 52, z: -32, loadout: FIT.longS },
+      { hull: 'galleon',    nm: 'São Mateus', x: 72, z: -14, loadout: FIT.galH },
     ],
     islands: [
-      { id: 'pepper_fort', x: 62, z: 0, r: 11, hp: 260, nm: 'Fortaleza de Kannur', own: 'enemy', tdmg: 13, trof: 7, shape: 'FORTRESS', seed: 1313 },
+      { id: 'pepper_fort', x: 62, z: 0, r: 11, hp: 360, nm: 'Fortaleza de Kannur', own: 'enemy', tdmg: 16, trof: 7, shape: 'FORTRESS', seed: 1313 },
       rock('i5', 10, 40, 8, 1305), rock('i6', 20, -45, 7, 1306, 'CRESCENT'),
     ],
     spawn: { x: -70, z: 0 }, parTime: 330,
@@ -213,8 +227,8 @@ export const MISSIONS = [
       type: 'survive', seconds: 200,
       waves: [
         { at: 4,   ships: [{ hull: 'lanong', nm: 'Lanong Merah', x: 90, z: -20, loadout: FIT.grapeL }, { hull: 'lanong', nm: 'Naga Laut', x: 90, z: 20, loadout: FIT.grapeL }] },
-        { at: 60,  ships: [{ hull: 'lanong', nm: 'Angin Selatan', x: 10, z: -95, loadout: FIT.grapeL }, { hull: 'lanong', nm: 'Penjajap Hitam', x: 10, z: 95, loadout: FIT.grapeL }, { hull: 'ghurab', x: 95, z: 0, loadout: FIT.falcL }] },
-        { at: 125, ships: [{ hull: 'heavy_frigate', nm: 'Witte Valk', faction: 'netherlands', x: 100, z: 0, loadout: FIT.longS }, { hull: 'lanong', nm: 'Bintang Temasek', x: -20, z: -95, loadout: FIT.grapeL }, { hull: 'lanong', x: -20, z: 95, loadout: FIT.grapeL }] },
+        { at: 60,  ships: [{ hull: 'lanong', nm: 'Angin Selatan', x: 10, z: -95, loadout: FIT.grapeL }, { hull: 'lanong', nm: 'Penjajap Hitam', x: 10, z: 95, loadout: FIT.grapeL }, { hull: 'ghurab', x: 95, z: 0, loadout: FIT.falcL }, { hull: 'lanong', nm: 'Ular Besi', x: 95, z: 30, loadout: FIT.grapeL }] },
+        { at: 125, ships: [{ hull: 'heavy_frigate', nm: 'Witte Valk', faction: 'netherlands', x: 100, z: 0, loadout: FIT.heavyS4 }, { hull: 'lanong', nm: 'Bintang Temasek', x: -20, z: -95, loadout: FIT.grapeL }, { hull: 'lanong', x: -20, z: 95, loadout: FIT.grapeL }, { hull: 'lanong', nm: 'Raja Laut', x: 100, z: 30, loadout: FIT.grapeL }] },
       ],
     },
     enemies: [],
@@ -228,9 +242,9 @@ export const MISSIONS = [
     desc: "The Spice Company's homeward fleet is loaded with nutmeg and guarded like a treasury. Send it to the bottom.",
     objective: { type: 'sink_all' },
     enemies: [
-      { hull: 'war_galleon',   nm: 'Gouden Leeuw', x: 72, z: 0,   loadout: FIT.lineH },
-      { hull: 'heavy_frigate', nm: 'Witte Valk',   x: 62, z: -22, loadout: FIT.longS },
-      { hull: 'frigate',       nm: 'Zeerob',       x: 62, z: 22,  loadout: FIT.longS },
+      { hull: 'war_galleon',   nm: 'Gouden Leeuw', x: 72, z: 0,   loadout: FIT.lineH4 },
+      { hull: 'heavy_frigate', nm: 'Witte Valk',   x: 62, z: -22, loadout: FIT.heavyS4 },
+      { hull: 'frigate',       nm: 'Zeerob',       x: 62, z: 22,  loadout: FIT.frigS3 },
       { hull: 'frigate',       nm: 'De Hoop',      x: 80, z: -30, loadout: FIT.canS },
       { hull: 'lanong',        nm: 'Naga Laut', faction: 'malay', x: 80, z: 30, loadout: FIT.grapeL },
     ],
@@ -244,13 +258,15 @@ export const MISSIONS = [
     desc: 'The Company castle at Amboina chokes the clove trade with two bastions. Reduce them both.',
     objective: { type: 'destroy_forts' },
     enemies: [
-      { hull: 'heavy_frigate', nm: 'Nieuw Batavia', x: 48, z: -10, loadout: FIT.longS },
-      { hull: 'frigate',       nm: 'Amboina',       x: 52, z: 14,  loadout: FIT.canS },
+      { hull: 'heavy_frigate', nm: 'Nieuw Batavia', x: 48, z: -10, loadout: FIT.heavyS4 },
+      { hull: 'frigate',       nm: 'Amboina',       x: 52, z: 14,  loadout: FIT.frigS3 },
       { hull: 'lanong',        nm: 'Bintang Temasek', faction: 'malay', x: 40, z: 30, loadout: FIT.grapeL },
+      { hull: 'war_galleon',   nm: 'Oranje',        x: 60, z: 0,   loadout: FIT.lineH4 },
+      { hull: 'heavy_frigate', nm: 'Middelburg',    x: 50, z: -38, loadout: FIT.heavyS4 },
     ],
     islands: [
-      { id: 'amb_w', x: 62, z: -30, r: 11, hp: 300, nm: 'Bastion Zeeland', own: 'enemy', tdmg: 15, trof: 6, shape: 'FORTRESS', seed: 1515 },
-      { id: 'amb_e', x: 70, z: 30,  r: 11, hp: 300, nm: 'Bastion Holland', own: 'enemy', tdmg: 15, trof: 6, shape: 'FORTRESS', seed: 1516 },
+      { id: 'amb_w', x: 62, z: -30, r: 11, hp: 360, nm: 'Bastion Zeeland', own: 'enemy', tdmg: 20, trof: 6, shape: 'FORTRESS', seed: 1515 },
+      { id: 'amb_e', x: 70, z: 30,  r: 11, hp: 360, nm: 'Bastion Holland', own: 'enemy', tdmg: 20, trof: 6, shape: 'FORTRESS', seed: 1516 },
       rock('p6', 0, 0, 7, 1506, 'ATOLL'),
     ],
     spawn: { x: -72, z: 0 }, parTime: 360,
@@ -265,9 +281,9 @@ export const MISSIONS = [
     objective: {
       type: 'survive', seconds: 210,
       waves: [
-        { at: 4,   ships: [{ hull: 'junk', nm: 'Sóng Bạc', x: 90, z: 0, loadout: FIT.junkS }, { hull: 'ghe_bau', nm: 'Phong Ba', x: 0, z: -95, loadout: FIT.chainL }] },
-        { at: 65,  ships: [{ hull: 'war_junk', nm: 'Hải Long', x: 95, z: -30, loadout: FIT.junkH }, { hull: 'junk', nm: 'Cá Kình', x: 0, z: 95, loadout: FIT.junkS }] },
-        { at: 130, ships: [{ hull: 'war_junk', nm: 'Bạch Đằng Gió', x: 95, z: 25, loadout: FIT.junkH }, { hull: 'junk', nm: 'Jade Tide', faction: 'chinese', x: -20, z: -95, loadout: FIT.junkS }, { hull: 'ghe_bau', x: -20, z: 95, loadout: FIT.chainL }] },
+        { at: 4,   ships: [{ hull: 'junk', nm: 'Sóng Bạc', x: 90, z: 0, loadout: FIT.junkS }, { hull: 'ghe_bau', nm: 'Phong Ba', x: 0, z: -95, loadout: FIT.chainL }, { hull: 'junk', nm: 'Hắc Phong', x: 90, z: 30, loadout: FIT.junkS }] },
+        { at: 65,  ships: [{ hull: 'war_junk', nm: 'Hải Long', x: 95, z: -30, loadout: FIT.junkH4 }, { hull: 'junk', nm: 'Cá Kình', x: 0, z: 95, loadout: FIT.junkS }, { hull: 'war_junk', nm: 'Thủy Tiên', x: 95, z: 30, loadout: FIT.junkH4 }] },
+        { at: 130, ships: [{ hull: 'war_junk', nm: 'Bạch Đằng Gió', x: 95, z: 25, loadout: FIT.junkH4 }, { hull: 'junk', nm: 'Jade Tide', faction: 'chinese', x: -20, z: -95, loadout: FIT.junkS }, { hull: 'ghe_bau', x: -20, z: 95, loadout: FIT.chainL }, { hull: 'war_junk', nm: 'Long Vương', x: 100, z: -25, loadout: FIT.junkH4 }, { hull: 'war_junk', nm: 'Hổ Biển', x: 100, z: 45, loadout: FIT.junkH4 }] },
       ],
     },
     enemies: [],
@@ -281,11 +297,13 @@ export const MISSIONS = [
     desc: 'The Red Banner Fleet gathers off Amoy — war junks with painted eyes and a hundred guns. Meet it and sink it.',
     objective: { type: 'sink_all' },
     enemies: [
-      { hull: 'war_junk', nm: 'Golden Carp',  x: 70, z: 0,   loadout: FIT.junkH },
-      { hull: 'war_junk', nm: 'Red Kite',     x: 64, z: -24, loadout: FIT.junkH },
+      { hull: 'war_junk', nm: 'Golden Carp',  x: 70, z: 0,   loadout: FIT.junkH4, hp: 420 },
+      { hull: 'war_junk', nm: 'Red Kite',     x: 64, z: -24, loadout: FIT.junkH4 },
       { hull: 'junk',     nm: 'Jade Tide',    x: 62, z: 24,  loadout: FIT.junkS },
       { hull: 'junk',     nm: "Dragon's Whisker", x: 80, z: -34, loadout: FIT.junkS },
       { hull: 'ghe_bau',  nm: 'Hải Long', faction: 'vietnamese', x: 80, z: 34, loadout: FIT.chainL },
+      { hull: 'war_junk', nm: 'Black Tortoise', x: 88, z: 12, loadout: FIT.junkH4 },
+      { hull: 'war_junk', nm: 'White Tiger',    x: 90, z: -12, loadout: FIT.junkH4 },
     ],
     islands: [rock('t3', 0, -60, 12, 1414, 'CRESCENT'), rock('t4', 0, 60, 12, 1515, 'ATOLL')],
     spawn: { x: -78, z: 0 }, parTime: 330,
@@ -297,12 +315,14 @@ export const MISSIONS = [
     desc: "The Red Banner's island citadel commands the South China Sea. Its walls, its war junks and its admiral's flagship must fall.",
     objective: { type: 'destroy_forts' },
     enemies: [
-      { hull: 'war_junk',  nm: 'Thunder of Amoy', x: 55, z: -14, loadout: FIT.junkH },
-      { hull: 'war_junk',  nm: 'Golden Carp',     x: 55, z: 16,  loadout: FIT.junkH },
-      { hull: 'man_o_war', nm: 'Nossa Senhora da Graça', faction: 'portugal', x: 65, z: 0, loadout: FIT.lineH },
+      { hull: 'war_junk',  nm: 'Thunder of Amoy', x: 55, z: -14, loadout: FIT.junkH4 },
+      { hull: 'war_junk',  nm: 'Golden Carp',     x: 55, z: 16,  loadout: FIT.junkH4 },
+      { hull: 'man_o_war', nm: 'Nossa Senhora da Graça', faction: 'portugal', x: 65, z: 0, loadout: FIT.lineH5, hp: 520 },
+      { hull: 'junk',      nm: 'Azure Dragon',    x: 70, z: -30, loadout: FIT.junkS },
+      { hull: 'junk',      nm: 'Jade Tide',       x: 62, z: 32,  loadout: FIT.junkS },
     ],
     islands: [
-      { id: 'citadel', x: 80, z: 0, r: 14, hp: 420, nm: 'Citadel of Storms', own: 'enemy', tdmg: 18, trof: 5, shape: 'FORTRESS', seed: 1616, trait: 'bastion' },
+      { id: 'citadel', x: 80, z: 0, r: 14, hp: 560, nm: 'Citadel of Storms', own: 'enemy', tdmg: 22, trof: 5, shape: 'FORTRESS', seed: 1616, trait: 'bastion' },
       rock('t5', 10, -50, 9, 1717), rock('t6', 10, 50, 9, 1818, 'CRESCENT'),
     ],
     spawn: { x: -75, z: 0 }, parTime: 420,
@@ -327,7 +347,7 @@ export const PATROL = {
     spice:      ['war_galleon', 'heavy_frigate', 'lanong', 'lanong', 'frigate', 'lanong'],
     southchina: ['war_junk', 'war_junk', 'junk', 'junk', 'ghe_bau', 'ghe_bau'],
   },
-  strengthRatio: 0.55,
+  strengthRatio: 0.45,
   maxShips: 5,
   reward: { base: { wood: 40, gold: 30 }, perStrength: { wood: 0.10, gold: 0.075 } },
   renown: 4,
@@ -335,6 +355,12 @@ export const PATROL = {
     light:    { L: 'carronade', R: 'swivel' },
     standard: { L: 'demi_culv', R: 'demi_culv', B: 'swivel' },
     heavy:    { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'swivel' },
+  },
+  /** Class → hull tier overrides (cannon tier ≤ hull tier); falls back to `loadouts`. */
+  loadoutsByTier: {
+    light:    { 2: { L: 'grapeshot', R: 'falconet' }, 3: { L: 'demi_culv', R: 'grapeshot' } },
+    standard: { 3: { L: 'demi_can', R: 'demi_culv', B: 'long12' }, 4: { L: 'culverin', R: 'culverin', B: 'long12' } },
+    heavy:    { 4: { L: 'culverin', R: 'carronade32', B: 'mortar2', S: 'swivel' } },
   },
 };
 

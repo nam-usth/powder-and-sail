@@ -6,7 +6,9 @@ import { applyOffline, harborRates, harborCaps, offlineSeconds } from '../fronte
 import { canBuild, startBuild, tickRoster, repairQuote, startRepair, startSalvage, fleetCap, shipyardLevel, rush, scrapShip } from '../frontend/src/Meta/Shipyard.js';
 import { missionState, applyBattleResult, makePatrol, starsFor, rankIndex, getMission } from '../frontend/src/Meta/Campaign.js';
 import { parseMode, modeUrl } from '../frontend/src/Meta/ModeRouter.js';
-import { OFFLINE_MAX_SEC, HULLS, PROFILE_KEY } from '../frontend/src/data/harbor.js';
+import { OFFLINE_MAX_SEC, HULLS, PROFILE_KEY, HARBOR_ECONOMY } from '../frontend/src/data/harbor.js';
+/** Harbor clock (balance pass): harbor income = Open War rates × rateMult. */
+const RM = HARBOR_ECONOMY.rateMult;
 import { MISSIONS } from '../frontend/src/data/campaign.js';
 import { CANNON_BY_ID, canMountCannon } from '../frontend/src/data/cannons.js';
 import { resolveHull } from '../frontend/src/Meta/Campaign.js';
@@ -63,9 +65,9 @@ suite('Meta · Harbor offline economy', () => {
     p.harbor.buildings = [{ buildingId: 'lumber_mill', level: 1, state: 'active' }];
     p.res = { wood: 0, gold: 0 };
     const r = harborRates(p.harbor.buildings);
-    assertEqual(r.wood, WOOD_RATE + 2); assertEqual(r.gold, GOLD_RATE);
+    assertEqual(r.wood, (WOOD_RATE + 2) * RM); assertEqual(r.gold, GOLD_RATE * RM);
     const rep = applyOffline(p, T0 + 10_000);
-    assertEqual(Math.round(rep.wood), (WOOD_RATE + 2) * 10);
+    assertEqual(Math.round(rep.wood), Math.round((WOOD_RATE + 2) * RM * 10));
     const p2 = newProfile(T0); p2.res.wood = 0;
     applyOffline(p2, T0 + 3600_000);
     assertEqual(p2.res.wood, harborCaps(p2.harbor.buildings).wood);
@@ -74,7 +76,7 @@ suite('Meta · Harbor offline economy', () => {
   test('construction under way does not produce, but its timer advances', () => {
     const p = newProfile(T0);
     p.harbor.buildings = [{ buildingId: 'lumber_mill', level: 1, state: 'building', buildTimer: 30 }];
-    assertEqual(harborRates(p.harbor.buildings).wood, WOOD_RATE);
+    assertEqual(harborRates(p.harbor.buildings).wood, WOOD_RATE * RM);
     applyOffline(p, T0 + 20_000);
     assertEqual(Math.round(p.harbor.buildings[0].buildTimer), 10);
   });

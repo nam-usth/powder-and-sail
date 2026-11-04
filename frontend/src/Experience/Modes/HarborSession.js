@@ -68,6 +68,7 @@ export class HarborSession {
     this.game = game;
     const st = game._state, p = this.profile;
     st.econRateMult = HARBOR_ECONOMY.rateMult;      // harbor clock (EconomySystem / HUD read it)
+    st.harborBuildTimeMult = HARBOR_ECONOMY.buildTimeMult;   // real build timers at home (Open War keeps BUILD_TIME_MULT)
     const home = game._islands[0];
     st.resWood = p.res.wood;
     st.resGold = p.res.gold;

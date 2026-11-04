@@ -1,9 +1,10 @@
+import { CANNON_BY_ID, canMountCannon } from '../data/cannons.js';
 // ── PROFILE — persistent player save (design/gdd/campaign-meta.md) ──
 // Pure JS: no DOM, no Three.js. Storage is injected so tests run in Node.
 
 import {
   PROFILE_KEY, PROFILE_VERSION, START_RES, STARTER_FLEET, STARTER_BUILDINGS,
-  HULLS, SHIP_NAMES,
+  HULLS, SHIP_NAMES, DEFAULT_LOADOUT,
 } from '../data/harbor.js';
 
 /**
@@ -35,15 +36,19 @@ export function uid(prefix = 's', now = Date.now()) {
 }
 
 /**
- * Default cannon fit for a fresh hull of the given class: demi-culverins on
- * both broadsides (range 20 — reaches a fort from outside its shore line,
- * which carronades/swivels at range 8 never can) + swivels fore/aft.
+ * Default cannon fit for a fresh hull: data/harbor.js DEFAULT_LOADOUT by
+ * combat class and hull tier (the best entry at or below `tier`), so every
+ * fit respects the cannon-tier rule (data/cannons.js canMountCannon) and a
+ * new tier-N hull arrives with tier-N guns. Every fit has a range-20 gun on
+ * each broadside (reaches a fort from outside its shore line).
  * Rationale: design/balance/report.md §Default loadout.
+ * @param {string} hullClass 'light'|'standard'|'heavy'
+ * @param {number} [tier=1] hull tier I..V
  */
-export function defaultLoadout(hullClass) {
-  if (hullClass === 'heavy')    return { L: 'demi_culv', R: 'demi_culv', B: 'swivel', S: 'swivel' };
-  if (hullClass === 'standard') return { L: 'demi_culv', R: 'demi_culv', B: 'swivel' };
-  return { L: 'demi_culv', R: 'demi_culv' };
+export function defaultLoadout(hullClass, tier = 1) {
+  const byTier = DEFAULT_LOADOUT[hullClass] || DEFAULT_LOADOUT.light;
+  for (let t = tier; t >= 1; t--) if (byTier[t]) return { ...byTier[t] };
+  return { ...byTier[Math.min(...Object.keys(byTier).map(Number))] };
 }
 
 /**
@@ -60,7 +65,7 @@ export function makeRosterShip(hullId, o = {}, now = Date.now()) {
     hpFrac: o.hpFrac ?? 1,
     status: o.status || 'ready',       // ready | building | repairing | wreck
     readyAt: o.readyAt || 0,           // epoch ms when building/repairing finishes
-    loadout: o.loadout || defaultLoadout(h.hull),
+    loadout: o.loadout || defaultLoadout(h.hull, h.tier),
     upgrades: o.upgrades || { spd: 0, hp: 0, rof: 0 },
     battles: 0, sinks: 0,
   };
@@ -103,6 +108,16 @@ export function newProfile(now = Date.now()) {
 }
 
 /** Fill fields missing from older/partial saves. Never throws. */
+/** Replace cannons a hull may not carry (saves from before cannon tiers). */
+function legalizeLoadout(s) {
+  const h = HULLS[s.hullId]; if (!h || !s.loadout) return;
+  const def = defaultLoadout(h.hull, h.tier);
+  for (const sl of Object.keys(s.loadout)) {
+    const cn = CANNON_BY_ID.get(s.loadout[sl]);
+    if (s.loadout[sl] && !canMountCannon(cn, { hullTier: h.tier })) s.loadout[sl] = def[sl] ?? null;
+  }
+}
+
 export function migrate(raw, now = Date.now()) {
   const base = newProfile(now);
   if (!raw || typeof raw !== 'object') return base;
@@ -118,6 +133,7 @@ export function migrate(raw, now = Date.now()) {
     ? raw.fleet.filter(s => s && HULLS[s.hullId] && !HULLS[s.hullId].enemyOnly).map(s => ({ ...makeRosterShip(s.hullId, {}, now), ...s }))
     : base.fleet;
   if (!p.fleet.length) p.fleet = base.fleet;
+  p.fleet.forEach(legalizeLoadout);
   if (typeof p.lastSeen !== 'number' || !isFinite(p.lastSeen)) p.lastSeen = now;
   return p;
 }

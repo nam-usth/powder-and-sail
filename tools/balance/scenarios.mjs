@@ -21,7 +21,11 @@ export function broadside(hullClass) {
 }
 
 const S = (hull, o = {}) => ({ hull, ...o });
-const B = (hull, o = {}) => ({ hull, loadout: 'broadside', ...o });
+// Cannon-tier rule (cannon tier ≤ hull tier): a fresh hull now ships with its
+// tier's default fit (data/harbor.js DEFAULT_LOADOUT; T2 standard = the
+// Broadside preset), so the realistic fleet keeps the default guns. B() is kept
+// as an alias so the rosters below read as before.
+const B = (hull, o = {}) => ({ hull, ...o });
 
 // Progression model (targets.md): sea k ≈ tier k. Fleet cap = 3 + (shipyard
 // level − 1), so the roster grows by one ship per shipyard level:

@@ -19,7 +19,10 @@ export const START_RES = { wood: 260, gold: 160 };
 // the persistent harbor runs the SAME buildings on a slower clock so a
 // campaign lasts hours, not minutes (design/balance/report.md §Economy).
 // rateMult scales base income AND building production, live and offline.
-export const HARBOR_ECONOMY = { rateMult: 1 };
+// buildTimeMult replaces constants.BUILD_TIME_MULT (0.12, Open War "test
+// mode") for harbor building construction/upgrade timers — WIRING: BuildSystem
+// must use it in harbor mode (see design/balance/report.md §Wiring).
+export const HARBOR_ECONOMY = { rateMult: 0.25, buildTimeMult: 1 };
 /** The harbor keeps producing while the fleet is at sea (offline rules, capped). */
 export const PRODUCE_AT_SEA = true;
 
@@ -60,11 +63,11 @@ export const HULLS = {
   xebec:      H('xebec',      'Xebec',      3, 'light',    { col: 0xc0a040, spd: .21, sc: .95, disp: 300,  hp: 150, cost: { wood: 660, gold: 600 }, buildSec: 240 }),
   galleon:    H('galleon',    'Galleon',    3, 'heavy',    { col: 0xe8c040, spd: .12, sc: 1.25, disp: 900, hp: 240, cost: { wood: 900, gold: 620 }, buildSec: 330 }),
   // Tier IV — heavy frigates & war galleons
-  heavy_frigate: H('heavy_frigate', 'Heavy Frigate', 4, 'standard', { col: 0x4070c0, spd: .15, sc: 1.18, disp: 650, hp: 260, cost: { wood: 1250, gold: 900 }, buildSec: 420 }),
-  war_galleon:   H('war_galleon',   'War Galleon',   4, 'heavy',    { col: 0xc89030, spd: .12, sc: 1.35, disp: 1100, hp: 330, cost: { wood: 1500, gold: 1050 }, buildSec: 480 }),
+  heavy_frigate: H('heavy_frigate', 'Heavy Frigate', 4, 'standard', { col: 0x4070c0, spd: .15, sc: 1.18, disp: 650, hp: 260, cost: { wood: 1150, gold: 850 }, buildSec: 420 }),
+  war_galleon:   H('war_galleon',   'War Galleon',   4, 'heavy',    { col: 0xc89030, spd: .12, sc: 1.35, disp: 1100, hp: 330, cost: { wood: 1300, gold: 950 }, buildSec: 480 }),
   // Tier V — ships of the line
-  man_o_war:        H('man_o_war',        'Man-o-War',        5, 'heavy', { col: 0xd4a020, spd: .11, sc: 1.5,  disp: 1400, hp: 430, cost: { wood: 1900, gold: 1400 }, buildSec: 600 }),
-  ship_of_the_line: H('ship_of_the_line', 'Ship of the Line', 5, 'heavy', { col: 0xf0d070, spd: .10, sc: 1.62, disp: 1700, hp: 500, cost: { wood: 2200, gold: 1650 }, buildSec: 720 }),
+  man_o_war:        H('man_o_war',        'Man-o-War',        5, 'heavy', { col: 0xd4a020, spd: .11, sc: 1.5,  disp: 1400, hp: 430, cost: { wood: 1600, gold: 1250 }, buildSec: 600 }),
+  ship_of_the_line: H('ship_of_the_line', 'Ship of the Line', 5, 'heavy', { col: 0xf0d070, spd: .10, sc: 1.62, disp: 1700, hp: 500, cost: { wood: 1800, gold: 1400 }, buildSec: 720 }),
 
   // Enemy-only (style = mesh family, data/factions.js). Same combat classes as
   // the player's hulls; stats sit between the player tiers they meet.
@@ -96,6 +99,30 @@ export const STARTER_BUILDINGS = [
   { buildingId: 'gold_mine',   gridKey: '3_6' },
 ];
 
+// ── Default cannon fits (Meta/Profile.defaultLoadout) ─────────
+// By combat class → hull tier; a hull gets the entry at or below its tier.
+// Every gun respects the tier rule (cannon tier ≤ hull tier, data/cannons.js)
+// and every fit has a range-20 gun on both broadsides so a fresh ship can
+// reach a fort (range-8 carronades/swivels never can). Tier II+ standard
+// hulls carry the LoadoutPanel "Broadside" preset (long 9 chaser).
+export const DEFAULT_LOADOUT = {
+  light: {
+    1: { L: 'falconet',  R: 'falconet' },                                   // T1 guns only; falconet = range 20
+    2: { L: 'demi_culv', R: 'demi_culv' },
+    3: { L: 'demi_can',  R: 'demi_culv' },
+  },
+  standard: {
+    2: { L: 'demi_culv', R: 'demi_culv', B: 'long9' },
+    3: { L: 'demi_can',  R: 'demi_culv', B: 'long12' },
+    4: { L: 'culverin',  R: 'culverin',  B: 'long12' },
+  },
+  heavy: {
+    3: { L: 'demi_can',     R: 'demi_culv',   B: 'mortar1', S: 'swivel' },
+    4: { L: 'culverin',     R: 'carronade32', B: 'mortar2', S: 'swivel' },
+    5: { L: 'cannon_royal', R: 'long24',      B: 'mortar2', S: 'long12' },
+  },
+};
+
 // ── Fleet cap / repairs / salvage ─────────────────────────────
 export const FLEET_CAP_BASE = 3;
 export const FLEET_CAP_MAX  = 8;
@@ -106,7 +133,7 @@ export const REPAIR_SEC_FULL  = { light: 30, standard: 50, heavy: 80 };
 export const SALVAGE_COST_FRAC = 0.5;
 export const SALVAGE_SEC       = { light: 45, standard: 80, heavy: 120 };
 /** Harbor moorings slowly mend afloat ships (HP fraction per second). */
-export const MOORING_REGEN_FRAC = 0.004;
+export const MOORING_REGEN_FRAC = 0.0008;   // full heal ≈ 21 min (paid Repair: 30–80 s)
 /** Ships launched from a shipyard never reach the harbor below this HP fraction. */
 export const MIN_AFLOAT_FRAC = 0.05;
 

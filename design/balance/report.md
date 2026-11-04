@@ -1,0 +1,191 @@
+# Balance report — campaign, Sea Battle, harbor economy (milestone AW)
+
+Targets and method: `design/balance/targets.md`. Tools: `tools/balance/sim_battle.mjs`,
+`tools/balance/sim_economy.mjs`, `tools/balance/scenarios.mjs`. Raw runs:
+`tools/balance/out/battle_{iter1,final,confirm}.{md,json}`, `economy_{econ_before,final}.md`.
+
+**Columns:** "Novice" and "Skilled" are the two scripted players. "HP left" is how much fleet HP survives, as a mean.
+**Samples:** the pre-balance column used 10 seeds. Every other run used 5 or 6 seeds per mission and policy, so
+one seed is ±20 points. Read a 60–100 % novice result as "in band ± noise".
+
+## 1. Summary
+
+| Target | Before (pre-balance → hand-over) | After |
+|---|---|---|
+| T1 reef_1 novice ≥ 90 % | 100 % | **100 %** (91 s, ★★★) |
+| T2 later missions novice 70–85 % | fort missions 0–10 % → then almost everything 100 % (hand-over) | 9 of 14 missions at 60–100 %. Some of the survive and late missions are still 100 % (see §6) |
+| T3 skilled ≥ 90 % | reef_2/straits_3 0–40 % | **100 % on every mission** |
+| T4 battle 2–6 min | 75 s–6 min | 1.5–6.7 min. reef_1 and patrols run 1–1.5 min |
+| T5 ★★★ not automatic | novice ★★★ 60–100 % on most missions | novice ★★★ is mostly 0–40 %. Skilled ★★★ is 40–100 % |
+| T6 final needs T4/V | 7×T3: novice 17 %, skilled 100 % | 7×T3: **novice 0 %**, skilled 80 %. 4×T4 + 3×T3: novice 80 %, skilled 100 % |
+| T7 no death spiral | 1 sloop / 2 ships always win | 1 sloop and sloop+brigantine: 100 %. A lone frigate in South China: novice 40 % (see §6) |
+| T8 first T2 owned 10–15 min | T2 affordable in ~1 min, owned ~14 min | **15 min** median (p10 13, p90 22) |
+| T9 first T5 after 2–4 h active | 1.6 h | **2.8 h** (continuous), 2.6 h (8-h check-ins). Whole campaign 3.0–3.5 h |
+| T10 offline ≤ active per hour | holds | holds: offline ≤ 1 cap per 8 h (≈ 300/h) vs ≈ 21 000/h active |
+
+## 2. Battle results
+
+The novice and skilled columns show win % and HP left. Times are novice means.
+
+| Mission | Pre-balance (novice / skilled) | Hand-over iter1 (novice / skilled, HP left) | **Final novice** | **Final skilled** | Novice time | Novice ★/★★/★★★ |
+|---|---|---|---|---|---|---|
+| reef_1 | 100 / 100 | 100 / 100 (72 %) | **100 %** (78 %) | 100 % | 91 s | 0/0/100 |
+| reef_2 fort | **0 / 0** | 67 / 100 (37 %) | **80 %** (29 %) | 100 % | 214 s | 50/25/25 |
+| reef_3 survive | 100 / 100 | 100 / 100 (38 %) | **100 %** (32 %) | 100 % | 150 s | 80/0/20 |
+| straits_1 | 70 / 90 | 100 / 100 (37 %) | **40–60 %** ¹ | 100 % | 150–180 s | 100/0/0 |
+| straits_2 capture | 100 / 100 | 100 / 100 (60 %) | **80 %** (40 %) | 100 % | 236 s | 0/25/75 |
+| straits_3 2 forts | **10 / 40** | 100 / 100 (57 %) | **40 → 100 %** ² | 100 % | 222 s | 60/0/40 |
+| indian_1 survive | – | 100 / 100 (44 %) | **60 %** (15 %) | 100 % | 174 s | 67/0/33 |
+| indian_2 | – | 100 / 100 (41 %) | **80 %** (21 %) | 100 % | 148 s | 100/0/0 |
+| indian_3 capture | – | 100 / 100 (77 %) | **80 %** (26 %) | 100 % | 357 s | 75/0/25 |
+| spice_1 survive | – | 100 / 100 (46 %) | **100 %** (30 %) | 100 % | 200 s | 100/0/0 |
+| spice_2 | – | 100 / 100 (50 %) | **100 %** (40 %) | 100 % | 140 s | 100/0/0 |
+| spice_3 2 forts | – | 100 / 100 (81 %) | **100 %** (47 %) | 100 % | 195 s | 60/0/40 |
+| storm_1 survive | – | 100 / 100 (73 %) | **100 %** (40 %) | 100 % | 210 s | 100/0/0 |
+| storm_2 | – | 100 / 100 (65 %) | **100 %** (38 %) | 100 % | 136 s | 100/0/0 |
+| storm_3 final | ~0 / ~10 | 83 / 100 (32 %) | **100 %** (47 %) ³ | 100 % | 188 s | 100/0/0 |
+| GATE storm_3, 7×T3 | – | 17 / 100 | **0 %** | 80 % | – | – |
+| GATE storm_3, no T5 | – | 50 / 100 | 80 % | 100 % | – | – |
+| Patrol, each sea (fleet of that sea) | – | 100 / 100 | 100 % | 100 % | 60–90 s | mostly ★★★ |
+| WIPE: 1 sloop / sloop+brigantine | – | 100 / 100 | 100 % | 100 % | 60–100 s | – |
+| WIPE: 1 frigate, South China | – | 100 / 100 | **40 %** | 100 % | 206 s | – |
+
+¹ 40 % in `final` and 60 % in `confirm`, after the extra brigantine escort became a sloop. This mission is slightly hard.
+² 40 % in `final`. Fort HP then went 260 → 240 and fort damage 14 → 13, and `confirm` gave 100 % (54 % HP left).
+³ From `confirm`, after one T3 junk was added back: novice wins with ★ only, and 7×T3 stays at 0 %.
+
+## 3. Final win rules (unchanged code, documented)
+
+- **Battle objectives** (data/campaign.js `objective`):
+  - `sink_all`: sink every enemy ship.
+  - `destroy_forts`: bring every enemy fort to 0 HP. Downed forts stay down (`BATTLE.fortRebuild=false`). Each enemy repair tick (~5.5 s) heals a fort by `BATTLE.fortRegen` = 2 % of max.
+  - `survive`: keep at least one ship afloat for `seconds` while the waves arrive.
+  - `capture`: take the listed islands.
+- **Defeat:** every player ship is sunk, or the optional `timeLimit` runs out. Retreating counts as a defeat with no further losses. A sunk ship comes home as a wreck that needs salvage. Half the plunder is kept on a defeat.
+- **Stars** (Meta/Campaign.js `starsFor`, cumulative):
+  - ★ = win.
+  - ★★ = win with no ship lost.
+  - ★★★ = no ship lost **and** time ≤ `parTime`.
+  - Note: GDD sea-battle §9 says ★★★ = "under par" only. The code requires no losses as well. The GDD should be updated to match.
+- **Campaign win:** first clear of `FINAL_MISSION` = `storm_3` (Citadel of Storms). It does not depend on rank.
+- **Open War:** unchanged. It keeps `constants.js`/`buildings.js` pacing, `rateMult` 1, `BUILD_TIME_MULT` 0.12, unrestricted cannon tiers, and its own victory rules.
+
+## 4. Cannon tiers (new rule from the main thread)
+
+A cannon's tier must be ≤ the hull's tier (`data/cannons.js` `canMountCannon`). The tiers are:
+
+- I: swivel, carronade, falconet
+- II: long9, demi_culv, chain_shot, grapeshot
+- III: demi_can, mortar1, long12
+- IV: carronade32, culverin, mortar2
+- V: long24, cannon_royal
+
+Changes made for this rule:
+
+- **Violation fixed:** the indian_2 *Santa Cruz* (brigantine, T2) carried a T3 demi-cannon. It now uses `FIT.longS`.
+- **Default fits** are tier-aware. `DEFAULT_LOADOUT` in data/harbor.js is read by `Profile.defaultLoadout(class, tier)`. Every fit is legal and has a range-20 gun on both broadsides, so it reaches forts:
+
+  | Hull | Default fit |
+  |---|---|
+  | T1 sloop/cutter/schooner | falconet ×2. The old default put T2 demi-culverins on T1 sloops, which breaks the rule. |
+  | T2 standard | demi-culverin ×2 + long 9 (= the "Broadside" preset) |
+  | T2 light | demi-culverin ×2 |
+  | T3 frigate | demi-cannon, demi-culverin, long 12 |
+  | T3 galleon | demi-cannon, demi-culverin, mortar I, swivel |
+  | T3 xebec | demi-cannon, demi-culverin |
+  | T4 heavy frigate | culverin ×2 + long 12 |
+  | T4 war galleon | culverin, 32-pdr carronade, mortar II, swivel |
+  | T5 | cannon royal, long 24, mortar II, long 12 |
+
+- **Enemy fits:** new `FIT` entries (all legal) for tier III–V enemies:
+  - `frigS3`: Spice-sea frigates
+  - `heavyS4`: heavy frigates
+  - `lineH4`: war galleons
+  - `junkH4`: great war junks
+  - `lineH5`: the storm_3 man-o-war
+
+  The test "every mission enemy and starter loadout respects the tier rule" passes.
+- **Patrol:** `PATROL.loadoutsByTier` (class → tier → fit) gives T2/T3 light, T3/T4 standard and T4 heavy patrol hulls legal tier guns. This needed a one-line read in `Meta/Campaign.makePatrol` (pure Meta, done).
+- **Simulated fleets:** `scenarios.mjs` now keeps each hull's default fit, so the realistic fleet uses exactly the guns its tier allows.
+- **New cannon stats:** the six new cannons' dmg/rof/wt were **not changed**. With them on both sides, the T4/T5 missions came out in band or easy, so nothing showed they were off.
+
+## 5. Every changed number
+
+### data/harbor.js
+
+| Knob | Before | After | Why |
+|---|---|---|---|
+| `HARBOR_ECONOMY.rateMult` | 1 | **0.25** | Starter income drops from 4 to 1 wood/s, so a T2 hull is no longer bought from idle income in ~1 min. The sim shows campaign pacing comes from battles and timers, not harbor income (the agent fills the island in ~30 min with battle cash either way). This knob mainly shapes early feel and offline income. T2 now lands at ~15 min. |
+| `HARBOR_ECONOMY.buildTimeMult` (new) | 0.12 (Open War `BUILD_TIME_MULT`, "test mode") | **1** | Harbor buildings finished in 2–6 s. They now use the authored `buildTime`/`upgradeTime` (mill 15 s, warehouse 25/30 s, shipyard upgrade 50 s). **Needs wiring, see §7.** The economy sim already uses it. |
+| `MOORING_REGEN_FRAC` | 0.004 /s (full heal in ~4 min) | **0.0008 /s** (~21 min) | Paid Repair (30–80 s, 40–140 g) was pointless. Free mooring regen still exists, so Repair/Rush is a convenience and not mandatory. |
+| heavy_frigate cost | 1250 w / 900 g | **1150 / 850** | Fits the warehouse path (see below). |
+| war_galleon cost | 1500 / 1050 | **1300 / 950** | Same. |
+| man_o_war cost | 1900 / 1400 | **1600 / 1250** | Same. |
+| ship_of_the_line cost | 2200 / 1650 | **1800 / 1400** | 2200 wood was above what two warehouses give before L9. |
+| `DEFAULT_LOADOUT` (new) | class-only, demi-culverins everywhere | per class × tier (§4) | Cannon-tier rule. |
+
+Storage path: the base cap is 800 wood / 600 gold, and each warehouse adds 100…910 by level (L1…L10).
+- T4 costs (≤ 1300 wood) need two warehouses at about L4.
+- T5 costs (≤ 1800 wood / 1400 gold) need two at L6–L7.
+- The economy agent gets there before its first T5 (median 2.8 h).
+
+At a low `rateMult`, the sim agent used to fill the island with mills before placing a second warehouse. That is a soft-lock trap for real players too: no hull above the cap can ever be bought. The agent now keeps room for two warehouses. The UI could hint at this (see §6).
+
+### data/campaign.js
+
+**Region `minRenown`** — Indian **100 → 80**, Spice **200 → 160**, South China **330 → 260**.
+- Each gate is now ≈ 80–90 % of the renown from *mission rewards alone* on the main path: 98 / 184 / 292 against gates 80 / 160 / 260.
+- Sinks (+2 each) cover the rest, so there is no forced grinding. Before this, winning every Spice mission gave 324 renown against a gate of 330.
+
+**`PATROL.strengthRatio`** — **0.55 → 0.45**.
+- Patrols now carry tier-IV guns, so a lone wiped hull needs a smaller opponent.
+- Patrols stay 1–1.5 min and almost free of losses.
+
+**`PATROL.loadoutsByTier`** — new (§4).
+
+**Missions.** Before = the state at hand-over. "HP" is novice fleet HP left.
+
+| Mission | Changes | Why |
+|---|---|---|
+| reef_2 | + sloop *San Pedro* (falconets). Fort stays at 170 HP / dmg 9. | Falconet sloops reach the fort now, so it was 100 % |
+| reef_3 | + sloop *La Mouette* in wave 2 | 100 % at 38 % HP |
+| straits_1 | *Saltwind Merchant* hp 140 → 155. + sloop *Merlin* | 100 % at 62 % HP. Now slightly hard. |
+| straits_2 | + sloop *Le Furet*. *Le Hardi* hp 170. Gullhaven 130 → 175 HP, dmg 8 → 11. | 100 % at 60–64 % HP |
+| straits_3 | + brigantine *Sparrowhawk*. Batteries 190 → 240 HP, dmg 12 → 13. | 100 % at 57–60 % HP |
+| indian_1 | + ghurab *Kozhikode* (wave 2), + dhow *Mappila* (wave 3) | 100 % at 44 % HP |
+| indian_2 | + frigate *São Rafael*. *Madre de Deus* hp 290. *Santa Cruz* fit made legal. | 100 % at 41 % HP, plus the tier violation |
+| indian_3 | + frigate *Santo António*, brigantine *São Jorge*, galleon *São Mateus*. Fort 260 → 360 HP, dmg 13 → 16. | 100 % at 66–77 % HP |
+| spice_1 | + lanong in wave 2 and wave 3. *Witte Valk* fit heavyS4. | 100 % at 46 % HP |
+| spice_2 | Tier fits (lineH4/heavyS4/frigS3). An extra heavy frigate was tried and removed (dropped novice to 40 %). | Tier guns |
+| spice_3 | + war galleon *Oranje*, heavy frigate *Middelburg*. Bastions 300 → 360 HP, dmg 15 → 20. | 100 % at 81 % HP |
+| storm_1 | + junk (wave 1), + war junk (wave 2), + 2 war junks (wave 3). junkH4 fits. | 100 % at 73 % HP |
+| storm_2 | + war junks *Black Tortoise* and *White Tiger*. *Golden Carp* hp 420. junkH4 fits. | 100 % at 65 % HP |
+| storm_3 | + junks *Jade Tide* and *Azure Dragon*. Man-o-war hp 520 with lineH5 (cannon royal / long 24). Citadel 420 → 560 HP, dmg 18 → 22. | Gate: 7×T3 must fail. Done for novice (0 %); skilled 80 %. |
+
+### Meta / tests / tools
+
+- `Meta/Profile.js`: `defaultLoadout(class, tier)` reads `DEFAULT_LOADOUT`. `makeRosterShip` passes `h.tier`.
+- `Meta/Campaign.js`: the patrol loadout reads `PATROL.loadoutsByTier` (one line).
+- `test/12_Meta.test.js`: the offline-economy assertions now multiply by `HARBOR_ECONOMY.rateMult` (an intended rule change). `node test/node_meta.mjs`: **21 passed / 0 failed**.
+- `tools/balance/sim_economy.mjs` fixes:
+  - Patrols map to the current `patrol_<sea>`/`wipe_*` scenarios. Before, every patrol silently counted as a free win.
+  - The agent reserves cells for two warehouses.
+  - Uses `buildTimeMult`.
+  - Adds `harbor:` milestones.
+- `tools/balance/scenarios.mjs`: ships keep their tier default fit.
+
+## 6. Still open / unbalanced
+
+- **straits_1** (novice 40–60 %) and **indian_1** (60 %) are a bit hard. Next step: *Merlin* → cutter, or *Saltwind Merchant* hp back to 140.
+- **Survive missions** (reef_3, spice_1, storm_1) and **spice_2, storm_2, storm_3** still win 100 % for novices, but with 1.2–3 ships lost and only ★. Losses cost salvage, and stars are hard to get. Making survive missions bite needs shorter timers or stronger late waves. Not done for lack of budget.
+- **Lone salvaged frigate in a South China patrol:** novice 40 %. Two cheap ships, or a T1–T2 hull, always win, so there is no hard death spiral. Next step: a size-aware patrol in `makePatrol` (fewer slots/guns when the budget is below one hull).
+- Skilled play beats the T3-only final 80 % of the time. It is gated for novices, not for experts.
+- Island build-out is paced by battle cash against cheap Open War building costs (mill 60 wood). `buildings.js` is shared with Open War and I did not touch it. A harbor-only building cost multiplier would need code.
+- Fleet-wipe salvage is the biggest gold sink (~26 k over a campaign). It is affordable: the campaign completes in 100 % of sim runs with no patrols needed.
+- The economy sim's agent never patrols for renown now, which confirms the new gates.
+- Old saves: sloops built before this change keep demi-culverins (T2), which is illegal on T1. A `migrate` pass that clamps loadouts is suggested.
+
+## 7. Wiring needed (outside my files)
+
+1. **`HARBOR_ECONOMY.buildTimeMult`:** in `Experience/Systems/Economy/BuildSystem.js`, line ~629 (`inst.buildTimer = … * BUILD_TIME_MULT`) and line ~804 (`inst.upgradeTimer = … * BUILD_TIME_MULT`) should use a harbor-only multiplier in harbor mode. One way: `st.harborBuildTimeMult ?? BUILD_TIME_MULT`, set in `HarborSession` next to `st.econRateMult = HARBOR_ECONOMY.rateMult`. Open War keeps 0.12.
+2. Nothing else. `rateMult`, `BATTLE`, `PRODUCE_AT_SEA` and `MOORING_REGEN_FRAC` are already read by the game.

@@ -626,7 +626,7 @@ export class BuildSystem {
     // Moved instances skip construction (they're already built).
     if(!movingInst && (bldOrDef.buildTime || 0) > 0){
       inst.state = 'building';
-      inst.buildTimer = bldOrDef.buildTime * BUILD_TIME_MULT;
+      inst.buildTimer = bldOrDef.buildTime * (st.harborBuildTimeMult ?? BUILD_TIME_MULT);
       inst.buildDuration = inst.buildTimer;
     }
 
@@ -801,7 +801,7 @@ export class BuildSystem {
     st.resWood-=upgCost.wood; st.resGold-=upgCost.gold;
     // Start timer — building keeps current level until done
     inst.pendingLevel = inst.level + 1;
-    inst.upgradeTimer = (bldDef.upgradeTime || 30) * BUILD_TIME_MULT;
+    inst.upgradeTimer = (bldDef.upgradeTime || 30) * (this._state.harborBuildTimeMult ?? BUILD_TIME_MULT);
     inst.upgradeDuration = inst.upgradeTimer;
     return true;
   }

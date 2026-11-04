@@ -31,9 +31,9 @@
 |---|---|---|---|---|
 | caribbean | The Caribbean | Biển Caribe | 0 | buccaneers, spain, france |
 | atlantic | The Atlantic Lanes | Hải lộ Đại Tây Dương | 30 | england, france |
-| indian | The Indian Ocean | Ấn Độ Dương | 100 | portugal, malabar |
-| spice | The Spice Straits | Eo biển Hương liệu | 200 | netherlands, malay |
-| southchina | The South China Sea | Biển Đông | 330 | chinese, vietnamese, portugal |
+| indian | The Indian Ocean | Ấn Độ Dương | 80 | portugal, malabar |
+| spice | The Spice Straits | Eo biển Hương liệu | 160 | netherlands, malay |
+| southchina | The South China Sea | Biển Đông | 260 | chinese, vietnamese, portugal |
 <!-- /SPEC:regions -->
 
 - **Phe phái** (`data/factions.js`; tên công ty là phiên bản hư cấu). `style` quyết định kiểu mesh tàu: `european` (tàu buồm vuông), `junk`, `dhow`, `prau`.
@@ -129,7 +129,7 @@ Harbor có thêm **Harbor Bar** (giữa trên): huy hiệu quân hàm + thanh da
 | Khoá lưu profile (localStorage) | `iow_profile_v1` (v1); save hỏng → `iow_profile_v1_bad` |
 | Tài nguyên khởi đầu (profile mới) | 260🪵 160🪙 |
 | Thu nhập nền (không cần công trình) | 2 🪵/s · 1.5 🪙/s |
-| Hệ số đồng hồ Harbor `HARBOR_ECONOMY.rateMult` | 1 |
+| Hệ số đồng hồ Harbor `HARBOR_ECONOMY.rateMult` | 0.25 |
 | Trần kho cơ bản | 800 🪵 · 600 🪙 (+ Warehouse) |
 | Offline tối đa `OFFLINE_MAX_SEC` | 28800 s (8 h) |
 | Thư "Trong lúc bạn vắng mặt" khi offline ≥ | 60 s |
@@ -230,10 +230,10 @@ Mở bằng **Y** hoặc nút Shipyard trên Harbor Bar. Hai tab: **Roster** (t�
 | frigate | Frigate | standard | III | 190 | 0.15 (9.0 kn) | LRB | 760🪵 520🪙 | 4:30 | 3 | L:demi_can R:demi_culv B:long12 |
 | xebec | Xebec | light | III | 150 | 0.21 (12.6 kn) | LR | 660🪵 600🪙 | 4:00 | 3 | L:demi_can R:demi_culv |
 | galleon | Galleon | heavy | III | 240 | 0.12 (7.2 kn) | LRBS | 900🪵 620🪙 | 5:30 | 3 | L:demi_can R:demi_culv B:mortar1 S:swivel |
-| heavy_frigate | Heavy Frigate | standard | IV | 260 | 0.15 (9.0 kn) | LRB | 1250🪵 900🪙 | 7:00 | 4 | L:culverin R:culverin B:long12 |
-| war_galleon | War Galleon | heavy | IV | 330 | 0.12 (7.2 kn) | LRBS | 1500🪵 1050🪙 | 8:00 | 4 | L:culverin R:carronade32 B:mortar2 S:swivel |
-| man_o_war | Man-o-War | heavy | V | 430 | 0.11 (6.6 kn) | LRBS | 1900🪵 1400🪙 | 10:00 | 5 | L:cannon_royal R:long24 B:mortar2 S:long12 |
-| ship_of_the_line | Ship of the Line | heavy | V | 500 | 0.1 (6.0 kn) | LRBS | 2200🪵 1650🪙 | 12:00 | 5 | L:cannon_royal R:long24 B:mortar2 S:long12 |
+| heavy_frigate | Heavy Frigate | standard | IV | 260 | 0.15 (9.0 kn) | LRB | 1150🪵 850🪙 | 7:00 | 4 | L:culverin R:culverin B:long12 |
+| war_galleon | War Galleon | heavy | IV | 330 | 0.12 (7.2 kn) | LRBS | 1300🪵 950🪙 | 8:00 | 4 | L:culverin R:carronade32 B:mortar2 S:swivel |
+| man_o_war | Man-o-War | heavy | V | 430 | 0.11 (6.6 kn) | LRBS | 1600🪵 1250🪙 | 10:00 | 5 | L:cannon_royal R:long24 B:mortar2 S:long12 |
+| ship_of_the_line | Ship of the Line | heavy | V | 500 | 0.1 (6.0 kn) | LRBS | 1800🪵 1400🪙 | 12:00 | 5 | L:cannon_royal R:long24 B:mortar2 S:long12 |
 <!-- /SPEC:hulls -->
 
 Tốc độ hiển thị trong UI = `spd × 60` "kn". Thân tàu chỉ dành cho địch (không xuất hiện trong danh mục):
@@ -292,7 +292,7 @@ Chi phí theo class (sửa, trục vớt, chiến lợi phẩm khi bị đánh c
 | standard | LRB | 80🪙 / 50s | 80s | 1.3 rad/s · accel 0.08 | 55🪵 40🪙 |
 | heavy | LRBS | 140🪙 / 80s | 120s | 0.9 rad/s · accel 0.05 | 90🪵 70🪙 |
 
-Trục vớt tốn `50%` giá đóng tàu. Hạm đội tối đa: base 3, trần 8. Neo ở cảng hồi 0.4% HP/s. Tàu về cảng không dưới 5% HP.
+Trục vớt tốn `50%` giá đóng tàu. Hạm đội tối đa: base 3, trần 8. Neo ở cảng hồi 0.08% HP/s. Tàu về cảng không dưới 5% HP.
 <!-- /SPEC:shipyard -->
 
 ---
@@ -356,20 +356,20 @@ Trục vớt tốn `50%` giá đóng tàu. Hạm đội tối đa: base 3, trầ
 | mission id | Tên | Biển | Phe | Mục tiêu | Địch | Pháo đài | Par ★★★ | Giới hạn | Thưởng | Lần đầu | Danh vọng | Cần thắng trước |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | reef_1 | Smugglers' Cove | caribbean | buccaneers | sink_all | 2× sloop | — | 2:30 | — | 120🪵 80🪙 | 100🪵 80🪙 | 10 | — |
-| reef_2 | The San Telmo Battery | caribbean | spain | destroy_forts | 1× sloop | Batería de San Telmo (150HP, 7dmg/8s) | 3:20 | — | 160🪵 120🪙 | 140🪵 100🪙 | 14 | reef_1 |
+| reef_2 | The San Telmo Battery | caribbean | spain | destroy_forts | 2× sloop | Batería de San Telmo (170HP, 9dmg/8s) | 3:20 | — | 160🪵 120🪙 | 140🪵 100🪙 | 14 | reef_1 |
 | reef_3 | Hold the Windward Channel | caribbean | france | survive 2:30 | W1@0:04: 2× sloop; W2@0:55: 1× schooner, 2× sloop; W3@1:40: 1× brigantine, 1× sloop | — | 2:30 | — | 180🪵 110🪙 | 120🪵 100🪙 | 14 | reef_1 |
-| straits_1 | The Saltwind Convoy | atlantic | england | sink_all | 1× brigantine, 2× sloop | — | 3:40 | — | 240🪵 180🪙 | 200🪵 160🪙 | 18 | reef_2 |
-| straits_2 | Seize Gullhaven | atlantic | france | capture gullhaven | 1× brigantine, 1× schooner, 1× sloop | Gullhaven (160HP, 10dmg/9s, haven) | 4:00 | — | 260🪵 200🪙 | 220🪵 180🪙 | 18 | reef_3 |
-| straits_3 | The Twin Batteries | atlantic | england | destroy_forts | 1× frigate, 1× brigantine | North Battery (220HP, 12dmg/7s); South Battery (220HP, 12dmg/7s) | 5:00 | — | 320🪵 260🪙 | 260🪵 220🪙 | 24 | straits_1, straits_2 |
+| straits_1 | The Saltwind Convoy | atlantic | england | sink_all | 1× brigantine, 3× sloop | — | 3:40 | — | 240🪵 180🪙 | 200🪵 160🪙 | 18 | reef_2 |
+| straits_2 | Seize Gullhaven | atlantic | france | capture gullhaven | 1× brigantine, 1× schooner, 1× sloop | Gullhaven (175HP, 11dmg/9s, haven) | 4:00 | — | 260🪵 200🪙 | 220🪵 180🪙 | 18 | reef_3 |
+| straits_3 | The Twin Batteries | atlantic | england | destroy_forts | 1× frigate, 1× brigantine | North Battery (240HP, 13dmg/7s); South Battery (240HP, 13dmg/7s) | 5:00 | — | 320🪵 260🪙 | 260🪵 220🪙 | 24 | straits_1, straits_2 |
 | indian_1 | Monsoon Raiders | indian | malabar | survive 3:00 | W1@0:04: 1× ghurab, 1× dhow; W2@1:00: 2× ghurab, 2× dhow; W3@2:00: 2× ghurab, 1× frigate(portugal), 1× dhow | — | 3:00 | — | 360🪵 280🪙 | 300🪵 240🪙 | 26 | straits_3 |
 | indian_2 | The Carracks of Goa | indian | portugal | sink_all | 1× galleon, 2× frigate, 1× brigantine, 1× ghurab(malabar) | — | 5:00 | — | 400🪵 320🪙 | 340🪵 280🪙 | 28 | indian_1 |
-| indian_3 | The Pepper Fort | indian | portugal | capture pepper_fort | 2× frigate, 1× ghurab(malabar) | Fortaleza de Kannur (300HP, 14dmg/7s) | 5:30 | — | 440🪵 360🪙 | 380🪵 320🪙 | 32 | indian_2 |
+| indian_3 | The Pepper Fort | indian | portugal | capture pepper_fort | 2× frigate, 1× ghurab(malabar), 1× brigantine, 1× galleon | Fortaleza de Kannur (360HP, 16dmg/7s) | 5:30 | — | 440🪵 360🪙 | 380🪵 320🪙 | 32 | indian_2 |
 | spice_1 | Lanong Ambush | spice | malay | survive 3:20 | W1@0:04: 2× lanong; W2@1:00: 3× lanong, 1× ghurab; W3@2:05: 1× heavy_frigate(netherlands), 3× lanong | — | 3:20 | — | 480🪵 380🪙 | 400🪵 340🪙 | 32 | indian_3 |
-| spice_2 | The Homeward Fleet | spice | netherlands | sink_all | 1× war_galleon, 2× heavy_frigate, 2× frigate, 1× lanong(malay) | — | 5:30 | — | 540🪵 420🪙 | 460🪵 380🪙 | 36 | spice_1 |
-| spice_3 | Kasteel Amboina | spice | netherlands | destroy_forts | 2× heavy_frigate, 1× frigate, 1× lanong(malay), 1× war_galleon | Bastion Zeeland (360HP, 18dmg/6s); Bastion Holland (360HP, 18dmg/6s) | 6:00 | — | 600🪵 480🪙 | 500🪵 420🪙 | 40 | spice_2 |
-| storm_1 | Typhoon Season | southchina | vietnamese | survive 3:30 | W1@0:04: 2× junk, 1× ghe_bau; W2@1:05: 2× war_junk, 1× junk; W3@2:10: 2× war_junk, 1× junk(chinese), 1× ghe_bau | — | 3:30 | — | 640🪵 520🪙 | 540🪵 460🪙 | 40 | spice_3 |
-| storm_2 | The Red Banner Fleet | southchina | chinese | sink_all | 3× war_junk, 2× junk, 1× ghe_bau(vietnamese) | — | 5:30 | — | 700🪵 580🪙 | 600🪵 500🪙 | 45 | storm_1 |
-| storm_3 | Citadel of Storms | southchina | chinese | destroy_forts | 2× war_junk, 1× man_o_war(portugal), 1× junk | Citadel of Storms (480HP, 18dmg/5s, bastion) | 7:00 | — | 900🪵 760🪙 | 800🪵 700🪙 | 60 | storm_2 |
+| spice_2 | The Homeward Fleet | spice | netherlands | sink_all | 1× war_galleon, 1× heavy_frigate, 2× frigate, 1× lanong(malay) | — | 5:30 | — | 540🪵 420🪙 | 460🪵 380🪙 | 36 | spice_1 |
+| spice_3 | Kasteel Amboina | spice | netherlands | destroy_forts | 2× heavy_frigate, 1× frigate, 1× lanong(malay), 1× war_galleon | Bastion Zeeland (360HP, 20dmg/6s); Bastion Holland (360HP, 20dmg/6s) | 6:00 | — | 600🪵 480🪙 | 500🪵 420🪙 | 40 | spice_2 |
+| storm_1 | Typhoon Season | southchina | vietnamese | survive 3:30 | W1@0:04: 2× junk, 1× ghe_bau; W2@1:05: 2× war_junk, 1× junk; W3@2:10: 3× war_junk, 1× junk(chinese), 1× ghe_bau | — | 3:30 | — | 640🪵 520🪙 | 540🪵 460🪙 | 40 | spice_3 |
+| storm_2 | The Red Banner Fleet | southchina | chinese | sink_all | 4× war_junk, 2× junk, 1× ghe_bau(vietnamese) | — | 5:30 | — | 700🪵 580🪙 | 600🪵 500🪙 | 45 | storm_1 |
+| storm_3 | Citadel of Storms | southchina | chinese | destroy_forts | 2× war_junk, 1× man_o_war(portugal), 2× junk | Citadel of Storms (560HP, 22dmg/5s, bastion) | 7:00 | — | 900🪵 760🪙 | 800🪵 700🪙 | 60 | storm_2 |
 
 Nhiệm vụ cuối (thắng = hoàn thành chiến dịch): `storm_3`.
 <!-- /SPEC:missions -->
@@ -382,7 +382,7 @@ Ghi chú: `N× hull(faction)` = tàu thuộc phe khác phe nhiệm vụ. Survive
 |---|---|
 | Vị trí trên hải đồ | x=0.147, y=0.44 |
 | Nguồn địch | biển xa nhất đã mở (renown) — pool: caribbean: brigantine/schooner/sloop/sloop/cutter · atlantic: frigate/brigantine/brigantine/schooner/sloop · indian: galleon/frigate/ghurab/ghurab/dhow/dhow · spice: war_galleon/heavy_frigate/lanong/lanong/frigate/lanong · southchina: war_junk/war_junk/junk/junk/ghe_bau/ghe_bau |
-| Ngân sách sức mạnh địch | ≤ 0.55 × Σ(HP × số slot) của tàu ra khơi; tối đa 5 tàu |
+| Ngân sách sức mạnh địch | ≤ 0.45 × Σ(HP × số slot) của tàu ra khơi; tối đa 5 tàu |
 | Không đủ ngân sách | 1 cutter với HP cắt cho vừa ngân sách (tối thiểu 25 HP) |
 | Thưởng | 40🪵 30🪙 + (0.1🪵, 0.075🪙) × sức mạnh địch |
 | Danh vọng | 4 khi thắng (+2/tàu chìm) |
@@ -411,10 +411,10 @@ Kiểm tra đường danh vọng (đi thẳng chiến dịch, không patrol):
 | Biển | Cần | Danh vọng bảo đảm khi vào | Sau khi thắng hết biển | Biển kế tiếp |
 |---|---|---|---|---|
 | caribbean | 0 | 0 | 42 | atlantic cần 30 → đủ |
-| atlantic | 30 | 42 | 108 | indian cần 100 → đủ |
-| indian | 100 | 108 | 204 | spice cần 200 → đủ |
-| spice | 200 | 204 | 324 | southchina cần 330 → THIẾU 6 (cần patrol/sink thêm) |
-| southchina | 330 | 324 | 481 | — |
+| atlantic | 30 | 42 | 110 | indian cần 80 → đủ |
+| indian | 80 | 110 | 206 | spice cần 160 → đủ |
+| spice | 160 | 206 | 324 | southchina cần 260 → đủ |
+| southchina | 260 | 324 | 483 | — |
 
 Danh vọng bảo đảm = renown nhiệm vụ + 2 × số tàu phải đánh chìm trong `sink_all`. Mọi tàu địch bị chìm (kể cả khi thua) đều +2; patrol thắng +4. Hạng cao nhất: Admiral of the Isles (400).
 <!-- /SPEC:renownPath -->

@@ -113,7 +113,7 @@ export function makePatrol(profile, seed = 1, shipUids = null) {
     if (nm) { taken.add(nm); names.set(faction, taken); }
     const e = {
       hull: h.id, faction, x: 55 + rnd() * 25, z: (i - (picks.length - 1) / 2) * 18 + (rnd() - .5) * 8,
-      loadout: { ...PATROL.loadouts[h.hull] },
+      loadout: { ...(PATROL.loadoutsByTier?.[h.hull]?.[h.tier] || PATROL.loadouts[h.hull]) },   // tier-legal fit (data/campaign.js)
     };
     if (nm) e.nm = nm;
     if (hp) e.hp = hp;

@@ -71,6 +71,8 @@ const MODEL = {
   idle:       { session: 8 * 60,  gap: 8 * 3600 - 8 * 60 },
 };
 
+/** Harbor build timers: data/harbor.js HARBOR_ECONOMY.buildTimeMult when present (else Open War's BUILD_TIME_MULT). */
+const BTM = H.HARBOR_ECONOMY?.buildTimeMult ?? K.BUILD_TIME_MULT;
 const BY_ID = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
 const GRID_CELLS = 68;                               // home island SPRAWL/4242 (data/islandShapes)
 const cellsOf = id => { const f = BY_ID[id]?.footprint || { w: 1, h: 1 }; return f.w * f.h; };
@@ -101,7 +103,6 @@ const scenarioFor = mid => {
   for (let k = i - 1; k >= 0; k--) if (SCENARIOS[MISSION_ORDER[k]]) return { ...SCENARIOS[MISSION_ORDER[k]], mission: mid };
   return { mission: mid, ships: [{ hull: 'brigantine' }, { hull: 'sloop' }, { hull: 'sloop' }] };
 };
-const patrolScenarioFor = rank => PATROL_SCENARIOS[`patrol_r${Math.min(rank, 4)}`];
 
 // ── One player ───────────────────────────────────────────────────────
 class Player {
@@ -188,7 +189,7 @@ class Player {
     if (!this.canPlace(id) || !this.afford(d.cost)) return false;
     this.pay(d.cost, 'buildings');
     this.cells += cellsOf(id);
-    this.p.harbor.buildings.push({ buildingId: id, level: 1, state: 'building', buildTimer: d.buildTime * K.BUILD_TIME_MULT, buildDuration: d.buildTime * K.BUILD_TIME_MULT });
+    this.p.harbor.buildings.push({ buildingId: id, level: 1, state: 'building', buildTimer: d.buildTime * BTM, buildDuration: d.buildTime * BTM });
     this.stats.built[id] = (this.stats.built[id] || 0) + 1;
     this.note(`build ${id}`);
     return true;
@@ -200,7 +201,7 @@ class Player {
     if (!this.afford(c)) return false;
     this.pay(c, 'buildings');
     b.pendingLevel = b.level + 1;
-    b.upgradeTimer = (BY_ID[b.buildingId].upgradeTime || 30) * K.BUILD_TIME_MULT;
+    b.upgradeTimer = (BY_ID[b.buildingId].upgradeTime || 30) * BTM;
     this.note(`upgrade ${b.buildingId} → L${b.pendingLevel}`);
     return true;
   }
@@ -324,9 +325,12 @@ class Player {
     const cands = [];
     const blds = p.harbor.buildings;
     const prodDelta = (id, lv) => { const t = BY_ID[id].productionByLevel; return (t[lv] || 0) - (t[lv - 1] || 0); };
-    const bt = id => BY_ID[id].buildTime * K.BUILD_TIME_MULT, ut = id => (BY_ID[id].upgradeTime || 30) * K.BUILD_TIME_MULT;
-    if (this.canPlace('lumber_mill')) cands.push(mk('mill', BY_ID.lumber_mill.cost, BY_ID.lumber_mill.productionByLevel[0], 0, () => this.place('lumber_mill'), bt('lumber_mill')));
-    if (this.canPlace('gold_mine')) cands.push(mk('mine', BY_ID.gold_mine.cost, 0, BY_ID.gold_mine.productionByLevel[0], () => this.place('gold_mine'), bt('gold_mine')));
+    const bt = id => BY_ID[id].buildTime * BTM, ut = id => (BY_ID[id].upgradeTime || 30) * BTM;
+    // a sensible player keeps room for two warehouses (T4/T5 hulls cost more than the base cap)
+    const whRoom = 2 * Math.max(0, 2 - blds.filter(b => b.buildingId === 'warehouse').length);
+    const roomFor = id => this.canPlace(id) && this.cells + cellsOf(id) + whRoom <= GRID_CELLS;
+    if (roomFor('lumber_mill')) cands.push(mk('mill', BY_ID.lumber_mill.cost, BY_ID.lumber_mill.productionByLevel[0], 0, () => this.place('lumber_mill'), bt('lumber_mill')));
+    if (roomFor('gold_mine')) cands.push(mk('mine', BY_ID.gold_mine.cost, 0, BY_ID.gold_mine.productionByLevel[0], () => this.place('gold_mine'), bt('gold_mine')));
     for (const b of blds) {
       if (b.state !== 'active' || b.upgradeTimer > 0 || b.level >= 10) continue;
       if (b.buildingId === 'lumber_mill') cands.push(mk('mill+', this.upgradeCost(b), prodDelta('lumber_mill', b.level), 0, () => this.upgrade(b), ut('lumber_mill')));
@@ -382,8 +386,10 @@ class Player {
       p.battle = { missionId: 'patrol', shipUids: ships.map(s => s.uid), seed: 1 + Math.floor(this.rng() * 99999), started: false };
       mission = Camp.makePatrol(p, p.battle.seed, ships.map(s => s.uid));
       p.battle = null;
-      scnId = `patrol_r${Math.min(rk, 4)}`;
-      if (ships.length < 3) scnId = rk >= 3 ? 'wipe_r3_2ships' : 'wipe_r2_1sloop';
+      // patrol is drawn from the furthest unlocked sea (Meta/Campaign.makePatrol) → PATROL_SCENARIOS key
+      const sea = [...C.REGIONS].reverse().find(r => Camp.regionUnlocked(p, r.id))?.id || 'caribbean';
+      scnId = `patrol_${sea}`;
+      if (ships.length < 3) scnId = ships.length === 1 ? (H.HULLS[ships[0].hullId].tier >= 3 ? 'wipe_1frig' : 'wipe_1sloop') : 'wipe_2ships';
     }
     const run = this.sample(scnId);
     const timeSec = run ? run.timeSec : 120;
@@ -434,6 +440,9 @@ class Player {
   milestones() {
     const p = this.p;
     for (const r of C.REGIONS) if (Camp.regionUnlocked(p, r.id)) this.mark(`region:${r.id}`);
+    const nProd = p.harbor.buildings.filter(b => b.buildingId === 'lumber_mill' || b.buildingId === 'gold_mine').length;
+    if (nProd >= 20) this.mark('harbor:20producers');
+    if (this.cells >= GRID_CELLS - 4) this.mark('harbor:island_full');
     for (let t = 1; t <= 5; t++) {
       const hulls = Object.values(H.HULLS).filter(h => h.tier === t && !h.enemyOnly);
       if (!hulls.length) continue;
