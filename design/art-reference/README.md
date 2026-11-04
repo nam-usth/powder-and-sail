@@ -50,3 +50,12 @@ only). Our combat core already covers it; adopted ideas: a top **versus bar**
 (player fleet name + total hull bar · battle clock · enemy fleet name + bar,
 with level/strength badges), broadside firing cones on the selected ship, open
 calm sea with long white wakes.
+
+# Island concepts — `island-concept-cliffs.webp`, `island-concept-wreck-town.webp`
+User-provided concept art of a commercial game (© its owners) — **reference
+only, never copy**. The user's notes: smooth the sharp points of the island
+outline or put big rock masses there; much more timber; pirates reinforce the
+island edges. Taken ideas: grey rock cliffs ring the grass plateau; timber
+palisades, plank revetments on piles and boardwalks run along the cliff edges;
+wooden stairs/ramps down to stone quays; lanterns on posts; stone towers on the
+points; a beached wreck reused as a building; big boulder groups at the corners.
