@@ -350,7 +350,7 @@ const SYNTH = {
   build_hammer(ctx, out, t, o) {
     const r = o.rate;
     [[0, 0.8], [0.27, 0.9], [0.52, 1.0]].forEach(([d, v], i) => {
-      const tt = t + d + (Math.random() - 0.5) * 0.02;
+      const tt = t + d + Math.random() * 0.02;   // humanise forward only (start times can't be negative)
       const s = tone(ctx, 'sine', 210 * r, tt, tt + 0.12);
       s.frequency.exponentialRampToValueAtTime(120 * r, tt + 0.06);
       const sg = vca(ctx, out); hit(sg.gain, tt, 0.3 * v, 0.002, 0.08); s.connect(sg);

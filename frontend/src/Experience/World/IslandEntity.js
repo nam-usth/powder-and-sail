@@ -60,7 +60,7 @@ export function getIslandQuality() { return _quality; }
 // ── Palette ──────────────────────────────────────────────────────
 const GROUND = {
   player:  [0x5E9B47, 0x79B257, 0x4B8138],      // lush
-  enemy:   [0xA27E45, 0xB89354, 0x84633A],      // sun-scorched savanna
+  enemy:   [0x8B7D45, 0x9E9052, 0x6D6136],      // dry khaki scrub (hostile, not sand)
   neutral: [0x8DA34A, 0xA2B65C, 0x6F8838],      // olive scrub
 };
 const C = {
