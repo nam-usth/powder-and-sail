@@ -882,10 +882,9 @@ export class IslandEntity {
 
   // ── HARBOR: the home port wrapped round its bay ───────────────
   _planHarbor() {
-    const b = HARBOR.bay, q = HARBOR.quayZ;
-    this._quayHalf = b.rx * Math.sqrt(Math.max(0, 1 - ((q - b.z) / b.rz) ** 2));
-    this._pierXs = [-6.4, 0, 6.4];
-    this._pierLen = 11;
+    this._quayHalf = HARBOR.quayHalf;
+    this._pierXs = HARBOR.piers.slice();
+    this._pierLen = HARBOR.pierLen;
     // landmarks snap to solid ground near their wanted spot (the coast is irregular)
     const onLand = (x0, z0, need) => {
       let best = [x0, z0], bd = Infinity;
@@ -896,8 +895,8 @@ export class IslandEntity {
       }
       return { x: best[0], z: best[1] };
     };
-    this._lightLocal = onLand(-15.5, 19.0, 2.4);      // west headland over the cove
-    this._fortLocal  = onLand(17.5, 22.0, 3.2);       // east point commanding the inlet
+    this._lightLocal = onLand(-24.0, 8.0, 2.4);       // west point by the waterfront
+    this._fortLocal  = onLand(23.5, 6.0, 3.2);        // east point commanding the roads
     this._noDecor.push([this._fortLocal.x, this._fortLocal.z, 4.6], [this._lightLocal.x, this._lightLocal.z, 3.2]);
     HARBOR.islets.slice(0, 2).forEach(([x, z, r]) => this._noDecor.push([x, z, r + 0.6]));
     // sea walls along the exposed north-west and north-east shores, set back from the coast
@@ -913,7 +912,8 @@ export class IslandEntity {
       pts.forEach(([x, z]) => this._noDecor.push([x, z, 2.1]));
     }
     // berths: both sides of every finger pier, two ships deep, bows to the mouth
-    for (const px of this._pierXs) for (const sd of [-1, 1]) for (const bz of [1.3, 6.5])
+    const q = HARBOR.quayZ;
+    for (const px of this._pierXs) for (const sd of [-1, 1]) for (const bz of [q + 3.8, q + 9.0])
       this.berths.push({ x: this.x + px + sd * 2.0, z: this.z + bz, angle: 0 });
   }
 
@@ -945,7 +945,7 @@ export class IslandEntity {
         for (let z = q + 1.6; z < q + L; z += 0.48) k.box('matte', 1.54, 0.02, 0.05, px, y, z, P.timberDk, { hi, jit: 0.1 });
         for (let z = q + 1.4; z <= q + L + 0.01; z += 1.6)
           for (const sx of [-1, 1]) k.cyl('matte', 0.11, 0.13, 3.0, 6, px + sx * 0.8, y - 2.9, z, [P.timberDk, P.timber, P.timberDk], { ao: false, jit: 0.1 });
-        for (const sx of [-1, 1]) for (const bz of [1.3, 6.5]) {
+        for (const sx of [-1, 1]) for (const bz of [q + 3.8, q + 9.0]) {
           k.cyl('gloss', 0.08, 0.1, 0.24, 7, px + sx * 0.62, y, bz - 1.6, P.iron, [P.iron, P.ironLt, P.iron]);
           k.torus('matte', 0.12, 0.25, px + sx * 0.5, y + 0.03, bz - 1.0, P.rope, { rx: Math.PI / 2, hi, ts: 9 });
         }

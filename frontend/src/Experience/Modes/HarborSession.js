@@ -92,7 +92,7 @@ export class HarborSession {
     });
 
     st.camDist = 58;
-    game._cam.jumpTo(home.x + 4, home.z + 10);
+    game._cam.jumpTo(home.x, home.z + 6);
     st.selectedIslandId = home.def.id;
 
     music.play('harbor'); music.ambience('harbor');

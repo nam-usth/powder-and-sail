@@ -163,22 +163,21 @@ function genSprawl(seed) {
   return valid;
 }
 
-// ── HARBOR — the home port: a natural island with a sheltered cove ──
-// AW (rev 2): the coast is an irregular outline (headlands, coves), the
-// harbor is a lobed cove — not a ring — that opens south-east (+Z, toward
-// the RTS camera) through a winding inlet. A straight stone quay (man-made)
-// closes the cove's north side; finger piers run south from it. The land
-// outline is an analytic signed distance (world units, island-local) shared
-// by the grid (here) and the terrain mesh (World/IslandEntity).
+// ── HARBOR — the home port: one solid island, a waterfront of piers ──
+// AW (rev 3, per the user's reference): a single irregular landmass — no
+// inner bay. Its south shore (+Z, toward the RTS camera) is a straight stone
+// quay; finger piers run from it straight out into the open sea, ships
+// berth along them. Town plateau inland, sea walls and jungle on the far
+// shores. Analytic signed distance (world units, island-local) shared by the
+// grid (here) and the terrain mesh (World/IslandEntity).
 export const HARBOR = Object.freeze({
-  outerR: 27.5,                                   // mean coast radius (see harborCoastR)
-  // cove = smooth union of lobes; the first lobe holds the quay
-  bay:    { x: 0, z: 7, rx: 14.5, rz: 11 },       // main lobe (quay + piers live here)
-  lobes:  [[0.5, 7.5, 14.5, 10.5], [-9.5, 12.5, 6.5, 5.2], [10.5, 14.5, 6.0, 6.5]],
-  quayZ:  -2.5,                                   // straight quay line (north edge of the cove)
-  inlet:  [[3, 15, 7.0], [7.5, 22, 6.2], [5.5, 29, 5.6], [10.5, 37, 5.4], [13, 46, 6.0]], // winding channel [x,z,r]
-  coast:  [[2, 3.4, 0.6], [3, 2.2, 2.1], [5, 1.3, 0.3], [7, 0.7, 1.9], [11, 0.35, 4.0]],   // [k, amp, phase]
-  islets: [[-2.5, 37.5, 2.6], [19.5, 33.5, 2.2], [-5.5, 41.0, 1.25], [18.0, 39.5, 1.0]],
+  outerR: 29,                                     // mean coast radius (see harborCoastR)
+  quayZ:  9,                                      // straight quay line on the south shore
+  quayHalf: 16,                                   // quay half-length (x)
+  piers:  [-13, -6.5, 0, 6.5, 13],                // finger pier x positions
+  pierLen: 12,
+  coast:  [[2, 2.6, 0.6], [3, 2.0, 2.1], [5, 1.2, 0.3], [7, 0.7, 1.9], [11, 0.35, 4.0]],   // [k, amp, phase]
+  islets: [[27.0, 24.0, 2.4], [-29.0, 19.0, 2.0], [30.5, 29.5, 1.1], [-26.5, 25.5, 1.0]],
   cellWorld: 2.4,                                 // = BUILD_CELL_WORLD (pure data module)
   cellMargin: 2.4,                                // cells keep ≥ this from the water (quay strip)
 });
@@ -191,26 +190,14 @@ export function harborCoastR(x, z) {
   return r;
 }
 
-const _smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
-
-/** Signed distance to the cove + inlet water (negative inside the water). */
+/**
+ * Signed distance to the open water in front of the quay (negative = water).
+ * Along the quay it is the straight quay line; past its ends it bends back so
+ * the natural coast takes over.
+ */
 export function harborWaterSDF(x, z) {
-  let bay = Infinity;
-  for (const [cx, cz, rx, rz] of HARBOR.lobes) {
-    const d = (Math.hypot((x - cx) / rx, (z - cz) / rz) - 1) * Math.min(rx, rz);
-    bay = _smin(bay, d, 3.0);
-  }
-  bay += 0.55 * Math.sin(x * 0.42 + 1.3) * Math.sin(z * 0.37 - 0.4);   // ragged natural shore
-  bay = Math.max(bay, HARBOR.quayZ - z);                                 // flat quay edge
-  const pts = HARBOR.inlet;
-  let inlet = Infinity;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [ax, az, ar] = pts[i], [bx, bz, br] = pts[i + 1];
-    const dx = bx - ax, dz = bz - az;
-    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
-    inlet = Math.min(inlet, Math.hypot(x - ax - dx * t, z - az - dz * t) - (ar + (br - ar) * t));
-  }
-  return _smin(bay, inlet, 2.5);
+  const over = Math.max(0, Math.abs(x) - HARBOR.quayHalf - 2);
+  return (HARBOR.quayZ - z) + over * 1.3;
 }
 
 /** Signed distance to HARBOR land (negative on land), islets included. */

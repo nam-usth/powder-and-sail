@@ -110,14 +110,14 @@ suite('BuildingModels — every building and defense has a model', () => {
 
 suite('Island art — HARBOR shape, berths, colliders', () => {
 
-  test('HARBOR grid: land terraces only, ≥ 100 cells on 16×16, none in the bay', () => {
+  test('HARBOR grid: land only, ≥ 100 cells on 16×16, none on the waterfront', () => {
     const keys = generateShape('HARBOR', 1, 16);
     assert(keys.size >= 100, `only ${keys.size} cells`);
     keys.forEach(k => {
       const [c, r] = k.split('_').map(Number);
       const x = c * BUILD_CELL_WORLD - 7.5 * BUILD_CELL_WORLD, z = r * BUILD_CELL_WORLD - 7.5 * BUILD_CELL_WORLD;
       assert(harborLandSDF(x, z) < -1.2, `cell ${k} is not well inside the land`);
-      assert(harborWaterSDF(x, z) > 1.2, `cell ${k} touches the bay`);
+      assert(harborWaterSDF(x, z) > 1.2, `cell ${k} touches the waterfront`);
     });
   });
 
@@ -128,7 +128,7 @@ suite('Island art — HARBOR shape, berths, colliders', () => {
     assert(mirrorShape(new Set(['0_3'])).has('9_3'), 'default mirror still 10 wide');
   });
 
-  test('HARBOR island: ≥ 10 berths in open bay water, clear of every collider', async () => {
+  test('HARBOR island: ≥ 10 berths in open water off the quay, clear of every collider', async () => {
     const { IslandEntity } = await import('../frontend/src/Experience/World/IslandEntity.js');
     const scene = new THREE.Scene();
     const isl = new IslandEntity(scene, { id: 't_harbor', x: 40, z: -20, r: 30, hp: 200, nm: 'T', own: 'player',
@@ -142,8 +142,8 @@ suite('Island art — HARBOR shape, berths, colliders', () => {
       for (const c of isl.colliders)
         assert(Math.hypot(b.x - c.x, b.z - c.z) > c.r + 1.5, `berth (${b.x},${b.z}) inside a collider`);
     }
-    // the open sea and the bay centre are water, the north terraces are land
-    assert(!isl.landAt(40, -20 + 7), 'bay centre should be water');
+    // the water off the quay (between the piers) is sea, the town plateau is land
+    assert(!isl.landAt(40 + 3.25, -20 + 15), 'water off the quay should be sea');
     assert(isl.landAt(40, -20 - 14), 'north terraces should be land');
     assert(isl.deckDropAt(40, -20 - 14) < 0.05, 'build terraces must be level with the deck');
     scene.remove(isl.grp);
