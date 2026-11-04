@@ -1,373 +1,186 @@
 import * as THREE from 'three';
+import { ENV } from './env.js';
+import { GLSL_HASH, GLSL_FIRE_RAMP } from './glsl.js';
+import { vfxBudget, budgetCount } from './quality.js';
 
-// ── GLSL: Simplex noise + FBM (shared by cone, smoke, sparks) ────
-const MFLASH_NOISE = /* glsl */`
-vec3 _m3(vec3 x){return x-floor(x*(1./289.))*289.;}
-vec4 _m4(vec4 x){return x-floor(x*(1./289.))*289.;}
-float snoise(vec3 v){
-  const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);
-  vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);
-  vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.-g;
-  vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);
-  vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+C.yyy;vec3 x3=x0-D.yyy;
-  i=_m3(i);
-  vec4 p=_m4(_m4(_m4(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
-  float n_=.142857;vec3 ns=n_*D.wyz-D.xzx;
-  vec4 j=p-49.*floor(p*ns.z*ns.z);vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.*x_);
-  vec4 x=x_*ns.x+ns.yyyy;vec4 y=y_*ns.x+ns.yyyy;vec4 h=1.-abs(x)-abs(y);
-  vec4 b0=vec4(x.xy,y.xy);vec4 b1=vec4(x.zw,y.zw);
-  vec4 s0=floor(b0)*2.+1.;vec4 s1=floor(b1)*2.+1.;vec4 sh=-step(h,vec4(0.));
-  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
-  vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);
-  vec4 nm=1.79284291-0.85373472*vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3));
-  p0*=nm.x;p1*=nm.y;p2*=nm.z;p3*=nm.w;
-  vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);m=m*m;
-  return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
-}
-float fbm2(vec3 p){return snoise(p)*.5+snoise(p*2.1+vec3(1.7,9.2,5.5))*.25;}
-`;
+// ── Muzzle flashes ─────────────────────────────────────────────────
+// MuzzleFlashSystem.discharge() is ONE gun firing:
+//   • a directional flame jet (instanced crossed planes — one draw call for
+//     every flash on screen, replacing 4 per-slot meshes + materials)
+//   • a white-hot core puff + a fan of sparks
+//   • the lingering gun-smoke: puffs blasted out of the port that decelerate
+//     hard (drag), swell, rise a little and then drift down-wind for several
+//     seconds — a full broadside leaves the classic smoke bank along the hull
+// Point lights are NOT per gun: the caller fires one FlashLights flash per
+// volley (see VFX.fireBall).
 
-// ── GLSL: Cone ────────────────────────────────────────────────────
-const MFLASH_CONE_VERT = MFLASH_NOISE + /* glsl */`
-uniform vec4 uFlashData;
+const CAP = 48;
+const STRIDE = 8;
+const DUR = 0.2;
+const R = Math.random;
+
+const VERT = /* glsl */`
+uniform float uTime;
+attribute vec3 aUVA;   // axial 0..1, across 0..1, plane (0 vertical · 1 horizontal)
+attribute vec4 aO;     // origin xyz, t0
+attribute vec4 aD;     // dir x/z, length, spread
 varying vec2 vUv;
+varying float vProg;
+varying float vSeed;
 void main(){
-  vUv=uv;
-  float prog=uFlashData.x,spread=uFlashData.y,t=uFlashData.z;
-  vec3 pos=position;
-  float axial=uv.x;
-  pos.y=(uv.y-.5)*axial*spread*2.;
-  pos.y+=snoise(vec3(axial*4.,t*6.,uv.y*3.))*axial*(1.-axial)*.5;
-  pos.x+=snoise(vec3(t*8.,axial*2.,0.))*.07*axial;
-  pos*=1.-prog*.28;
-  gl_Position=projectionMatrix*modelViewMatrix*vec4(pos,1.);
+  float age = uTime - aO.w;
+  if (age < 0.0 || age >= ${DUR.toFixed(3)}) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+  float prog = age / ${DUR.toFixed(3)};
+  float axial = aUVA.x, across = aUVA.y * 2.0 - 1.0;
+  float len = aD.z * (0.55 + 0.55 * smoothstep(0.0, 0.18, prog));
+  float wid = axial * aD.w * len * (1.0 - prog * 0.35);
+  vec3 f = vec3(aD.x, 0.0, aD.y);
+  vec3 dirAcross = aUVA.z < 0.5 ? vec3(0.0, 1.0, 0.0) : vec3(-aD.y, 0.0, aD.x);
+  float wob = sin(axial * 9.0 + age * 55.0 + aO.x * 3.1) * 0.10 * axial * (1.0 - axial);
+  vec3 wp = aO.xyz + f * (axial * len) + dirAcross * (across * wid + wob * len);
+  wp.y += axial * axial * len * 0.06;          // hot gas lifts a touch
+  vUv = vec2(axial, aUVA.y); vProg = prog; vSeed = fract(aO.x * 0.37 + aO.z * 0.91);
+  gl_Position = projectionMatrix * viewMatrix * vec4(wp, 1.0);
 }`;
 
-const MFLASH_CONE_FRAG = MFLASH_NOISE + /* glsl */`
-uniform vec4 uFlashData;
+const FRAG = GLSL_HASH + GLSL_FIRE_RAMP + /* glsl */`
 varying vec2 vUv;
+varying float vProg;
+varying float vSeed;
 void main(){
-  float prog=uFlashData.x,t=uFlashData.z;
-  float axial=vUv.x,crossN=abs(vUv.y-.5)*2.;
-  float cone=1.-smoothstep(.5,1.,crossN/max(axial,.01));
-  float tip=1.-smoothstep(.75,1.,axial);
-  float f=fbm2(vec3(axial*2.5-t*4.,(vUv.y-.5)*3.,t*1.5))*.5+.5;
-  float flame=cone*tip*(f*.7+.3);
-  flame*=1.-smoothstep(.3,1.,prog);
-  flame*=1.+smoothstep(0.,.08,prog)*(1.-smoothstep(.08,.28,prog))*1.4;
-  if(flame<.02) discard;
-  float heat=flame*(1.-axial*.4)*(1.-crossN*.6);
-  vec3 col=vec3(.28,.015,.0);
-  col=mix(col,vec3(.83,.07,.0), smoothstep(.12,.32,heat));
-  col=mix(col,vec3(1.,.40,.03), smoothstep(.30,.55,heat));
-  col=mix(col,vec3(1.,.84,.14), smoothstep(.52,.74,heat));
-  col=mix(col,vec3(1.,.97,.88), smoothstep(.72,.92,heat));
-  col=mix(col,vec3(1.,.97,.88), (1.-smoothstep(0.,.18,axial))*.9);
-  gl_FragColor=vec4(col,flame*.93);
+  float axial = vUv.x, crossN = abs(vUv.y - 0.5) * 2.0;
+  float cone = 1.0 - smoothstep(0.35, 1.0, crossN);
+  float tip  = 1.0 - smoothstep(0.55, 1.0, axial);
+  float n = vfxNoise(vec2(axial * 7.0 - vProg * 16.0, vUv.y * 6.0 + vSeed * 20.0));
+  float flame = cone * tip * (0.5 + 0.5 * n) * (1.0 - smoothstep(0.3, 1.0, vProg));
+  flame *= 1.0 + (1.0 - smoothstep(0.0, 0.22, vProg)) * 0.9;
+  if (flame < 0.02) discard;
+  float heat = flame * (1.15 - axial * 0.55) * (1.0 - crossN * 0.4);
+  vec3 col = vfxFireRamp(heat) * (1.35 + heat);
+  gl_FragColor = vec4(col, clamp(flame, 0.0, 1.0));
 }`;
 
-// ── GLSL: Smoke particles ─────────────────────────────────────────
-const MFLASH_SMOKE_VERT = /* glsl */`
-uniform float uProgress[4];
-attribute float aRandom;attribute float aOffset;
-attribute vec3 aDir;attribute float aSlot;
-varying float vLife;varying float vRandom;varying float vWarm;varying float vOffset;
-void main(){
-  int slot=int(aSlot);
-  float prog=uProgress[slot];
-  float localT=max(prog-aOffset*.12,0.)/max(1.-aOffset*.12,.001);
-  vLife=clamp(localT,0.,1.);vRandom=aRandom;
-
-  // Phase 1 (0→0.40): horizontal blast, fast decel
-  float blastEnd=.40;
-  float bT=clamp(localT/blastEnd,0.,1.);
-  float blastDist=(2.2+aRandom*1.0);
-  vec3 perpJitter=vec3(-aDir.z,0.,aDir.x)*(aRandom-.5)*blastDist*.35;
-  vec3 blastPos=aDir*blastDist*bT*(1.-.78*bT)+perpJitter*bT*(1.-.78*bT);
-
-  // Phase 2 (0.40→1): puff expands + gentle rise
-  float rT=max(localT-blastEnd,0.)/(1.-blastEnd);
-  float riseY=rT*rT*0.5*(0.5+aRandom*.4);
-  vec3 drift=aDir*(0.15+aRandom*.1)*rT*(1.-rT*.8)+vec3(0.,riseY,0.);
-
-  vec3 pos=position+blastPos+drift;
-
-  vWarm=max(0.,1.-vLife*2.5)*(1.-aOffset);vOffset=aOffset;
-
-  float worldSz=mix(0.04,1.8,smoothstep(0.,.5,localT))*(1.-smoothstep(.72,1.,localT)*.25);
-  vec4 mvPos=modelViewMatrix*vec4(pos,1.);
-  gl_Position=projectionMatrix*mvPos;
-  float projSz=worldSz*(380./-mvPos.z);gl_PointSize=min(projSz,180.);
-}`;
-
-const MFLASH_SMOKE_FRAG = MFLASH_NOISE + /* glsl */`
-uniform float uGlobalTime;
-varying float vLife;varying float vRandom;varying float vWarm;varying float vOffset;
-float hash2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-float noise2(vec2 p){
-  vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);
-  return mix(mix(hash2(i),hash2(i+vec2(1,0)),f.x),
-             mix(hash2(i+vec2(0,1)),hash2(i+vec2(1,1)),f.x),f.y);
-}
-void main(){
-  vec2 uv=gl_PointCoord-.5;
-  float d=length(uv);
-  if(d>.5) discard;
-  // Noise dissolve: late-life puffs erode from edges inward
-  float dissolveNoise=noise2(uv*5.5+vLife*2.2+vRandom*3.);
-  float dissolveThr=vLife*(1.3+vOffset*3.5);
-  if(dissolveNoise<dissolveThr) discard;
-  // Fresnel-style rim on billboard
-  float rim=smoothstep(.1,.48,d);
-  // FBM cloud texture → cauliflower silhouette
-  float n=fbm2(vec3(uv*3.5,uGlobalTime*.25+vRandom*6.))*.5+.5;
-  float nEdge=1.-smoothstep(.15+n*.15,.5,d);
-  float alpha=nEdge*(1.-vLife*.78)*0.30;
-  alpha*=(1.-rim*0.55);
-  // Fire-to-smoke colour transition
-  float fireIntensity=smoothstep(0.,.22,1.-vLife)*vWarm;
-  float bright=mix(.52,.90,n);
-  vec3 cloudCol=vec3(bright*.90,bright*.88,bright*.85);
-  vec3 fireCol=mix(vec3(.85,.40,.08),vec3(1.,.90,.60),n);
-  vec3 col=mix(cloudCol,fireCol,fireIntensity);
-  float lighting=mix(0.55,1.0,1.-rim)+n*.15;
-  col*=lighting;
-  // Emissive boost for fire phase — makes hot smoke glow
-  col*=(1.+fireIntensity*2.2);
-  alpha*=(1.+fireIntensity*1.4);
-  gl_FragColor=vec4(col,alpha);
-}`;
-
-// ── GLSL: Spark particles ─────────────────────────────────────────
-const MFLASH_SPARK_VERT = /* glsl */`
-uniform float uProgress[4];
-attribute float aRandom;attribute vec3 aVel;attribute float aSlot;
-varying float vLife;
-void main(){
-  int slot=int(aSlot);
-  float prog=uProgress[slot];
-  vLife=clamp(prog/(.32+aRandom*.18),0.,1.);
-  vec3 pos=position+aVel*prog*(1.-.4*prog);
-  pos.y-=prog*prog*1.8;
-  vec4 mvPos=modelViewMatrix*vec4(pos,1.);
-  gl_Position=projectionMatrix*mvPos;
-  gl_PointSize=mix(4.,1.,vLife)*(320./-mvPos.z);
-}`;
-
-const MFLASH_SPARK_FRAG = /* glsl */`
-varying float vLife;
-void main(){
-  if(length(gl_PointCoord-.5)>.5) discard;
-  float a=(1.-vLife)*(1.-vLife);
-  gl_FragColor=vec4(mix(vec3(1.,.96,.80),vec3(1.,.48,.04),vLife*2.),a);
-}`;
-
-// ── MuzzleFlashPool — shader cone + smoke + sparks (4 slots) ─────
-export class MuzzleFlashPool {
-  constructor(scene) {
-    const POOL      = 4;
-    const SMOKE_N   = 20;
-    const SPARK_N   = 50;
-    const DUR       = 0.52;
-    const SMOKE_DUR = 2.2;
-
-    this._scene     = scene;
-    this._DUR       = DUR;
-    this._SMOKE_DUR = SMOKE_DUR;
-    this._SMOKE_N   = SMOKE_N;
-    this._SPARK_N   = SPARK_N;
-    this._globalTime  = 0;
-    this._slots       = Array.from({ length: POOL }, () => ({ active: false, t: 0, progress: 0 }));
-    this._progressArr = new Float32Array(POOL);
-
-    // Cone meshes (one per slot)
-    this._coneGeo = new THREE.PlaneGeometry(1, 1, 16, 8);
-    this._coneGeo.translate(0.5, 0, 0);
-    this._coneUniforms = [];
-    this._coneMeshes   = [];
-    for (let s = 0; s < POOL; s++) {
-      const u = { uFlashData: { value: new THREE.Vector4(0, 0.48, 0, 0) } };
-      this._coneUniforms.push(u);
-      const mat  = new THREE.ShaderMaterial({
-        uniforms:       u,
-        vertexShader:   MFLASH_CONE_VERT,
-        fragmentShader: MFLASH_CONE_FRAG,
-        transparent:    true,
-        depthWrite:     false,
-        side:           THREE.DoubleSide,
-        blending:       THREE.AdditiveBlending,
-      });
-      const mesh = new THREE.Mesh(this._coneGeo, mat);
-      mesh.visible = false;
-      mesh.renderOrder = 999;
-      scene.add(mesh);
-      this._coneMeshes.push(mesh);
-    }
-
-    // Smoke points (all slots combined)
-    const totalSmoke = POOL * SMOKE_N;
-    this._sGeo  = new THREE.BufferGeometry();
-    this._sPos  = new Float32Array(totalSmoke * 3);
-    this._sRand = new Float32Array(totalSmoke);
-    this._sOff  = new Float32Array(totalSmoke);
-    this._sDir  = new Float32Array(totalSmoke * 3);
-    this._sSlot = new Float32Array(totalSmoke);
-    for (let i = 0; i < totalSmoke; i++) {
-      this._sRand[i] = Math.random();
-      this._sOff[i]  = Math.random();
-      this._sSlot[i] = Math.floor(i / SMOKE_N);
-    }
-    this._sGeo.setAttribute('position', new THREE.BufferAttribute(this._sPos,  3).setUsage(THREE.DynamicDrawUsage));
-    this._sGeo.setAttribute('aRandom',  new THREE.BufferAttribute(this._sRand, 1));
-    this._sGeo.setAttribute('aOffset',  new THREE.BufferAttribute(this._sOff,  1));
-    this._sGeo.setAttribute('aDir',     new THREE.BufferAttribute(this._sDir,  3).setUsage(THREE.DynamicDrawUsage));
-    this._sGeo.setAttribute('aSlot',    new THREE.BufferAttribute(this._sSlot, 1));
-    this._smokeMat = new THREE.ShaderMaterial({
-      uniforms:       { uProgress: { value: this._progressArr }, uGlobalTime: { value: 0 } },
-      vertexShader:   MFLASH_SMOKE_VERT,
-      fragmentShader: MFLASH_SMOKE_FRAG,
-      transparent:    true,
-      depthWrite:     false,
-      blending:       THREE.NormalBlending,
-    });
-    this._smokePts = new THREE.Points(this._sGeo, this._smokeMat);
-    this._smokePts.renderOrder   = 997;
-    this._smokePts.frustumCulled = false;
-    scene.add(this._smokePts);
-
-    // Spark points (all slots combined)
-    const totalSpark = POOL * SPARK_N;
-    this._spGeo  = new THREE.BufferGeometry();
-    this._spPos  = new Float32Array(totalSpark * 3);
-    this._spRand = new Float32Array(totalSpark);
-    this._spVel  = new Float32Array(totalSpark * 3);
-    this._spSlot = new Float32Array(totalSpark);
-    for (let i = 0; i < totalSpark; i++) {
-      this._spRand[i] = Math.random();
-      this._spSlot[i] = Math.floor(i / SPARK_N);
-    }
-    this._spGeo.setAttribute('position', new THREE.BufferAttribute(this._spPos,  3).setUsage(THREE.DynamicDrawUsage));
-    this._spGeo.setAttribute('aRandom',  new THREE.BufferAttribute(this._spRand, 1));
-    this._spGeo.setAttribute('aVel',     new THREE.BufferAttribute(this._spVel,  3).setUsage(THREE.DynamicDrawUsage));
-    this._spGeo.setAttribute('aSlot',    new THREE.BufferAttribute(this._spSlot, 1));
-    this._sparkMat = new THREE.ShaderMaterial({
-      uniforms:       { uProgress: { value: this._progressArr } },
-      vertexShader:   MFLASH_SPARK_VERT,
-      fragmentShader: MFLASH_SPARK_FRAG,
-      transparent:    true,
-      depthWrite:     false,
-      blending:       THREE.AdditiveBlending,
-    });
-    this._sparkPts = new THREE.Points(this._spGeo, this._sparkMat);
-    this._sparkPts.renderOrder   = 1000;
-    this._sparkPts.frustumCulled = false;
-    scene.add(this._sparkPts);
-
-    // Muzzle flash point lights (one per slot)
-    this._flashLights = [];
-    for (let s = 0; s < POOL; s++) {
-      const light = new THREE.PointLight(0xff7020, 0, 10);
-      light.visible = false;
-      scene.add(light);
-      this._flashLights.push(light);
+function buildConeGeometry() {
+  const AX = 12, AC = 4;
+  const uva = [], idx = [];
+  for (let plane = 0; plane < 2; plane++) {
+    const base = uva.length / 3;
+    for (let i = 0; i <= AX; i++) for (let j = 0; j <= AC; j++) uva.push(i / AX, j / AC, plane);
+    for (let i = 0; i < AX; i++) for (let j = 0; j < AC; j++) {
+      const a = base + i * (AC + 1) + j, b = a + AC + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
     }
   }
+  const g = new THREE.InstancedBufferGeometry();
+  const arr = new Float32Array(uva);
+  g.setAttribute('aUVA', new THREE.BufferAttribute(arr, 3));
+  // three.js needs a `position` attribute to size the draw; aUVA doubles as it
+  g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  g.setIndex(idx);
+  return g;
+}
 
+/** Instanced flame jets + per-gun discharge recipe. */
+export class MuzzleFlashSystem {
+  /**
+   * @param {THREE.Scene} scene
+   * @param {{flame, smoke, spark, spray, decals}} fx particle fields
+   */
+  constructor(scene, fx) {
+    this._scene = scene;
+    this._fx = fx;
+    this._head = 0;
+    this._aliveUntil = -1;
+    const geo = buildConeGeometry();
+    this.data = new Float32Array(CAP * STRIDE);
+    for (let i = 0; i < CAP; i++) this.data[i * STRIDE + 3] = -1e6;
+    this._ib = new THREE.InstancedInterleavedBuffer(this.data, STRIDE, 1).setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aO', new THREE.InterleavedBufferAttribute(this._ib, 4, 0));
+    geo.setAttribute('aD', new THREE.InterleavedBufferAttribute(this._ib, 4, 4));
+    geo.instanceCount = CAP;
+    this.geometry = geo;
+    this.material = new THREE.ShaderMaterial({
+      uniforms: { uTime: ENV.uTime },
+      vertexShader: VERT, fragmentShader: FRAG,
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+    });
+    this.mesh = new THREE.Mesh(geo, this.material);
+    this.mesh.name = 'vfx-muzzle';
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 28;
+    this.mesh.visible = false;
+    scene.add(this.mesh);
+    this._dMin = -1; this._dMax = -1;
+  }
+
+  /** Flame jet only. */
+  cone(x, y, z, dx, dz, length = 2.6, spread = 0.42, delay = 0) {
+    const i = this._head; this._head = (i + 1) % CAP;
+    const d = this.data, o = i * STRIDE, t0 = ENV.uTime.value + delay;
+    d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = t0;
+    d[o + 4] = dx; d[o + 5] = dz; d[o + 6] = length; d[o + 7] = spread;
+    if (t0 + DUR > this._aliveUntil) this._aliveUntil = t0 + DUR;
+    const ur = this._ib.updateRange;
+    if (ur.count === -1 || this._dMin < 0) { this._dMin = i; this._dMax = i; }
+    else { if (i < this._dMin) this._dMin = i; if (i > this._dMax) this._dMax = i; }
+    ur.offset = this._dMin * STRIDE; ur.count = (this._dMax - this._dMin + 1) * STRIDE;
+    this._ib.needsUpdate = true;
+    this.mesh.visible = true;
+  }
+
+  /**
+   * One gun discharging. (dx, dz) must be a unit vector.
+   * @param {number} scale 1 = ship gun, >1 = fort / heavy gun
+   * @param {number} delay seconds (broadside ripple)
+   */
+  discharge(x, y, z, dx, dz, scale = 1, delay = 0) {
+    const fx = this._fx, B = vfxBudget();
+    const sx = -dz, sz = dx;                         // horizontal side vector
+    this.cone(x, y, z, dx, dz, 2.5 * scale, 0.40, delay);
+    // white-hot core
+    fx.flame.emit(x + dx * 0.25, y, z + dz * 0.25, dx * 5, 0.4, dz * 5, 0.13, 0.7 * scale, 1.5 * scale, 6, 0, 1.0, 0.95, 0, delay);
+    fx.flame.emit(x + dx * 0.8, y + 0.05, z + dz * 0.8, dx * 7, 0.6, dz * 7, 0.17, 0.5 * scale, 1.2 * scale, 5, 0.5, 0.85, 0.8, 0, delay);
+    // sparks / burning wadding
+    const ns = budgetCount(6, 2);
+    for (let k = 0; k < ns; k++) {
+      const s = 9 + R() * 9, side = (R() - 0.5) * 0.5, up = (R() - 0.2) * 0.25;
+      fx.spark.emit(x, y, z, (dx + sx * side) * s, up * s, (dz + sz * side) * s,
+        0.22 + R() * 0.25, 0.045, 0.035, 1.4, -6, 1.0, 0.72, 0.32, 1.6, delay);
+    }
+    // gun smoke — the lingering broadside bank: a thick white cloud bursts
+    // from the port, decelerates hard, swells, then drifts down-wind
+    const linger = B.lingerSmoke;
+    const nb = budgetCount(6, 3);
+    for (let k = 0; k < nb; k++) {
+      const s = 4 + R() * 10, side = (R() - 0.5) * 0.6, up = 0.04 + R() * 0.22;
+      const life = linger ? (6.0 + R() * 4.0) * B.smokeLife : 3.0 + R() * 1.2;
+      fx.smoke.emit(x + dx * 0.3, y + (R() - 0.5) * 0.15, z + dz * 0.3,
+        (dx + sx * side) * s, up * s, (dz + sz * side) * s,
+        life, 0.9 * scale, (3.6 + R() * 2.0) * scale, 3.0, 0.10, 0.86 + R() * 0.1, 0.62, 0.35, delay + R() * 0.03);
+    }
+    // slow cloud hanging along the hull at the port
+    fx.smoke.emit(x + dx * 0.6, y + 0.1, z + dz * 0.6, dx * 1.6 + sx * (R() - 0.5), 0.4, dz * 1.6 + sz * (R() - 0.5),
+      linger ? (8.0 + R() * 3.0) * B.smokeLife : 3.6, 1.2 * scale, 5.2 * scale, 1.4, 0.08, 0.92, 0.48, 0.25, delay + 0.04);
+    // pressure ring flattening the water under the port (HIGH only)
+    if (B.softParticles && fx.decals && y < 3) fx.decals.emit(x + dx * 0.9, 0.08, z + dz * 0.9, 0, 0.3, 2.2 * scale, 0.55, 0.5, 0.10, delay);
+  }
+
+  /** Back-compat: legacy MuzzleFlashPool.fire({ position, direction }). */
   fire(opts = {}) {
-    let slot = this._slots.findIndex(s => !s.active);
-    if (slot === -1) {
-      let maxT = -1;
-      this._slots.forEach((s, i) => { if (s.t > maxT) { maxT = s.t; slot = i; } });
-    }
-
-    const pos    = opts.position  || new THREE.Vector3();
-    const rawDir = opts.direction ? opts.direction.clone() : new THREE.Vector3(0, 0, 1);
-    rawDir.y = 0;
-    if (rawDir.lengthSq() < 0.0001) rawDir.set(0, 0, 1);
-    rawDir.normalize();
-    const len    = opts.length    || 2.8;
-    const spread = opts.spread    || 0.48;
-    const quat   = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), rawDir);
-
-    this._slots[slot].active   = true;
-    this._slots[slot].t        = 0;
-    this._slots[slot].progress = 0;
-    this._progressArr[slot]    = 0;
-
-    const cm = this._coneMeshes[slot];
-    cm.position.copy(pos);
-    cm.quaternion.copy(quat);
-    cm.scale.setScalar(len);
-    cm.visible = true;
-    this._coneUniforms[slot].uFlashData.value.set(0, spread, 0, 0);
-
-    const fl = this._flashLights[slot];
-    fl.position.copy(pos);
-    fl.intensity = 0;
-    fl.visible = true;
-
-    // Smoke: all particles start at muzzle tip, horizontal cone spread
-    const sb = slot * this._SMOKE_N;
-    for (let i = 0; i < this._SMOKE_N; i++) {
-      const idx = sb + i;
-      this._sPos[idx * 3]     = pos.x;
-      this._sPos[idx * 3 + 1] = pos.y;
-      this._sPos[idx * 3 + 2] = pos.z;
-      const ang = (Math.random() - 0.5) * spread * 2.2;
-      const d = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)).applyQuaternion(quat);
-      this._sDir[idx * 3]     = d.x;
-      this._sDir[idx * 3 + 1] = d.y;
-      this._sDir[idx * 3 + 2] = d.z;
-    }
-    this._sGeo.attributes.position.needsUpdate = true;
-    this._sGeo.attributes.aDir.needsUpdate     = true;
-
-    const spb  = slot * this._SPARK_N;
-    const half = spread * 0.6;
-    for (let i = 0; i < this._SPARK_N; i++) {
-      const idx = spb + i;
-      this._spPos[idx * 3] = pos.x; this._spPos[idx * 3 + 1] = pos.y; this._spPos[idx * 3 + 2] = pos.z;
-      const ang  = (Math.random() - 0.5) * half * 2;
-      const elev = (Math.random() - 0.5) * half * 0.4;
-      const spd  = 6.0 + Math.random() * 8.0;
-      const v = new THREE.Vector3(
-        Math.cos(ang) * Math.cos(elev), Math.sin(elev), Math.sin(ang) * Math.cos(elev)
-      ).applyQuaternion(quat).multiplyScalar(spd);
-      this._spVel[idx * 3] = v.x; this._spVel[idx * 3 + 1] = v.y; this._spVel[idx * 3 + 2] = v.z;
-    }
-    this._spGeo.attributes.position.needsUpdate = true;
-    this._spGeo.attributes.aVel.needsUpdate     = true;
+    const p = opts.position, d = opts.direction;
+    let dx = d ? d.x : 0, dz = d ? d.z : 1;
+    const l = Math.hypot(dx, dz) || 1; dx /= l; dz /= l;
+    this.discharge(p ? p.x : 0, p ? p.y : 1, p ? p.z : 0, dx, dz, (opts.length || 2.6) / 2.6);
   }
 
-  update(dt) {
-    this._globalTime += dt;
-    this._smokeMat.uniforms.uGlobalTime.value = this._globalTime;
-    for (let s = 0; s < this._slots.length; s++) {
-      const sl = this._slots[s];
-      if (!sl.active) continue;
-      sl.t        += dt;
-      sl.progress  = sl.t / this._DUR;
-      this._coneUniforms[s].uFlashData.value.x = sl.progress;
-      this._coneUniforms[s].uFlashData.value.z = sl.t;
-      this._progressArr[s] = sl.t / this._SMOKE_DUR;
-      // Flash light: ramp 0→peak at prog 0.08, fade to 0 at prog 0.55
-      const p = sl.progress;
-      const ramp = p < 0.08 ? p / 0.08 : Math.max(0, 1 - (p - 0.08) / 0.47);
-      this._flashLights[s].intensity = ramp * 8;
-      if (sl.progress >= 1.0) { this._coneMeshes[s].visible = false; this._flashLights[s].visible = false; this._flashLights[s].intensity = 0; }
-      if (sl.t / this._SMOKE_DUR >= 1.0) { sl.active = false; this._progressArr[s] = 999; }
-    }
-  }
+  tick(now) { if (this.mesh.visible && now > this._aliveUntil + 0.05) this.mesh.visible = false; }
 
   destroy() {
-    this._coneMeshes.forEach(c => { this._scene.remove(c); c.material.dispose(); });
-    this._flashLights.forEach(l => this._scene.remove(l));
-    this._scene.remove(this._smokePts);
-    this._scene.remove(this._sparkPts);
-    this._coneGeo.dispose();
-    this._sGeo.dispose();
-    this._spGeo.dispose();
-    this._smokeMat.dispose();
-    this._sparkMat.dispose();
+    this._scene.remove(this.mesh);
+    this.geometry.dispose();
+    this.material.dispose();
   }
 }
+
+/** @deprecated name kept for imports — use MuzzleFlashSystem. */
+export const MuzzleFlashPool = MuzzleFlashSystem;

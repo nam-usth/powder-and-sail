@@ -375,8 +375,9 @@ export class HudController {
     const nearG = st.resGold / capG > 0.85;
     const rates = window._game?._build?.getProductionRates?.() ?? { woodRate: 0, goldRate: 0 };
     // Total income = base rate (Town Hall) + building production
-    const totalWoodRate = WOOD_RATE + rates.woodRate;
-    const totalGoldRate = GOLD_RATE + rates.goldRate;
+    const econK = st.econRateMult ?? 1;   // AW: harbor clock (data/harbor.js HARBOR_ECONOMY)
+    const totalWoodRate = (WOOD_RATE + rates.woodRate) * econK;
+    const totalGoldRate = (GOLD_RATE + rates.goldRate) * econK;
     const rateW = ` +${totalWoodRate.toFixed(1)}/s`;
     const rateG = ` +${totalGoldRate.toFixed(1)}/s`;
     const atCapW = st.resWood >= capW;

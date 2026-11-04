@@ -77,7 +77,7 @@ export class ShipyardPanel {
     revealWhenStyled(this._root);
     this._labels();
     this._tick(true);
-    this._modal = pushModal({ el: this._dialog, onEsc: () => this._onEsc() });
+    this._modal = pushModal({ el: this._dialog, onEsc: () => this._onEsc(), name: 'shipyard' });
     focusFirst(this._dialog, '.sy-panel-focus');
     this._timer = setInterval(() => this._tick(), 500);
     window.addEventListener('iow:langchange', this._onLang);

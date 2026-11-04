@@ -1,101 +1,93 @@
 import * as THREE from 'three';
+import { ENV } from '../Systems/VFX/env.js';
+import { GLSL_HASH, GLSL_WAVE, GLSL_FOG } from '../Systems/VFX/glsl.js';
+
 // ── WAKE SYSTEM ──────────────────────────────────────────────────
-// V-shaped foam wake behind every moving ship.
-// AW upgrade: ShaderMaterial with procedural noise foam —
-//   - Bright white prop-wash core along hull centerline
-//   - Hash-noise foam patches on V-arms
-//   - Time-animated foam drifting backward from ship
-//   - Proper V-wake geometry: narrow at stern, spreads outward
+// Foam left by every ship under way, built like the real thing:
+//   • Kelvin arms — two thin foam crests diverging from the hull at the
+//     Kelvin angle (19.5°, tan ≈ 0.354): half-width = beam/2 + 0.354 · s,
+//     s = distance sailed since that point of the wake was laid
+//   • turbulent wash — the churned centre strip behind the stern, widening
+//     and breaking into patches as it ages
+//   • bow wave — a foam "moustache" pushed off the stem, scaled by speed
+// Foam texture is sampled in WORLD space, so it stays where it was laid
+// while the ship sails on (no sliding pattern).
+//
+// Cost model: the CPU only writes x/z + birth time per cross-section
+// (≈ 1 KB per ship per frame, no allocation); the vertex shader computes the
+// wave height (mirrored swell, glsl.js) and the fade from age. One small mesh
+// per ship, frustum culling off (it spans the whole trail).
 
-import { getWaveHeight } from './Ocean.js';
+const SEGS       = 40;     // cross-sections in a trail (incl. the live head)
+const SAMPLE_DT  = 0.08;   // s between committed samples → ≈ 3.1 s of wake
+const WAKE_LIFE  = 3.2;    // s for a cross-section to fade out
+const MIN_SPEED  = 0.008;  // below this the ship lays no new wake
+const KELVIN_TAN = 0.354;
+const BOW_SECTS  = 5;
 
-const WAKE_SEGS  = 30;    // cross-sections along trail
-const WAKE_WIDTH = 2.4;   // max V half-width (world units)
-const WAKE_LIFE  = 2.6;   // seconds to fully fade
-const MIN_SPEED  = 0.008; // skip wake if barely moving
+const VERT = GLSL_FOG + GLSL_WAVE + /* glsl */`
+uniform float uTime, uFogDensity;
+attribute vec4 aW;      // across (-1..1), kind (0 wash · 1 arm · 2 bow), birth t, strength
+varying vec4 vW;        // across, kind, age frac, strength
+varying vec2 vXZ;
+varying float vFog;
+void main(){
+  float age = uTime - aW.z;
+  float x = clamp(age / ${WAKE_LIFE.toFixed(2)}, 0.0, 1.0);
+  vec3 p = position;
+  p.y = vfxWaveH(p.xz, uTime) + 0.05 + (aW.y > 1.5 ? 0.04 : 0.0);
+  vW = vec4(aW.x, aW.y, aW.y > 1.5 ? 0.0 : x, aW.w);
+  vXZ = p.xz;
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  vFog = vfxFog(-mv.z, uFogDensity);
+  gl_Position = projectionMatrix * mv;
+}`;
 
-// ── Vertex shader ─────────────────────────────────────────────────
-const WAKE_VERT = /* glsl */`
-attribute vec3 color;   // .r = per-vertex fade factor
-attribute vec2 aUv;     // (u=trail progress 0→1, v=side 0=left→1=right)
-
-varying vec2  vUv;
-varying float vFade;
-
-void main() {
-  vUv   = aUv;
-  vFade = color.r;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
-// ── Fragment shader — procedural foam ────────────────────────────
-const WAKE_FRAG = /* glsl */`
+const FRAG = GLSL_HASH + /* glsl */`
 uniform float uTime;
+uniform vec3 uSunCol, uAmbCol, uFogCol;
+varying vec4 vW;
+varying vec2 vXZ;
+varying float vFog;
+void main(){
+  float x = vW.z, kind = vW.y, ac = abs(vW.x);
+  float n  = vfxFbm(vXZ * 1.15 + vec2(3.1, uTime * 0.04));
+  float n2 = vfxNoise(vXZ * 4.2 + vec2(uTime * 0.11, -uTime * 0.07));
+  float a;
+  if (kind < 0.5) {                                   // churned centre wash
+    float core = 1.0 - smoothstep(0.15, 1.0, ac);
+    float thr = 0.20 + x * 0.62;
+    a = smoothstep(thr, thr + 0.22, n * 0.65 + n2 * 0.35 + core * 0.30) * core * (1.0 - x * x);
+    a = max(a, (1.0 - smoothstep(0.0, 0.35, x)) * core * 0.75);   // fresh prop-wash is solid white
+  } else if (kind < 1.5) {                            // Kelvin arm crest
+    float line = 1.0 - smoothstep(0.0, 1.0, ac);
+    float thr = 0.30 + x * 0.55;
+    a = line * smoothstep(thr, thr + 0.2, n2 * 0.55 + n * 0.45 + line * 0.3) * (1.0 - x) * 1.25;
+  } else {                                            // bow wave
+    float line = 1.0 - smoothstep(0.1, 1.0, ac);
+    a = line * smoothstep(0.25, 0.6, n2 * 0.6 + n * 0.4 + line * 0.3);
+  }
+  a *= vW.w;
+  if (a < 0.01) discard;
+  vec3 foam = vec3(0.90, 0.95, 1.0) * (uAmbCol * 1.05 + uSunCol * 0.62);
+  foam = mix(foam, uFogCol, vFog);
+#if defined( TONE_MAPPING )
+  foam = toneMapping(foam);
+#endif
+  gl_FragColor = vec4(foam, min(a, 1.0) * 0.9);
+}`;
 
-varying vec2  vUv;
-varying float vFade;
-
-// ── Value noise ──────────────────────────────────────────────────
-float hash(vec2 p) {
-  p = fract(p * vec2(127.1, 311.7));
-  p += dot(p, p + 17.5);
-  return fract(p.x * p.y);
+let _material = null;
+const _uTime = { value: 0 };
+function wakeMaterial() {
+  if (_material) return _material;
+  _material = new THREE.ShaderMaterial({
+    uniforms: { uTime: _uTime, uFogDensity: ENV.uFogDensity, uFogCol: ENV.uFogCol, uSunCol: ENV.uSunCol, uAmbCol: ENV.uAmbCol },
+    vertexShader: VERT, fragmentShader: FRAG,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  });
+  return _material;
 }
-float vnoise(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(hash(i),               hash(i + vec2(1.0, 0.0)), f.x),
-    mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0, 1.0)), f.x),
-    f.y
-  );
-}
-
-void main() {
-  float u = vUv.x;        // 0 = fresh (stern), 1 = old (tip)
-  float v = vUv.y;        // 0 = left edge, 0.5 = center, 1 = right edge
-
-  // Age-based fade (non-linear — keep stern white, tip vanishes quickly)
-  float ageFade = pow(1.0 - u, 1.3) * vFade;
-
-  // ── Prop-wash core ────────────────────────────────────────────
-  // Bright white strip along the hull center-line (prop turbulence)
-  float center  = 1.0 - abs(v - 0.5) * 2.0;   // 1.0 at v=0.5, 0 at edges
-  float propCore = pow(center, 1.8);
-
-  // ── Animated foam noise ───────────────────────────────────────
-  // Pattern drifts backward (increasing u) over time — foam moves away from ship
-  float nu = u * 7.0 - uTime * 0.45;
-  float nv = (v - 0.5) * 5.0;
-
-  float n1 = vnoise(vec2(nu,              nv));
-  float n2 = vnoise(vec2(nu * 1.8 + 3.1, nv * 1.4 + 2.0));
-  float n3 = vnoise(vec2(nu * 0.6 - 1.4, nv * 2.1 + 0.7));
-  float foam = n1 * 0.50 + n2 * 0.30 + n3 * 0.20;
-
-  // ── V-arm spray ───────────────────────────────────────────────
-  // Foam patches concentrated on the V-wake arms (away from center)
-  float armMask  = smoothstep(0.25, 0.65, abs(v - 0.5) * 2.0);
-  float armFoam  = smoothstep(0.38, 0.68, foam) * armMask;
-
-  // ── Center foam texture ───────────────────────────────────────
-  float centreFoam = smoothstep(0.28, 0.55, foam) * propCore;
-
-  // ── Combine ───────────────────────────────────────────────────
-  float finalFoam = max(propCore * 0.85 + centreFoam * 0.35, armFoam * 0.80);
-  finalFoam *= ageFade;
-
-  // Discard nearly-invisible fragments (saves fillrate)
-  if (finalFoam < 0.006) discard;
-
-  // Color: pure white foam with faint blue ocean reflection
-  vec3 col = mix(vec3(0.72, 0.88, 1.00), vec3(1.0, 1.0, 1.0), clamp(finalFoam * 1.5, 0.0, 1.0));
-
-  gl_FragColor = vec4(col, finalFoam * 0.88);
-}
-`;
 
 // ─────────────────────────────────────────────────────────────────
 export class WakeSystem {
@@ -106,7 +98,7 @@ export class WakeSystem {
 
   addShip(ship) {
     if (this._trails.has(ship)) return;
-    this._trails.set(ship, new WakeTrail(this._scene, WAKE_SEGS, WAKE_WIDTH));
+    this._trails.set(ship, new WakeTrail(this._scene));
   }
 
   removeShip(ship) {
@@ -115,9 +107,10 @@ export class WakeSystem {
   }
 
   update(dt, t) {
+    _uTime.value = t;
     for (const [ship, trail] of this._trails) {
       if (!ship.alive) { trail.clear(); continue; }
-      trail.update(ship, dt, t, (ship.speed || 0) > MIN_SPEED);
+      trail.update(ship, dt, t);
     }
   }
 
@@ -127,142 +120,123 @@ export class WakeSystem {
   }
 }
 
-// ── Single ship foam ribbon ───────────────────────────────────────
+// ── One ship's foam (wash + two Kelvin arms + bow wave) ──────────
+// Vertex layout per trail cross-section i (6 verts):
+//   wash L/R · port arm in/out · starboard arm in/out
+// followed by the bow wave: BOW_SECTS × 2 sides × 2 verts.
 class WakeTrail {
-  constructor(scene, segs, baseWidth) {
-    this._segs      = segs;
-    this._baseWidth = baseWidth;
-    this._points    = [];
-    this._age       = [];
-    this._timer     = 0;
+  constructor(scene) {
+    this._ring = new Float32Array(SEGS * 5);   // x, z, angle, t0, strength
+    this._head = 0; this._count = 0; this._timer = 0;
+    this._dist = new Float32Array(SEGS);
 
-    const vCount = segs * 2;
-    const geo    = new THREE.BufferGeometry();
-    this._pos    = new Float32Array(vCount * 3);
-    this._col    = new Float32Array(vCount * 3);  // .r = fade factor
-    this._uv     = new Float32Array(vCount * 2);  // (u, v)
-
-    geo.setAttribute('position', new THREE.BufferAttribute(this._pos, 3));
-    geo.setAttribute('color',    new THREE.BufferAttribute(this._col, 3));
-    geo.setAttribute('aUv',      new THREE.BufferAttribute(this._uv,  2));
-
-    // Triangle strip
+    const nTrail = SEGS * 6, nBow = BOW_SECTS * 4;
+    this._nTrail = nTrail;
+    this._pos = new Float32Array((nTrail + nBow) * 3);
+    this._w   = new Float32Array((nTrail + nBow) * 4);
     const idx = [];
-    for (let i = 0; i < segs - 1; i++) {
-      const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
-      idx.push(a, b, c,  b, d, c);
+    for (let i = 0; i < SEGS - 1; i++) {
+      const a = i * 6, b = (i + 1) * 6;
+      for (const o of [0, 2, 4]) idx.push(a + o, a + o + 1, b + o + 1, a + o, b + o + 1, b + o);
     }
+    for (let s = 0; s < 2; s++) for (let i = 0; i < BOW_SECTS - 1; i++) {
+      const a = nTrail + (s * BOW_SECTS + i) * 2, b = a + 2;
+      idx.push(a, a + 1, b + 1, a, b + 1, b);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this._pos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aW', new THREE.BufferAttribute(this._w, 4).setUsage(THREE.DynamicDrawUsage));
     geo.setIndex(idx);
-
-    this._uTime = { value: 0 };
-    const mat = new THREE.ShaderMaterial({
-      uniforms:       { uTime: this._uTime },
-      vertexShader:   WAKE_VERT,
-      fragmentShader: WAKE_FRAG,
-      transparent:    true,
-      depthWrite:     false,
-      side:           THREE.DoubleSide,
-      fog:            false,
-    });
-
-    this._mesh = new THREE.Mesh(geo, mat);
-    this._mesh.renderOrder = 2;
-    scene.add(this._mesh);
     this._geo = geo;
+    this._mesh = new THREE.Mesh(geo, wakeMaterial());
+    this._mesh.frustumCulled = false;
+    this._mesh.renderOrder = 2;          // after the ocean, before decals/particles
+    this._mesh.visible = false;
+    scene.add(this._mesh);
   }
 
-  update(ship, dt, t, moving) {
-    this._uTime.value = t;
+  update(ship, dt, t) {
+    const hi = ship.mesh?.userData?.hullInfo;
+    const sc = ship.sc || 1;
+    const hl = hi?.hl ?? 2.3 * sc, hb = hi?.hb ?? 0.7 * sc;
+    const a = ship.angle || 0, fx = Math.sin(a), fz = Math.cos(a);
+    const maxS = Math.max(0.05, ship.maxSpeed || ship.baseSpd || 0.15);
+    const strength = Math.min(1, Math.max(0, (ship.speed || 0) / maxS));
+    const moving = (ship.speed || 0) > MIN_SPEED;
+    const sx = ship.x - fx * hl * 0.82, sz = ship.z - fz * hl * 0.82;   // stern
 
-    // Sample ship position every 0.07s while moving
+    // commit a sample
     this._timer += dt;
-    if (moving && this._timer > 0.07) {
+    if (moving && this._timer >= SAMPLE_DT) {
       this._timer = 0;
-      this._points.unshift({ x: ship.x, z: ship.z, angle: ship.angle });
-      this._age.unshift(0);
-      if (this._points.length > this._segs) {
-        this._points.pop();
-        this._age.pop();
+      const r = this._ring, o = this._head * 5;
+      r[o] = sx; r[o + 1] = sz; r[o + 2] = a; r[o + 3] = t; r[o + 4] = 0.35 + 0.65 * strength;
+      this._head = (this._head + 1) % (SEGS - 1);
+      if (this._count < SEGS - 1) this._count++;
+    }
+    const n = this._count;
+    if (!n && !moving) { this._mesh.visible = false; return; }
+    this._mesh.visible = true;
+
+    // chronological sections: 0 = live head at the stern, then newest → oldest
+    const P = this._pos, W = this._w, beam = hb * 0.95;
+    let px = sx, pz = sz, dist = 0;
+    for (let i = 0; i < SEGS; i++) {
+      let cx, cz, ca, t0, st;
+      if (i === 0) { cx = sx; cz = sz; ca = a; t0 = t; st = moving ? 0.35 + 0.65 * strength : 0; }
+      else if (i <= n) {
+        const k = ((this._head - i) % (SEGS - 1) + (SEGS - 1)) % (SEGS - 1), o = k * 5, r = this._ring;
+        cx = r[o]; cz = r[o + 1]; ca = r[o + 2]; t0 = r[o + 3]; st = r[o + 4];
+      } else {   // unused tail: collapse onto the oldest point, invisible
+        cx = px; cz = pz; ca = a; t0 = -1e4; st = 0;
+      }
+      dist += Math.hypot(cx - px, cz - pz); px = cx; pz = cz;
+      const rx = Math.cos(ca), rz = -Math.sin(ca);          // starboard unit vector
+      const wash = beam * (0.55 + 0.10 * dist);
+      const arm = beam + KELVIN_TAN * dist;
+      const aw = 0.18 + 0.035 * dist;
+      const v = i * 6;
+      this._put(v,     cx - rx * wash, cz - rz * wash, -1, 0, t0, st);
+      this._put(v + 1, cx + rx * wash, cz + rz * wash,  1, 0, t0, st);
+      this._put(v + 2, cx - rx * (arm - aw), cz - rz * (arm - aw), -1, 1, t0, st);
+      this._put(v + 3, cx - rx * (arm + aw), cz - rz * (arm + aw),  1, 1, t0, st);
+      this._put(v + 4, cx + rx * (arm - aw), cz + rz * (arm - aw), -1, 1, t0, st);
+      this._put(v + 5, cx + rx * (arm + aw), cz + rz * (arm + aw),  1, 1, t0, st);
+    }
+    // bow wave: hugging the hull from the stem aft, pushed out with speed
+    const bowSt = moving ? strength : 0;
+    const rx = Math.cos(a), rz = -Math.sin(a);
+    for (let s = 0; s < 2; s++) {
+      const side = s ? 1 : -1;
+      for (let i = 0; i < BOW_SECTS; i++) {
+        const f = i / (BOW_SECTS - 1);                     // 0 at the stem … 1 amidships
+        const along = hl * (0.98 - 0.75 * f);
+        const half = hb * Math.sqrt(Math.min(1, f * 1.25)) * 0.95;
+        const out = 0.15 + 0.55 * f * (0.5 + strength);
+        const bx = ship.x + fx * along, bz = ship.z + fz * along;
+        const v = this._nTrail + (s * BOW_SECTS + i) * 2;
+        const st = bowSt * (1 - f * 0.6);
+        this._put(v,     bx + rx * side * half,         bz + rz * side * half,         -1, 2, t, st);
+        this._put(v + 1, bx + rx * side * (half + out), bz + rz * side * (half + out),  1, 2, t, st);
       }
     }
-
-    this._mesh.visible = this._points.length >= 3;
-
-    // Age all stored points
-    for (let i = 0; i < this._age.length; i++) this._age[i] += dt;
-
-    const n   = this._points.length;
-    const pos = this._pos;
-    const col = this._col;
-    const uv  = this._uv;
-
-    for (let i = 0; i < this._segs; i++) {
-      const vi = i * 6;   // position buffer offset (2 verts × 3 floats)
-      const ci = i * 6;   // color buffer offset
-      const ui = i * 4;   // uv buffer offset (2 verts × 2 floats)
-      const u  = i / (this._segs - 1);   // 0=stern(newest) → 1=tip(oldest)
-
-      if (i >= n) {
-        // No data yet — collapse to ship position (avoids fan from origin)
-        const sy = getWaveHeight(ship.x, ship.z, t) + 0.04;
-        pos[vi]   = ship.x; pos[vi+1] = sy; pos[vi+2] = ship.z;
-        pos[vi+3] = ship.x; pos[vi+4] = sy; pos[vi+5] = ship.z;
-        col[ci] = col[ci+1] = col[ci+2] = 0;
-        col[ci+3] = col[ci+4] = col[ci+5] = 0;
-        uv[ui]   = u; uv[ui+1] = 0.0;
-        uv[ui+2] = u; uv[ui+3] = 1.0;
-        continue;
-      }
-
-      const p        = this._points[i];
-      const lifeFrac = Math.max(0, 1 - this._age[i] / WAKE_LIFE);
-
-      // V-wake geometry: narrow at stern (hull beam), spreads wider behind.
-      // At i=0: only prop-wash width (~35% base). At i=segs-1: full V spread.
-      const spread = this._baseWidth * (0.35 + 0.65 * (i / this._segs));
-
-      // Perpendicular arms
-      const perp = p.angle + Math.PI / 2;
-      const lx   = p.x + Math.sin(perp) * spread;
-      const lz   = p.z + Math.cos(perp) * spread;
-      const rx   = p.x - Math.sin(perp) * spread;
-      const rz   = p.z - Math.cos(perp) * spread;
-
-      // Follow wave surface
-      const ly = getWaveHeight(lx, lz, t) + 0.04;
-      const ry = getWaveHeight(rx, rz, t) + 0.04;
-
-      pos[vi]   = lx; pos[vi+1] = ly; pos[vi+2] = lz;
-      pos[vi+3] = rx; pos[vi+4] = ry; pos[vi+5] = rz;
-
-      // Fade factor carried via color.r (shader reads it as vFade)
-      col[ci]   = lifeFrac; col[ci+1] = 0; col[ci+2] = 0;
-      col[ci+3] = lifeFrac; col[ci+4] = 0; col[ci+5] = 0;
-
-      // UV: u along trail, v = 0 (left) or 1 (right)
-      uv[ui]   = u; uv[ui+1] = 0.0;
-      uv[ui+2] = u; uv[ui+3] = 1.0;
-    }
-
     this._geo.attributes.position.needsUpdate = true;
-    this._geo.attributes.color.needsUpdate    = true;
-    this._geo.attributes.aUv.needsUpdate      = true;
-    this._geo.computeBoundingSphere();
+    this._geo.attributes.aW.needsUpdate = true;
+  }
+
+  _put(v, x, z, across, kind, t0, st) {
+    const p = v * 3, w = v * 4;
+    this._pos[p] = x; this._pos[p + 1] = 0; this._pos[p + 2] = z;
+    this._w[w] = across; this._w[w + 1] = kind; this._w[w + 2] = t0; this._w[w + 3] = st;
   }
 
   clear() {
-    this._points.length = 0;
-    this._age.length    = 0;
-    this._pos.fill(0);
-    this._col.fill(0);
-    this._geo.attributes.position.needsUpdate = true;
-    this._geo.attributes.color.needsUpdate    = true;
-    this._geo.attributes.aUv.needsUpdate      = true;
+    this._count = 0; this._head = 0; this._timer = 0;
+    this._mesh.visible = false;
   }
 
   destroy(scene) {
     scene.remove(this._mesh);
-    this._geo.dispose();
-    this._mesh.material.dispose();
+    this._geo.dispose();          // material is shared by every trail
   }
 }

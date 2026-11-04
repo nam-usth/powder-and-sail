@@ -110,6 +110,8 @@ export class IslandPanel {
       if(id==='lumber_mill') woodProd+=prod;
       if(id==='gold_mine')   goldProd+=prod;
     });
+    // AW: harbor clock (data/harbor.js HARBOR_ECONOMY.rateMult; 1 in Open War)
+    woodProd *= st.econRateMult ?? 1; goldProd *= st.econRateMult ?? 1;
 
     const usedCells = this._build.getOccupiedCellCount?.(isl)??instances.length;
     const maxCells  = isl.validGridKeys?isl.validGridKeys.size:100;

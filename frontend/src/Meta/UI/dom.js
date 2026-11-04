@@ -20,7 +20,9 @@ export const domId = (p) => `${p}-${++_uid}`;
 
 /** User prefers reduced motion? */
 export function reducedMotion() {
-  try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
+  try {
+    return matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.dataset.reduce === '1';
+  } catch { return false; }
 }
 
 /** Broadcast that the profile changed (HarborBar and open panels listen). */
@@ -53,15 +55,47 @@ export function cssReady() {
   catch { return true; }
 }
 
+/** Period display faces (IM Fell / Pirata One; Cormorant SC + Grenze Gotisch cover Vietnamese). */
+export const FONTS_HREF = 'https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1'
+  + '&family=Pirata+One&family=Cormorant+SC:wght@500;600;700&family=Grenze+Gotisch:wght@600'
+  + '&family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap';
+
+function ensureFonts() {
+  if ([...document.querySelectorAll('link[rel="stylesheet"]')].some((l) => /Pirata\+One/.test(l.href))) return;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = FONTS_HREF;
+  document.head.appendChild(link);
+}
+
+/** Shared SVG paint servers (gold leaf, brass, wax) referenced from meta.css. */
+function ensureDefs() {
+  if (document.getElementById('mx-defs')) return;
+  const holder = document.createElement('div');
+  holder.innerHTML = `<svg id="mx-defs" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+<defs>
+  <linearGradient id="mx-goldleaf" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#fff4c4"/><stop offset=".28" stop-color="#f1cd62"/><stop offset=".52" stop-color="#bf8a2a"/><stop offset=".72" stop-color="#f3d57c"/><stop offset="1" stop-color="#8f5f17"/></linearGradient>
+  <linearGradient id="mx-brass" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8e6ad"/><stop offset=".42" stop-color="#c99a45"/><stop offset=".75" stop-color="#93682a"/><stop offset="1" stop-color="#5e4114"/></linearGradient>
+  <radialGradient id="mx-wax" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#d14b37"/><stop offset=".5" stop-color="#9a2318"/><stop offset="1" stop-color="#560e09"/></radialGradient>
+  <radialGradient id="mx-enamel" cx=".4" cy=".35" r=".8"><stop offset="0" stop-color="#34506b"/><stop offset="1" stop-color="#14202e"/></radialGradient>
+</defs></svg>`;
+  document.body.appendChild(holder.firstElementChild);
+}
+
 /**
- * Make sure meta.css is linked. Resolves once it is applied (or after a
- * short timeout so a missing file never blocks the UI).
+ * Make sure meta.css (and the period fonts + SVG defs) are present.
+ * Resolves once the CSS is applied (or after a short timeout so a missing
+ * file never blocks the UI).
  * @returns {Promise<void>}
  */
 export function ensureMetaCss() {
   if (_cssPromise) return _cssPromise;
   _cssPromise = new Promise((resolve) => {
-    if (typeof document === 'undefined' || cssReady()) return resolve();
+    if (typeof document === 'undefined') return resolve();
+    try { ensureFonts(); } catch { /* offline is fine: serif fallbacks */ }
+    const defs = () => { try { ensureDefs(); } catch { /* ignore */ } };
+    if (document.body) defs(); else document.addEventListener('DOMContentLoaded', defs, { once: true });
+    if (cssReady()) return resolve();
     let link = [...document.querySelectorAll('link[rel="stylesheet"]')].find((l) => /\/meta\.css(\?|$)/.test(l.href));
     if (!link) {
       link = document.createElement('link');
@@ -143,6 +177,9 @@ export function popModal(entry) {
 
 /** Is any meta modal open? */
 export const modalOpen = () => _stack.length > 0;
+
+/** The top-most open modal entry (or null). Entries may carry a `name`. */
+export const topModal = () => _stack[_stack.length - 1] || null;
 
 /** Focus the first focusable element in `root` (or root itself). */
 export function focusFirst(root, selector) {

@@ -1,11 +1,13 @@
 // ── CAMPAIGN — World Chart rules + battle results (pure JS) ───────
 // design/gdd/campaign-meta.md, design/gdd/sea-battle.md
 
-import { MISSIONS, REGIONS, PATROL } from '../data/campaign.js';
+import { MISSIONS, REGIONS, PATROL, FINAL_MISSION } from '../data/campaign.js';
 import {
   RANKS, PLUNDER_BY_HULL, PLUNDER_FORT, DEFEAT_PLUNDER_KEEP, RENOWN_PER_SINK,
   HULLS, HULL_BY_CLASS, MIN_AFLOAT_FRAC,
 } from '../data/harbor.js';
+import { HULL_SLOTS } from '../data/ships.js';
+import { FACTIONS } from '../data/factions.js';
 import { makePrng } from '../data/islandShapes.js';
 
 export const getMission = id => (id === PATROL.id ? null : MISSIONS.find(m => m.id === id) || null);
@@ -41,32 +43,97 @@ export function resolveHull(h) {
 }
 
 /**
- * Build the repeatable patrol mission for the current rank. Deterministic per seed.
+ * Combat strength of a hull: hp × gun slots — an HP × firepower proxy used to
+ * size patrols to the fleet that sails (design/balance/report.md §Patrol).
  */
-export function makePatrol(profile, seed = 1) {
-  const rk = rankIndex(profile.renown);
-  const pool = PATROL.pools[Math.min(rk, PATROL.pools.length - 1)];
+export function hullStrength(hullOrId) {
+  const h = typeof hullOrId === 'string' ? resolveHull(hullOrId) : hullOrId;
+  return h.hp * ((HULL_SLOTS[h.hull] || []).length || 2);
+}
+
+/** The furthest sea the player's renown has opened (campaign order). */
+export function frontierSea(profile) {
+  let sea = REGIONS[0];
+  for (const r of REGIONS) if (profile.renown >= r.minRenown) sea = r;
+  return sea;
+}
+
+/** Faction of `sea` whose ship style matches the hull (junk → Red Banner, …). */
+function factionFor(sea, hull) {
+  const fs = sea.factions || [];
+  return fs.find(f => FACTIONS[f]?.style === hull.style) || fs.find(f => FACTIONS[f]?.style === 'european') || fs[0] || 'buccaneers';
+}
+
+/**
+ * Build the repeatable patrol. Enemies come from the frontier sea (its hull
+ * pool and factions) and are sized to the ships that sail: the strongest pool
+ * hulls that fit in PATROL.strengthRatio × Σ hullStrength(fleet). When even
+ * the smallest foe is too strong (a wiped player with one salvaged sloop), a
+ * lone cutter is sent with its hull trimmed to the budget, so a patrol is
+ * always winnable. Reward scales with the strength actually met.
+ * Deterministic per seed and fleet.
+ * @param {object} profile
+ * @param {number} [seed]
+ * @param {string[]|null} [shipUids] the sailing ships; default = the strongest
+ *        ready ships up to the fleet cap (briefing preview)
+ */
+export function makePatrol(profile, seed = 1, shipUids = null) {
+  const sea = frontierSea(profile);
+  const pool = (PATROL.pools[sea.id] || Object.values(PATROL.pools)[0]).map(resolveHull)
+    .sort((a, b) => hullStrength(b) - hullStrength(a));
   const rnd = makePrng(seed >>> 0 || 1);
-  const enemies = pool.map((hid, i) => {
-    const h = resolveHull(hid);
-    return {
-      hull: h.id, x: 55 + rnd() * 25, z: (i - (pool.length - 1) / 2) * 18 + (rnd() - .5) * 8,
+  let fleet = (shipUids || []).map(u => profile.fleet.find(s => s.uid === u)).filter(Boolean);
+  if (!fleet.length) {
+    fleet = profile.fleet.filter(s => s.status === 'ready')
+      .sort((a, b) => hullStrength(b.hullId) - hullStrength(a.hullId))
+      .slice(0, PATROL.previewShips || 5);
+  }
+  const budget = PATROL.strengthRatio * fleet.reduce((a, s) => a + hullStrength(s.hullId), 0);
+  const picks = [];
+  let used = 0;
+  for (const h of pool) {
+    if (picks.length >= PATROL.maxShips) break;
+    const st = hullStrength(h);
+    if (used + st <= budget) { picks.push({ h }); used += st; }
+  }
+  if (!picks.length) {                                   // lone small foe, trimmed to the budget
+    const h = resolveHull(PATROL.minFoe || 'cutter');
+    const slots = (HULL_SLOTS[h.hull] || []).length || 2;
+    const hp = Math.max(25, Math.min(h.hp, Math.floor(budget / slots)));
+    picks.push({ h, hp });
+    used = hp * slots;
+  }
+  const names = new Map();
+  const enemies = picks.map(({ h, hp }, i) => {
+    const faction = factionFor(sea, h);
+    const pool2 = FACTIONS[faction]?.shipNames || [];
+    const taken = names.get(faction) || new Set();
+    const free = pool2.filter(n => !taken.has(n));
+    const nm = free.length ? free[Math.floor(rnd() * free.length)] : undefined;
+    if (nm) { taken.add(nm); names.set(faction, taken); }
+    const e = {
+      hull: h.id, faction, x: 55 + rnd() * 25, z: (i - (picks.length - 1) / 2) * 18 + (rnd() - .5) * 8,
       loadout: { ...PATROL.loadouts[h.hull] },
     };
+    if (nm) e.nm = nm;
+    if (hp) e.hp = hp;
+    return e;
   });
   const islands = [0, 1].map(k => ({
     id: 'p_rock' + k, x: -10 + rnd() * 30, z: (k ? 1 : -1) * (35 + rnd() * 20), r: 7 + Math.round(rnd() * 4),
     hp: 60, nm: 'Rocks', own: 'neutral', tdmg: 0, trof: 99,
     shape: ['SPRAWL', 'CRESCENT', 'ATOLL'][Math.floor(rnd() * 3)], seed: 100 + Math.floor(rnd() * 9000), decor: true,
   }));
+  const R = PATROL.reward;
   return {
-    id: PATROL.id, region: 'reef', nm: PATROL.nm, desc: PATROL.desc,
+    id: PATROL.id, region: sea.id, faction: enemies[0]?.faction || sea.factions?.[0], nm: PATROL.nm, desc: PATROL.desc,
     objective: { type: 'sink_all' }, enemies, islands,
-    spawn: { x: -70, z: 0 }, parTime: 120 + pool.length * 40,
+    spawn: { x: -70, z: 0 }, parTime: 120 + enemies.length * 40,
     reward: {
-      wood: PATROL.baseReward.wood + rk * PATROL.rewardPerRank.wood,
-      gold: PATROL.baseReward.gold + rk * PATROL.rewardPerRank.gold,
+      wood: Math.round(R.base.wood + R.perStrength.wood * used),
+      gold: Math.round(R.base.gold + R.perStrength.gold * used),
     },
+    strength: { fleet: Math.round(budget / PATROL.strengthRatio), enemy: Math.round(used) },
     firstClear: { wood: 0, gold: 0 }, renown: PATROL.renown, requires: [], repeatable: true, seed,
   };
 }
@@ -141,9 +208,11 @@ export function applyBattleResult(profile, mission, result) {
   profile.stats.sinks += sinks;
   profile.stats.shipsLost += lost.length;
   profile.battle = null;
+  const campaignComplete = firstClear && mission.id === FINAL_MISSION;
+  if (campaignComplete) profile.campaign.completedAt = profile.campaign.completedAt || Date.now();
   const summary = {
     missionId: mission.id, nm: mission.nm, won: !!result.won, retreated: !!result.retreated,
-    stars, firstClear, reward, plunder, renown, lost, timeSec: result.timeSec,
+    stars, firstClear, reward, plunder, renown, lost, timeSec: result.timeSec, campaignComplete,
   };
   profile.lastResult = summary;
   return summary;
@@ -157,4 +226,11 @@ export function abandonPendingBattle(profile) {
   if (!profile.battle) return false;
   profile.battle = null;
   return true;
+}
+
+/** Campaign progress: missions won / total, stars earned / max, complete flag. */
+export function campaignProgress(profile) {
+  const won = MISSIONS.filter(m => profile.campaign.won[m.id]).length;
+  const stars = MISSIONS.reduce((a, m) => a + (profile.campaign.stars[m.id] || 0), 0);
+  return { won, total: MISSIONS.length, stars, maxStars: MISSIONS.length * 3, complete: !!profile.campaign.won[FINAL_MISSION] };
 }

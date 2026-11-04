@@ -141,7 +141,8 @@ export class CombatSystem {
         const f=ship.focusTarget;
         const isls=f&&f.def&&islTargets.includes(f)?[f,...islTargets.filter(i=>i!==f)]:islTargets;
         for(const isl of isls){
-          if(isl.down||!canFire(ship,slotId,cn,isl.x,isl.z))continue;
+          // AW: scenery rocks (def.decor) are never a target — guns keep their reload for ships
+          if(isl.down||isl.def?.decor||!canFire(ship,slotId,cn,isl.x,isl.z))continue;
           const distIsl = Math.hypot(isl.x - ship.x, isl.z - ship.z);
           const fortAcc = (.72+(ship.team==='player'?st.hitChanceBuff:0)) * rangeAccuracyMult(distIsl, RANGE_U[cn.rt]);
           const hit=Math.random()<Math.min(.95, Math.max(.15, fortAcc));

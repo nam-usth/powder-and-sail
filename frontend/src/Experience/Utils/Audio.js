@@ -1,170 +1,496 @@
 // ── Audio.js ────────────────────────────────────────────────────────
-// Spatial audio manager inspired by Bruno Simon / Three.js Journey.
+// Spatial SFX manager + the game's shared AudioContext and mix buses.
+//
+// One AudioContext for the whole game:
+//
+//   SFX recipes / mp3 buffers ─► (spatial gain) ─► sfx bus ───────────┐
+//   ambience beds (MusicDirector) ─────────────────► sfx bus           ├─► master ─► soft clip ─► speakers
+//   MusicDirector ─► music bus (music volume) ─► duck ─────────────────┘
 //
 // Features:
-//   • Master, music and sfx volume controls
-//   • Spatial/3D attenuation: sounds diminish with distance from camera
-//   • Procedural synthesis (Web Audio API oscillators) — no files needed
-//   • Optional file-based sounds via AudioBuffer (drop-in when assets exist)
-//   • Simple music loop management with fade-in/fade-out
+//   • Master / music / sfx volume (smoothed)
+//   • Spatial attenuation from the camera position (audio.setCameraPos)
+//   • Procedural SFX recipes (no files needed) + file-based AudioBuffers
+//   • Layering: procedural "sweeteners" on top of file sounds — a rolling
+//     tail on the mp3 cannon, a wood crunch on hull hits (see LAYERS;
+//     toggle with audio.layering)
+//   • Voice limiting: a per-type start budget so broadsides don't pile up
+//   • Music ducking under big events (explosion, sink, warning)
+//   • 'victory' / 'defeat' hand over to the music stingers when the
+//     MusicDirector is running (setStingerHandler)
 //
 // Usage:
 //   import { audio } from './Utils/Audio.js';
 //   audio.play('cannon', { x: 10, y: 0, z: -20 });  // spatial sfx
-//   audio.playMusic('ambient');
+//   audio.play('ui_click');                          // 2D sfx
 //   audio.masterVolume = 0.6;
+// Music + ambience: MusicDirector.js (`music.play('harbor')`).
+// Sound direction: design/audio-direction.md
 
 import * as THREE from 'three';
 
+// ── Shared DSP resources (one set per AudioContext) ──────────────────
+const _dsp = new WeakMap();
+function dsp(ctx) {
+  let d = _dsp.get(ctx);
+  if (!d) _dsp.set(ctx, (d = {}));
+  return d;
+}
+
+/** 2 s of white noise (mono), generated once per AudioContext and shared by every SFX/music voice. */
+export function noiseBuffer(ctx) {
+  const d = dsp(ctx);
+  if (!d.white) {
+    const len = Math.floor(ctx.sampleRate * 2), buf = ctx.createBuffer(1, len, ctx.sampleRate), x = buf.getChannelData(0);
+    let s = 0x9e3779b9;   // deterministic LCG → offline renders are reproducible
+    for (let i = 0; i < len; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; x[i] = s / 2147483648 - 1; }
+    d.white = buf;
+  }
+  return d.white;
+}
+
+/** 2 s of brown (red) noise — deep rumbles. */
+export function brownBuffer(ctx) {
+  const d = dsp(ctx);
+  if (!d.brown) {
+    const w = noiseBuffer(ctx).getChannelData(0), buf = ctx.createBuffer(1, w.length, ctx.sampleRate), x = buf.getChannelData(0);
+    let b = 0, pk = 0;
+    for (let i = 0; i < w.length; i++) { b = (b + 0.02 * w[i]) / 1.02; x[i] = b; pk = Math.max(pk, Math.abs(b)); }
+    for (let i = 0; i < x.length; i++) x[i] *= 0.95 / (pk || 1);
+    d.brown = buf;
+  }
+  return d.brown;
+}
+
+// ── Tiny synthesis helpers shared by the recipes ─────────────────────
+const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
+function wire(...n) { for (let i = 0; i < n.length - 1; i++) n[i].connect(n[i + 1]); return n[n.length - 1]; }
+/** Noise source starting at a random offset; loops when longer than the buffer. */
+function noise(ctx, t, dur, buf = noiseBuffer(ctx)) {
+  const s = ctx.createBufferSource();
+  s.buffer = buf;
+  const room = buf.duration - dur - 0.02;
+  if (room > 0) s.start(t, Math.random() * room); else { s.loop = true; s.start(t, Math.random() * buf.duration * 0.5); }
+  s.stop(t + dur);
+  return s;
+}
+function tone(ctx, type, f, t, end) { const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, t); o.start(t); o.stop(end); return o; }
+function filt(ctx, type, f, q, t) { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.setValueAtTime(f, t); b.Q.value = q; return b; }
+function vca(ctx, out) { const g = ctx.createGain(); g.gain.value = 0; g.connect(out); return g; }
+/** Exponential percussive envelope: ~0 → peak in `a` s → ~0 after another `d` s. */
+function hit(p, t, peak, a, d) {
+  p.setValueAtTime(0.0001, t);
+  p.exponentialRampToValueAtTime(Math.max(peak, 0.0002), t + Math.max(a, 0.001));
+  p.exponentialRampToValueAtTime(0.0001, t + Math.max(a, 0.001) + d);
+}
+/** A train of decaying clicks on a gain param (splinters, crackle, gravel). */
+function burst(p, t, n, peak, gap0, gap1, decay = 0.01) {
+  p.setValueAtTime(0, t);
+  let tt = t;
+  for (let i = 0; i < n; i++) {
+    p.setValueAtTime(peak * (1 - i / n) * (0.45 + Math.random() * 0.55), tt);
+    p.setTargetAtTime(0, tt + 0.001, decay * (0.6 + Math.random()));
+    tt += gap0 + Math.random() * (gap1 - gap0);
+  }
+}
+/** Drum roll gated out of one noise source. */
+function roll(p, t, dur, gap, v0, v1) {
+  const k = Math.max(2, Math.floor(dur / gap));
+  p.setValueAtTime(0, t);
+  for (let i = 0; i < k; i++) {
+    const tt = t + i * gap;
+    p.setValueAtTime((v0 + (v1 - v0) * i / (k - 1)) * (i % 2 ? 0.8 : 1), tt);
+    p.setTargetAtTime(0.0001, tt + 0.002, 0.012);
+  }
+}
+let _drive = null;
+function driveCurve() {
+  if (!_drive) {
+    _drive = new Float32Array(256);
+    for (let i = 0; i < 256; i++) { const x = (i * 2) / 256 - 1; _drive[i] = (Math.PI + 60) * x / (Math.PI + 60 * Math.abs(x)); }
+  }
+  return _drive;
+}
+function softClipCurve(n = 2048, knee = 0.8) {
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * 2) / (n - 1) - 1, a = Math.abs(x);
+    const y = a <= knee ? a : knee + (1 - knee) * Math.tanh((a - knee) / (1 - knee));
+    c[i] = x < 0 ? -y : y;
+  }
+  return c;
+}
+/** Natural trumpet / sackbut note: two saws through a snapping lowpass, lip-up into pitch. */
+function brass(ctx, out, t, m, dur, peak, o = {}) {
+  const f = midi(m), end = t + dur + 0.25, a = o.a ?? 0.025;
+  const lp = filt(ctx, 'lowpass', 400, 1.1, t);
+  lp.frequency.exponentialRampToValueAtTime(o.bright ?? 3600, t + a + 0.01);
+  lp.frequency.setTargetAtTime(o.body ?? 1600, t + a + 0.02, 0.12);
+  const g = vca(ctx, out);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + a);
+  g.gain.setTargetAtTime(peak * 0.75, t + a + 0.03, 0.1);
+  g.gain.setTargetAtTime(0, t + dur, 0.06);
+  for (const det of [-6, 6]) {
+    const s = tone(ctx, 'sawtooth', f * 0.98, t, end);
+    s.frequency.exponentialRampToValueAtTime(f, t + 0.03);
+    s.detune.value = det;
+    s.connect(lp);
+  }
+  lp.connect(g);
+}
+/** Natural horn: mellow call with a slow swell. */
+function horn(ctx, out, t, m, dur, peak) {
+  const f = midi(m), end = t + dur + 0.35;
+  const lp = filt(ctx, 'lowpass', 300, 0.9, t);
+  lp.frequency.linearRampToValueAtTime(1100, t + 0.15);
+  lp.frequency.setTargetAtTime(800, t + 0.2, 0.2);
+  const g = vca(ctx, out);
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(peak, t + 0.12);
+  g.gain.setValueAtTime(peak, t + dur);
+  g.gain.setTargetAtTime(0, t + dur, 0.08);
+  const a = tone(ctx, 'sawtooth', f * 0.985, t, end);
+  a.frequency.linearRampToValueAtTime(f, t + 0.12);
+  const b = tone(ctx, 'triangle', f, t, end);
+  b.detune.value = 5;
+  a.connect(lp); b.connect(lp); lp.connect(g);
+}
+/** Kettledrum stroke (tuned partials + mallet). */
+function timp(ctx, out, t, f, peak) {
+  for (const [r, a, d] of [[1, 1, 1.6], [1.5, 0.45, 0.9], [1.98, 0.3, 0.6]]) {
+    const s = tone(ctx, 'sine', f * r * 1.015, t, t + d + 0.05);
+    s.frequency.exponentialRampToValueAtTime(f * r, t + 0.08);
+    const g = vca(ctx, out); hit(g.gain, t, peak * a, 0.004, d); s.connect(g);
+  }
+  const n = noise(ctx, t, 0.05), lp = filt(ctx, 'lowpass', 900, 0.7, t), g = vca(ctx, out);
+  hit(g.gain, t, peak * 0.4, 0.001, 0.03); wire(n, lp, g);
+}
+/** Bronze bell (ship's bell / handbell): inharmonic partials with long decays. */
+const BELL = [[0.5, 0.35, 3.2], [1, 0.55, 2.6], [1.19, 0.4, 2.0], [1.5, 0.22, 1.4], [2, 0.6, 1.8], [2.52, 0.22, 1.0], [3.01, 0.16, 0.8], [4.17, 0.08, 0.5]];
+function bell(ctx, out, t, f, peak, decay = 1) {
+  for (const [r, a, d] of BELL) {
+    const s = tone(ctx, 'sine', f * r, t, t + d * decay + 0.05), g = vca(ctx, out);
+    hit(g.gain, t, peak * a, 0.002, d * decay); s.connect(g);
+  }
+  const n = noise(ctx, t, 0.03), bp = filt(ctx, 'bandpass', 3800, 1.2, t), g = vca(ctx, out);
+  hit(g.gain, t, peak * 0.5, 0.001, 0.02); wire(n, bp, g);
+}
+/** Coin / small metal clink. */
+function clink(ctx, out, t, f, peak) {
+  for (const [r, a, d] of [[1, 1, 0.28], [2.71, 0.45, 0.14], [4.95, 0.22, 0.07]]) {
+    const s = tone(ctx, 'sine', f * r, t, t + d + 0.05), g = vca(ctx, out);
+    hit(g.gain, t, peak * a, 0.001, d); s.connect(g);
+  }
+  const n = noise(ctx, t, 0.02), hp = filt(ctx, 'highpass', 6000, 0.7, t), g = vca(ctx, out);
+  hit(g.gain, t, peak * 0.4, 0.001, 0.012); wire(n, hp, g);
+}
+
 // ── Synthetic sound recipes ──────────────────────────────────────────
-// Each entry is a function (ctx, gainNode, at) that programs oscillator(s).
+// Each recipe is (ctx, out, t, o) → duration in seconds. `out` is a gain at
+// the call's volume; `o.rate` scales pitch (playbackRate / random variation).
 const SYNTH = {
-  cannon(ctx, g, t) {
-    const osc  = ctx.createOscillator();
-    const dist = ctx.createWaveShaper();
-    osc.connect(dist); dist.connect(g);
-    // Overdrive curve for punch
-    const curve = new Float32Array(256);
-    for (let i = 0; i < 256; i++) { const x = (i * 2) / 256 - 1; curve[i] = (Math.PI + 350) * x / (Math.PI + 350 * Math.abs(x)); }
-    dist.curve = curve;
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(95, t);
-    osc.frequency.exponentialRampToValueAtTime(18, t + 0.28);
-    g.gain.setValueAtTime(0.30, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.32);
-    osc.start(t); osc.stop(t + 0.34);
+  /** Cannon (used when the cannon mp3 isn't loaded): crack + grit + boom + body + rolling tail. */
+  cannon(ctx, out, t, o) {
+    const r = o.rate;
+    const c = noise(ctx, t, 0.14), chp = filt(ctx, 'highpass', 1700 * r, 0.8, t), cg = vca(ctx, out);
+    hit(cg.gain, t, 0.5, 0.001, 0.08); wire(c, chp, cg);
+    const s = tone(ctx, 'sawtooth', 170 * r, t, t + 0.16);
+    s.frequency.exponentialRampToValueAtTime(42 * r, t + 0.13);
+    const ws = ctx.createWaveShaper(); ws.curve = driveCurve();
+    const sg = vca(ctx, out); hit(sg.gain, t, 0.12, 0.002, 0.12); wire(s, ws, sg);
+    const b = tone(ctx, 'sine', 105 * r, t, t + 0.95);
+    b.frequency.exponentialRampToValueAtTime(33 * r, t + 0.5);
+    const bg = vca(ctx, out); hit(bg.gain, t, 0.8, 0.003, 0.8); b.connect(bg);
+    const n = noise(ctx, t, 1.0), lp = filt(ctx, 'lowpass', 1200 * r, 0.9, t);
+    lp.frequency.exponentialRampToValueAtTime(130 * r, t + 0.7);
+    const ng = vca(ctx, out); hit(ng.gain, t, 0.5, 0.003, 0.85); wire(n, lp, ng);
+    return Math.max(1.0, SYNTH.cannon_tail(ctx, out, t + 0.03, o));
   },
-  explosion(ctx, g, t) {
-    // White-noise burst via AudioBufferSourceNode
-    const bufLen = ctx.sampleRate * 0.8;
-    const buf    = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-    const data   = buf.getChannelData(0);
-    for (let i = 0; i < bufLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufLen, 2);
-    const src = ctx.createBufferSource();
-    src.buffer = buf;
-    src.connect(g);
-    g.gain.setValueAtTime(0.45, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.75);
-    src.start(t); src.stop(t + 0.8);
+  /** Rolling tail of a cannon over open water (layered on the mp3 cannon). */
+  cannon_tail(ctx, out, t, o) {
+    const r = o.rate;
+    const n = noise(ctx, t, 2.6, brownBuffer(ctx)), lp = filt(ctx, 'lowpass', 280 * r, 0.7, t);
+    lp.frequency.exponentialRampToValueAtTime(80 * r, t + 2.4);
+    const g = vca(ctx, out);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.42, t + 0.14);
+    g.gain.setTargetAtTime(0, t + 0.18, 0.5);
+    wire(n, lp, g);
+    for (const [d, v, f] of [[0.23, 0.08, 650], [0.52, 0.04, 520]]) {   // slaps back off the shore
+      const e = noise(ctx, t + d, 0.3), bp = filt(ctx, 'bandpass', f * r, 0.8, t + d), eg = vca(ctx, out);
+      hit(eg.gain, t + d, v, 0.008, 0.25); wire(e, bp, eg);
+    }
+    return 2.6;
   },
-  splash(ctx, g, t) {
-    const osc = ctx.createOscillator();
-    osc.connect(g);
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(200, t);
-    osc.frequency.exponentialRampToValueAtTime(55, t + 0.22);
-    g.gain.setValueAtTime(0.12, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.24);
-    osc.start(t); osc.stop(t + 0.26);
+  /** Swivel-gun pop (legacy name). */
+  fire(ctx, out, t, o) {
+    const r = o.rate * 1.3;
+    const c = noise(ctx, t, 0.1), chp = filt(ctx, 'highpass', 2000 * r, 0.8, t), cg = vca(ctx, out);
+    hit(cg.gain, t, 0.4, 0.001, 0.06); wire(c, chp, cg);
+    const b = tone(ctx, 'sine', 120 * r, t, t + 0.5);
+    b.frequency.exponentialRampToValueAtTime(40 * r, t + 0.3);
+    const bg = vca(ctx, out); hit(bg.gain, t, 0.5, 0.003, 0.4); b.connect(bg);
+    const n = noise(ctx, t, 0.5), lp = filt(ctx, 'lowpass', 1500 * r, 0.8, t);
+    lp.frequency.exponentialRampToValueAtTime(200 * r, t + 0.35);
+    const ng = vca(ctx, out); hit(ng.gain, t, 0.3, 0.003, 0.4); wire(n, lp, ng);
+    return 0.6;
   },
-  impact(ctx, g, t) {
-    const osc = ctx.createOscillator();
-    osc.connect(g);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(240, t);
-    osc.frequency.exponentialRampToValueAtTime(50, t + 0.16);
-    g.gain.setValueAtTime(0.18, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-    osc.start(t); osc.stop(t + 0.20);
+  /** Powder-magazine blast: thump + roaring noise + crackle + debris raining into the sea. */
+  explosion(ctx, out, t, o) {
+    const r = o.rate;
+    const b = tone(ctx, 'sine', 92 * r, t, t + 1.4);
+    b.frequency.exponentialRampToValueAtTime(27 * r, t + 0.9);
+    const bg = vca(ctx, out); hit(bg.gain, t, 0.7, 0.004, 1.15); b.connect(bg);
+    const n = noise(ctx, t, 1.9), lp = filt(ctx, 'lowpass', 5200 * r, 0.6, t);
+    lp.frequency.exponentialRampToValueAtTime(240 * r, t + 1.3);
+    const ng = vca(ctx, out); hit(ng.gain, t, 0.45, 0.003, 1.6); wire(n, lp, ng);
+    const rb = noise(ctx, t, 2.2, brownBuffer(ctx)), rl = filt(ctx, 'lowpass', 160, 0.7, t), rg = vca(ctx, out);
+    rg.gain.setValueAtTime(0, t); rg.gain.linearRampToValueAtTime(0.35, t + 0.1); rg.gain.setTargetAtTime(0, t + 0.3, 0.45);
+    wire(rb, rl, rg);
+    const k = noise(ctx, t + 0.08, 1.5), kb = filt(ctx, 'bandpass', 2600 * r, 2.2, t), kg = vca(ctx, out);
+    burst(kg.gain, t + 0.1, 12, 0.14, 0.025, 0.11, 0.012); wire(k, kb, kg);
+    for (let i = 0; i < 3; i++) {
+      const d = 0.75 + Math.random() * 0.8, e = noise(ctx, t + d, 0.3), bp = filt(ctx, 'bandpass', (1200 + Math.random() * 900) * r, 1.0, t + d), eg = vca(ctx, out);
+      hit(eg.gain, t + d, 0.05, 0.01, 0.22); wire(e, bp, eg);
+    }
+    return 2.3;
   },
-  sink(ctx, g, t) {
-    const osc = ctx.createOscillator();
-    osc.connect(g);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(340, t);
-    osc.frequency.exponentialRampToValueAtTime(30, t + 1.0);
-    g.gain.setValueAtTime(0.28, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
-    osc.start(t); osc.stop(t + 1.15);
+  /** Oak planking splintering under a ball (layered on hull hits). */
+  wood_crunch(ctx, out, t, o) {
+    const r = o.rate;
+    const k = tone(ctx, 'triangle', 200 * r, t, t + 0.14);
+    k.frequency.exponentialRampToValueAtTime(80 * r, t + 0.1);
+    const kg = vca(ctx, out); hit(kg.gain, t, 0.42, 0.002, 0.1); k.connect(kg);
+    const kn = noise(ctx, t, 0.08), kb = filt(ctx, 'bandpass', 950 * r, 1.3, t), kng = vca(ctx, out);
+    hit(kng.gain, t, 0.32, 0.001, 0.06); wire(kn, kb, kng);
+    const sp = noise(ctx, t, 0.45), sb = filt(ctx, 'bandpass', 3200 * r, 2.4, t);
+    sb.frequency.exponentialRampToValueAtTime(1300 * r, t + 0.32);
+    const sg = vca(ctx, out); burst(sg.gain, t + 0.006, 11 + ((Math.random() * 6) | 0), 0.34, 0.01, 0.035, 0.008); wire(sp, sb, sg);
+    const c = tone(ctx, 'sawtooth', 96 * r, t + 0.03, t + 0.4);
+    c.frequency.exponentialRampToValueAtTime(60 * r, t + 0.32);
+    const cb = filt(ctx, 'bandpass', 640 * r, 4, t), cg = vca(ctx, out); hit(cg.gain, t + 0.03, 0.08, 0.02, 0.28); wire(c, cb, cg);
+    return 0.6;
   },
-  build(ctx, g, t) {
-    [440, 550, 660].forEach((freq, i) => {
-      const o2 = ctx.createOscillator(), g2 = ctx.createGain();
-      o2.connect(g2); g2.connect(g.context.destination);
-      o2.type = 'sine'; o2.frequency.value = freq;
-      g2.gain.setValueAtTime(0.10, t + i * 0.1);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.28);
-      o2.start(t + i * 0.1); o2.stop(t + i * 0.1 + 0.30);
+  /** Shot falling into the sea: plunge + spray + bloop + droplets. */
+  splash(ctx, out, t, o) {
+    const r = o.rate;
+    const n = noise(ctx, t, 0.5), bp = filt(ctx, 'bandpass', 380 * r, 1.1, t);
+    bp.frequency.exponentialRampToValueAtTime(1900 * r, t + 0.16);
+    const g1 = vca(ctx, out); hit(g1.gain, t, 0.36, 0.006, 0.36); wire(n, bp, g1);
+    const n2 = noise(ctx, t + 0.02, 0.8), hp = filt(ctx, 'highpass', 3200 * r, 0.7, t), g2 = vca(ctx, out);
+    g2.gain.setValueAtTime(0, t); g2.gain.linearRampToValueAtTime(0.14, t + 0.06); g2.gain.setTargetAtTime(0, t + 0.1, 0.16);
+    wire(n2, hp, g2);
+    const s = tone(ctx, 'sine', 320 * r, t, t + 0.2);
+    s.frequency.exponentialRampToValueAtTime(110 * r, t + 0.13);
+    const g3 = vca(ctx, out); hit(g3.gain, t, 0.15, 0.004, 0.14); s.connect(g3);
+    for (let i = 0; i < 6; i++) {
+      const d = 0.12 + Math.random() * 0.55, f = (1300 + Math.random() * 1700) * r;
+      const dr = tone(ctx, 'sine', f, t + d, t + d + 0.05);
+      dr.frequency.exponentialRampToValueAtTime(f * 1.6, t + d + 0.035);
+      const gd = vca(ctx, out); hit(gd.gain, t + d, 0.03 * (1 - d), 0.002, 0.03); dr.connect(gd);
+    }
+    return 1.0;
+  },
+  /** Shot thudding into an island: earth thump + dirt + gravel. */
+  impact(ctx, out, t, o) {
+    const r = o.rate;
+    const s = tone(ctx, 'sine', 130 * r, t, t + 0.35);
+    s.frequency.exponentialRampToValueAtTime(48 * r, t + 0.22);
+    const g1 = vca(ctx, out); hit(g1.gain, t, 0.3, 0.003, 0.28); s.connect(g1);
+    const n = noise(ctx, t, 0.4), lp = filt(ctx, 'lowpass', 900 * r, 0.8, t);
+    lp.frequency.exponentialRampToValueAtTime(200 * r, t + 0.3);
+    const g2 = vca(ctx, out); hit(g2.gain, t, 0.22, 0.003, 0.3); wire(n, lp, g2);
+    const gr = noise(ctx, t + 0.04, 0.35), bp = filt(ctx, 'bandpass', 2400 * r, 1.2, t), g3 = vca(ctx, out);
+    burst(g3.gain, t + 0.05, 8, 0.1, 0.015, 0.04, 0.008); wire(gr, bp, g3);
+    return 0.6;
+  },
+  /** A ship going down: hull groan, rushing water, a falling sweep, bubbles. */
+  sink(ctx, out, t, o) {
+    const r = o.rate;
+    const bp = filt(ctx, 'bandpass', 420 * r, 3.5, t);
+    bp.frequency.linearRampToValueAtTime(260 * r, t + 2.4);
+    const gg = vca(ctx, out);
+    gg.gain.setValueAtTime(0, t); gg.gain.linearRampToValueAtTime(0.22, t + 0.35); gg.gain.setTargetAtTime(0, t + 1.6, 0.35);
+    bp.connect(gg);
+    for (const det of [0, 14]) {
+      const s = tone(ctx, 'sawtooth', 62 * r, t, t + 2.9);
+      s.detune.value = det;
+      s.frequency.linearRampToValueAtTime(41 * r, t + 2.4);
+      s.connect(bp);
+    }
+    const n = noise(ctx, t, 3.2), lp = filt(ctx, 'lowpass', 500 * r, 0.7, t);
+    lp.frequency.linearRampToValueAtTime(1300 * r, t + 0.9);
+    lp.frequency.linearRampToValueAtTime(400 * r, t + 3.0);
+    const gw = vca(ctx, out);
+    gw.gain.setValueAtTime(0, t); gw.gain.linearRampToValueAtTime(0.26, t + 0.8); gw.gain.setTargetAtTime(0, t + 1.5, 0.5);
+    wire(n, lp, gw);
+    const sw = tone(ctx, 'sine', 300 * r, t, t + 1.3);
+    sw.frequency.exponentialRampToValueAtTime(32 * r, t + 1.2);
+    const gs = vca(ctx, out); hit(gs.gain, t, 0.22, 0.01, 1.15); sw.connect(gs);
+    for (let i = 0; i < 14; i++) {
+      const d = 0.5 + Math.random() * 2.3, f = (220 + Math.random() * 380) * r;
+      const b = tone(ctx, 'sine', f, t + d, t + d + 0.09);
+      b.frequency.exponentialRampToValueAtTime(f * 2.2, t + d + 0.07);
+      const gb = vca(ctx, out); hit(gb.gain, t + d, 0.05 * (0.6 + Math.random() * 0.4), 0.004, 0.07); b.connect(gb);
+    }
+    return 3.3;
+  },
+  /** Construction complete: a natural-trumpet flourish (D-harmonic notes) + bell sparkle. */
+  build(ctx, out, t) {
+    [[69, 0.00, 0.1], [74, 0.085, 0.1], [78, 0.17, 0.11]].forEach(([m, d, l]) => brass(ctx, out, t + d, m, l, 0.055));
+    brass(ctx, out, t + 0.26, 81, 0.48, 0.065, { body: 1900 });
+    brass(ctx, out, t + 0.26, 74, 0.48, 0.03);
+    brass(ctx, out, t + 0.26, 78, 0.48, 0.03);
+    bell(ctx, out, t + 0.26, midi(93) / 2, 0.02, 0.5);
+    return 1.2;
+  },
+  build_complete(ctx, out, t, o) { return SYNTH.build(ctx, out, t, o); },
+  /** Hammer and nail: three blows, the nail ringing a little higher as it sinks. */
+  build_hammer(ctx, out, t, o) {
+    const r = o.rate;
+    [[0, 0.8], [0.27, 0.9], [0.52, 1.0]].forEach(([d, v], i) => {
+      const tt = t + d + (Math.random() - 0.5) * 0.02;
+      const s = tone(ctx, 'sine', 210 * r, tt, tt + 0.12);
+      s.frequency.exponentialRampToValueAtTime(120 * r, tt + 0.06);
+      const sg = vca(ctx, out); hit(sg.gain, tt, 0.3 * v, 0.002, 0.08); s.connect(sg);
+      const n = noise(ctx, tt, 0.06), bp = filt(ctx, 'bandpass', 1500 * r, 1.6, tt), ng = vca(ctx, out);
+      hit(ng.gain, tt, 0.3 * v, 0.001, 0.045); wire(n, bp, ng);
+      const pf = (2700 + i * 160) * r;
+      for (const [k, a] of [[1, 0.06], [1.52, 0.03]]) {
+        const p = tone(ctx, 'sine', pf * k, tt, tt + 0.14), pg = vca(ctx, out);
+        hit(pg.gain, tt, a * v, 0.001, 0.12); p.connect(pg);
+      }
     });
+    return 0.8;
   },
-  // AN/AW: event-cue recipes — research done, win/lose, wave warning, coin
-  research(ctx, g, t) {
-    [523, 659, 784].forEach((f, i) => {
-      const o = ctx.createOscillator(), g2 = ctx.createGain();
-      o.connect(g2); g2.connect(g);
-      o.type = 'sine'; o.frequency.value = f;
-      g2.gain.setValueAtTime(0.0001, t + i * 0.09);
-      g2.gain.exponentialRampToValueAtTime(0.16, t + i * 0.09 + 0.02);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + i * 0.09 + 0.34);
-      o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.36);
-    });
-    g.gain.setValueAtTime(1, t);
+  /** Research done: three handbells. */
+  research(ctx, out, t) {
+    [86, 90, 93].forEach((m, i) => bell(ctx, out, t + i * 0.1, midi(m) / 2, 0.06, 0.45));
+    return 1.6;
   },
-  victory(ctx, g, t) {
-    [[392,0],[523,.14],[659,.28],[784,.42]].forEach(([f, d]) => {
-      const o = ctx.createOscillator(), g2 = ctx.createGain();
-      o.connect(g2); g2.connect(g);
-      o.type = 'sawtooth'; o.frequency.value = f;
-      g2.gain.setValueAtTime(0.0001, t + d);
-      g2.gain.exponentialRampToValueAtTime(0.14, t + d + 0.02);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + d + (d > .4 ? 0.8 : 0.30));
-      o.start(t + d); o.stop(t + d + 0.85);
-    });
-    g.gain.setValueAtTime(1, t);
+  /** Victory (SFX fallback when the music stinger isn't running): trumpets + kettledrums in D. */
+  victory(ctx, out, t) {
+    timp(ctx, out, t, midi(45), 0.35);
+    [[69, 0.0], [74, 0.13], [78, 0.26]].forEach(([m, d]) => brass(ctx, out, t + d, m, 0.12, 0.065));
+    brass(ctx, out, t + 0.4, 81, 0.9, 0.075, { body: 2000 });
+    [62, 66, 69].forEach((m) => brass(ctx, out, t + 0.4, m, 0.9, 0.03));
+    timp(ctx, out, t + 0.4, midi(50), 0.45);
+    return 1.8;
   },
-  defeat(ctx, g, t) {
-    const o = ctx.createOscillator();
-    o.connect(g);
-    o.type = 'sine';
-    o.frequency.setValueAtTime(220, t);
-    o.frequency.exponentialRampToValueAtTime(48, t + 1.6);
-    g.gain.setValueAtTime(0.26, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 1.7);
-    o.start(t); o.stop(t + 1.75);
+  /** Defeat (SFX fallback): descending sackbuts + muffled drum. */
+  defeat(ctx, out, t) {
+    [[57, 0.0, 0.42], [53, 0.45, 0.42], [50, 0.9, 1.1]].forEach(([m, d, l]) => brass(ctx, out, t + d, m, l, 0.07, { bright: 1400, body: 700 }));
+    [38, 45].forEach((m) => brass(ctx, out, t + 0.9, m, 1.1, 0.04, { bright: 900, body: 500 }));
+    timp(ctx, out, t, midi(38), 0.4); timp(ctx, out, t + 0.9, midi(38), 0.5);
+    return 2.4;
   },
-  warning(ctx, g, t) {
-    [0, 0.22].forEach(d => {
-      const o = ctx.createOscillator(), g2 = ctx.createGain();
-      o.connect(g2); g2.connect(g);
-      o.type = 'square';
-      o.frequency.setValueAtTime(440, t + d);
-      o.frequency.setValueAtTime(310, t + d + 0.10);
-      g2.gain.setValueAtTime(0.085, t + d);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + d + 0.20);
-      o.start(t + d); o.stop(t + d + 0.21);
-    });
-    g.gain.setValueAtTime(1, t);
+  /** Attack warning — "beat to quarters": side-drum roll + two urgent horn blasts. */
+  warning(ctx, out, t) {
+    const n = noise(ctx, t, 0.62), bp = filt(ctx, 'bandpass', 2700, 0.8, t), g = vca(ctx, out);
+    roll(g.gain, t, 0.58, 0.045, 0.05, 0.22); wire(n, bp, g);
+    for (const [d, len] of [[0.05, 0.26], [0.42, 0.4]]) {
+      brass(ctx, out, t + d, 57, len, 0.06, { bright: 2400, body: 1300 });
+      brass(ctx, out, t + d, 58, len, 0.05, { bright: 2400, body: 1300 });
+    }
+    return 1.0;
   },
-  coin(ctx, g, t) {
-    [1318, 1976].forEach((f, i) => {
-      const o = ctx.createOscillator(), g2 = ctx.createGain();
-      o.connect(g2); g2.connect(g);
-      o.type = 'triangle'; o.frequency.value = f;
-      g2.gain.setValueAtTime(i ? 0.07 : 0.12, t + i * 0.03);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + i * 0.03 + 0.24);
-      o.start(t + i * 0.03); o.stop(t + i * 0.03 + 0.26);
-    });
-    g.gain.setValueAtTime(1, t);
+  /** Gold: coins clinking onto the pile. */
+  coin(ctx, out, t, o) {
+    const r = o.rate;
+    clink(ctx, out, t, 2350 * r, 0.15);
+    clink(ctx, out, t + 0.075, 2950 * r, 0.1);
+    if (Math.random() < 0.6) clink(ctx, out, t + 0.16, 2600 * r, 0.055);
+    return 0.5;
   },
-  fire(ctx, g, t) {
-    const osc = ctx.createOscillator();
-    osc.connect(g);
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(88, t);
-    osc.frequency.exponentialRampToValueAtTime(16, t + 0.24);
-    g.gain.setValueAtTime(0.20, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.26);
-    osc.start(t); osc.stop(t + 0.28);
+  /** UI click: a small wooden "tock". */
+  ui_click(ctx, out, t, o) {
+    const r = o.rate;
+    const s = tone(ctx, 'sine', 1500 * r, t, t + 0.06);
+    s.frequency.exponentialRampToValueAtTime(850 * r, t + 0.025);
+    const g = vca(ctx, out); hit(g.gain, t, 0.15, 0.001, 0.04); s.connect(g);
+    const n = noise(ctx, t, 0.02), bp = filt(ctx, 'bandpass', 3400 * r, 1.4, t), ng = vca(ctx, out);
+    hit(ng.gain, t, 0.07, 0.001, 0.008); wire(n, bp, ng);
+    return 0.08;
+  },
+  /** UI hover: the faintest tick. */
+  ui_hover(ctx, out, t, o) {
+    const s = tone(ctx, 'sine', 2400 * o.rate, t, t + 0.04), g = vca(ctx, out);
+    hit(g.gain, t, 0.03, 0.003, 0.025); s.connect(g);
+    return 0.05;
+  },
+  /** Set sail: bosun's pipe, a natural-horn call (harmonics 2-3-4 in D), canvas filling with wind. */
+  set_sail(ctx, out, t) {
+    const p = tone(ctx, 'sine', 1650, t, t + 0.62);
+    p.frequency.linearRampToValueAtTime(2250, t + 0.28);
+    p.frequency.setValueAtTime(2250, t + 0.42);
+    p.frequency.linearRampToValueAtTime(1950, t + 0.6);
+    const tr = tone(ctx, 'sine', 15, t, t + 0.62), tg = ctx.createGain();
+    tg.gain.setValueAtTime(0, t); tg.gain.linearRampToValueAtTime(70, t + 0.3);
+    tr.connect(tg); tg.connect(p.frequency);
+    const pg = vca(ctx, out);
+    pg.gain.setValueAtTime(0, t); pg.gain.linearRampToValueAtTime(0.05, t + 0.05); pg.gain.setValueAtTime(0.05, t + 0.5); pg.gain.linearRampToValueAtTime(0, t + 0.6);
+    p.connect(pg);
+    horn(ctx, out, t + 0.6, 50, 0.3, 0.08);
+    horn(ctx, out, t + 0.95, 57, 0.3, 0.08);
+    horn(ctx, out, t + 1.3, 62, 0.95, 0.085);
+    const n = noise(ctx, t + 0.5, 1.8), bp = filt(ctx, 'bandpass', 420, 0.7, t), am = ctx.createGain(), fg = vca(ctx, out);
+    am.gain.value = 0.6;
+    const lfo = tone(ctx, 'triangle', 7, t + 0.5, t + 2.3), lg = ctx.createGain(); lg.gain.value = 0.4;
+    lfo.connect(lg); lg.connect(am.gain);
+    fg.gain.setValueAtTime(0, t + 0.5); fg.gain.linearRampToValueAtTime(0.06, t + 0.9); fg.gain.setTargetAtTime(0, t + 1.6, 0.25);
+    wire(n, bp, am, fg);
+    return 2.6;
+  },
+  /** A single strike of the ship's bell. */
+  bell(ctx, out, t, o) { bell(ctx, out, t, 620 * o.rate, 0.12); return 3.4; },
+  /** Ship ready: "two bells" + a handbell answer. */
+  ship_ready(ctx, out, t) {
+    bell(ctx, out, t, 640, 0.11);
+    bell(ctx, out, t + 0.34, 640, 0.1);
+    bell(ctx, out, t + 0.72, midi(86) / 2, 0.035, 0.5);
+    return 3.6;
   },
 };
+/** Every procedural recipe name (tests, audio lab). */
+export const SFX_RECIPES = Object.freeze(Object.keys(SYNTH));
+
+// Procedural sweeteners layered on top of file-based sounds: [recipe, gain].
+const LAYERS = {
+  cannon:       [['cannon_tail', 0.8]],
+  explosion_01: [['wood_crunch', 0.7]],
+  explosion_02: [['wood_crunch', 0.7]],
+  explosion_03: [['wood_crunch', 0.85]],
+};
+// Max starts per type inside a 90 ms window (broadsides, hit storms, UI spam).
+const LIMIT = {
+  cannon: 3, fire: 3, explosion: 2, explosion_01: 2, explosion_02: 2, explosion_03: 2, water_splash: 3, splash: 3,
+  wood_crunch: 3, impact: 2, sink: 2, ui_hover: 1, ui_click: 2, coin: 2, build: 1, build_complete: 1,
+  build_hammer: 1, bell: 1, ship_ready: 1, set_sail: 1, warning: 1, research: 1, victory: 1, defeat: 1,
+};
+// Random pitch variation (± fraction / 2) for non-musical sounds.
+const VARY = { cannon: 0.06, fire: 0.08, explosion: 0.08, wood_crunch: 0.14, splash: 0.12, impact: 0.12, sink: 0.05, build_hammer: 0.05, coin: 0.06, ui_click: 0.03 };
+// Music ducking [dB, hold s, release s] under big events.
+const DUCK = { explosion: [4, 0.5, 1.4], sink: [5, 1.2, 2.0], warning: [3, 0.6, 1.0] };
+const MAX_SYNTH_VOICES = 48;
 
 // ── Audio class ──────────────────────────────────────────────────────
 export class Audio {
-  constructor() {
+  /**
+   * @param {object} [opts]
+   * @param {BaseAudioContext} [opts.context]     use this context (e.g. an OfflineAudioContext in tests)
+   * @param {AudioNode}        [opts.destination] master output (default: context.destination)
+   */
+  constructor(opts = {}) {
+    this._ctxIn        = opts.context || null;
+    this._destIn       = opts.destination || null;
     this._ctx          = null;
+    this._offline      = false;
     this._masterGain   = null;
     this._musicGain    = null;
+    this._musicDuck    = null;
     this._sfxGain      = null;
+    this._clip         = null;
 
     this._masterVol    = 0.75;
     this._musicVol     = 0.40;
@@ -182,49 +508,98 @@ export class Audio {
     this._buffers      = new Map();
     this._activeLoops  = new Set();
 
-    // Active music source
+    // Active music source (legacy buffer music)
     this._musicSrc     = null;
     this._musicFadeId  = null;
+
+    /** Play procedural sweeteners on top of file-based SFX (see LAYERS). */
+    this.layering      = true;
+    this._recent       = new Map();
+    this._voices       = 0;
+    this._stinger      = null;
   }
 
   // ── Lazy init (must be triggered by user gesture) ──────────────────
   _getCtx() {
     if (!this._ctx) {
-      this._ctx        = new (window.AudioContext || window.webkitAudioContext)();
-      this._masterGain = this._ctx.createGain();
-      this._sfxGain    = this._ctx.createGain();
-      this._musicGain  = this._ctx.createGain();
+      const ctx = this._ctxIn || new (window.AudioContext || window.webkitAudioContext)();
+      this._ctx = ctx;
+      this._offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
+      this._masterGain = ctx.createGain();
+      this._sfxGain    = ctx.createGain();
+      this._musicGain  = ctx.createGain();
+      this._musicDuck  = ctx.createGain();
+      this._clip       = ctx.createWaveShaper();
+      this._clip.curve = softClipCurve();   // transparent below 0.8, never reaches full scale
 
       this._sfxGain.connect(this._masterGain);
-      this._musicGain.connect(this._masterGain);
-      this._masterGain.connect(this._ctx.destination);
+      this._musicGain.connect(this._musicDuck);
+      this._musicDuck.connect(this._masterGain);
+      this._masterGain.connect(this._clip);
+      this._clip.connect(this._destIn || ctx.destination);
 
       this._masterGain.gain.value = this._masterVol;
       this._sfxGain.gain.value    = this._sfxVol;
       this._musicGain.gain.value  = this._musicVol;
     }
-    if (this._ctx.state === 'suspended') this._ctx.resume();
+    if (this._ctx.state === 'suspended' && !this._offline) {
+      const p = this._ctx.resume?.();
+      if (p && p.catch) p.catch(() => {});
+    }
     return this._ctx;
   }
 
+  /** The shared AudioContext (created on first use; stays 'suspended' until a user gesture). */
+  get context() { return this._getCtx(); }
+  /** Input of the music bus — the MusicDirector connects here. */
+  get musicBus() { this._getCtx(); return this._musicGain; }
+  /** Input of the SFX bus — ambience beds connect here. */
+  get sfxBus() { this._getCtx(); return this._sfxGain; }
+  /** Resume the context from a user gesture. Resolves true when running. */
+  unlock() {
+    try {
+      const ctx = this._getCtx();
+      if (this._offline || ctx.state === 'running') return Promise.resolve(true);
+      return ctx.resume().then(() => ctx.state === 'running', () => false);
+    } catch (e) { return Promise.resolve(false); }
+  }
+  /** The MusicDirector registers here: 'victory'/'defeat' go to its stingers when fn(type) returns true. */
+  setStingerHandler(fn) { this._stinger = typeof fn === 'function' ? fn : null; }
+
   // ── Volume controls ────────────────────────────────────────────────
+  _setVol(node, v) {
+    if (!node) return;
+    if (this._offline || !this._ctx) { node.gain.value = v; return; }
+    node.gain.setTargetAtTime(v, this._ctx.currentTime, 0.03);
+  }
   set masterVolume(v) {
     this._masterVol = Math.max(0, Math.min(1, v));
-    if (this._masterGain) this._masterGain.gain.value = this._masterVol;
+    this._setVol(this._masterGain, this._masterVol);
   }
   get masterVolume() { return this._masterVol; }
 
   set sfxVolume(v) {
     this._sfxVol = Math.max(0, Math.min(1, v));
-    if (this._sfxGain) this._sfxGain.gain.value = this._sfxVol;
+    this._setVol(this._sfxGain, this._sfxVol);
   }
   get sfxVolume() { return this._sfxVol; }
 
   set musicVolume(v) {
     this._musicVol = Math.max(0, Math.min(1, v));
-    if (this._musicGain) this._musicGain.gain.value = this._musicVol;
+    this._setVol(this._musicGain, this._musicVol);
   }
   get musicVolume() { return this._musicVol; }
+
+  /** Briefly lower the music bus by `db` so a big event cuts through. */
+  duckMusic(db = 4, hold = 0.5, release = 1.4) {
+    const ctx = this._ctx;
+    if (!ctx || !this._musicDuck) return;
+    const p = this._musicDuck.gain, now = ctx.currentTime;
+    p.cancelScheduledValues(now);
+    p.setValueAtTime(Math.min(1, p.value), now);
+    p.setTargetAtTime(Math.pow(10, -db / 20), now, 0.04);
+    p.setTargetAtTime(1, now + hold, release / 4);
+  }
 
   // ── Called each frame from GameApp to keep camera position synced ─
   setCameraPos(x, y, z) {
@@ -241,39 +616,90 @@ export class Audio {
     return Math.pow(1 - (dist - this._refDist) / (maxDist - this._refDist), 2);
   }
 
+  /** Voice limiting: per-type start budget inside a 90 ms window + a global synth cap. */
+  _admit(type, t) {
+    let arr = this._recent.get(type);
+    if (!arr) this._recent.set(type, (arr = []));
+    while (arr.length && t - arr[0] > 0.09) arr.shift();
+    if (arr.length >= (LIMIT[type] ?? 4)) return false;
+    if (!this._offline && this._voices >= MAX_SYNTH_VOICES && !this._buffers.has(type)) return false;
+    arr.push(t);
+    return true;
+  }
+  _later(sec, fn) { if (!this._offline) setTimeout(fn, sec * 1000); }
+
   // ── Play a named sound (optionally spatial if x/y/z provided) ─────
+  /**
+   * @param {string} type  recipe or loaded buffer name
+   * @param {{x,y,z}|number[]|null} [pos]  world position → distance attenuation
+   * @param {{volume?, playbackRate?, maxDistance?, delay?, cleanupDelayMs?, sfxOnly?}} [opts]
+   */
   play(type, pos = null, opts = {}) {
     try {
+      if (this._stinger && (type === 'victory' || type === 'defeat') && !opts.sfxOnly && this._stinger(type)) return;
       const ctx = this._getCtx();
       if (!ctx) return;
+      const buf = this._buffers.get(type);
+      if (!buf && !SYNTH[type]) return;
+      const t = ctx.currentTime + Math.max(0, opts.delay || 0);
+      if (!this._admit(type, t)) return;
 
-      if (this._buffers.has(type)) {
-        return this.playBuffer(type, pos, false, opts);
-      }
-
-      const fn = SYNTH[type];
-      if (!fn) return;
-
-      // Spatial gain node sits between synthesiser and sfx bus
-      let targetNode = this._sfxGain;
-      let spatGain = null;
+      // Spatial gain node sits between the sound and the sfx bus
+      let target = this._sfxGain, spatGain = null;
       if (pos) {
         const spat = this._spatialGain(pos.x ?? pos[0], pos.y ?? pos[1], pos.z ?? pos[2], opts.maxDistance);
         if (spat <= 0.001) return;  // inaudible — skip synthesis entirely
         spatGain = ctx.createGain();
         spatGain.gain.value = spat;
         spatGain.connect(this._sfxGain);
-        targetNode = spatGain;
+        target = spatGain;
       }
 
-      const g = ctx.createGain();
-      g.connect(targetNode);
-      fn(ctx, g, ctx.currentTime);
-      setTimeout(() => {
-        try { g.disconnect(); } catch (e) {}
-        try { spatGain?.disconnect(); } catch (e) {}
-      }, opts.cleanupDelayMs ?? 2000);
+      let dur, src;
+      if (buf) {
+        src = this._startBuffer(buf, target, t, false, opts);
+        dur = buf.duration / (opts.playbackRate || 1);
+        if (this.layering) for (const [name, g] of LAYERS[type] || []) dur = Math.max(dur, this._startSynth(name, target, t, { ...opts, volume: (opts.volume ?? 1) * g }));
+      } else {
+        dur = this._startSynth(type, target, t, opts);
+      }
+      if (DUCK[type]) this.duckMusic(...DUCK[type]);
+      if (spatGain) this._later(Math.max(dur + (t - ctx.currentTime) + 0.3, (opts.cleanupDelayMs ?? 0) / 1000), () => { try { spatGain.disconnect(); } catch (e) {} });
+      return src;
     } catch (e) { /* audio context may not exist in test env */ }
+  }
+
+  _startSynth(name, target, t, opts) {
+    const fn = SYNTH[name];
+    if (!fn) return 0;
+    const ctx = this._ctx;
+    const g = ctx.createGain();
+    g.gain.value = opts.volume ?? 1;
+    g.connect(target);
+    const vary = VARY[name] ? 1 + (Math.random() - 0.5) * VARY[name] : 1;
+    const dur = fn(ctx, g, t, { rate: (opts.playbackRate ?? 1) * vary }) || 2;
+    this._voices++;
+    this._later(Math.max(dur + (t - ctx.currentTime) + 0.25, (opts.cleanupDelayMs ?? 0) / 1000), () => { this._voices--; try { g.disconnect(); } catch (e) {} });
+    return dur;
+  }
+
+  _startBuffer(buf, target, t, loop, opts) {
+    const ctx = this._ctx;
+    const src  = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop   = loop;
+    if (opts.playbackRate != null) src.playbackRate.value = opts.playbackRate;
+    const outGain = ctx.createGain();
+    outGain.gain.value = opts.volume ?? 1;
+    src.connect(outGain);
+    outGain.connect(target);
+    src.onended = () => {
+      try { src.disconnect(); } catch (e) {}
+      try { outGain.disconnect(); } catch (e) {}
+    };
+    const offset = buf.duration > 0 ? (opts.offset ?? 0) % buf.duration : 0;
+    src.start(t, offset);
+    return src;
   }
 
   // ── File-based sound loading ───────────────────────────────────────
@@ -306,23 +732,11 @@ export class Audio {
         spatGain.connect(this._sfxGain);
         targetNode = spatGain;
       }
-
-      const src  = ctx.createBufferSource();
-      src.buffer = buf;
-      src.loop   = loop;
-      if (opts.playbackRate != null) src.playbackRate.value = opts.playbackRate;
-
-      const outGain = ctx.createGain();
-      outGain.gain.value = opts.volume ?? 1;
-      src.connect(outGain);
-      outGain.connect(targetNode);
-      src.onended = () => {
-        try { src.disconnect(); } catch (e) {}
-        try { outGain.disconnect(); } catch (e) {}
-        try { spatGain?.disconnect(); } catch (e) {}
-      };
-      const offset = buf.duration > 0 ? (opts.offset ?? 0) % buf.duration : 0;
-      src.start(ctx.currentTime, offset);
+      const src = this._startBuffer(buf, targetNode, ctx.currentTime, loop, opts);
+      if (spatGain) {
+        const prev = src.onended;
+        src.onended = () => { prev(); try { spatGain.disconnect(); } catch (e) {} };
+      }
       return src;
     } catch (e) {}
   }
@@ -407,6 +821,7 @@ export class Audio {
     this._activeLoops.delete(loop);
   }
 
+  /** Legacy file-based music loop (procedural music lives in MusicDirector). */
   playMusic(name, fadeDuration = 1.5) {
     try {
       const ctx = this._getCtx();
@@ -449,3 +864,6 @@ export class Audio {
 
 // ── Singleton export (Bruno Simon style) ─────────────────────────────
 export const audio = new Audio();
+
+/** The game's shared AudioContext (created lazily; resumes on a user gesture). */
+export function getAudioContext() { return audio.context; }

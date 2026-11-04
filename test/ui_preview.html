@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IOW — Meta UI preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;700;800&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../frontend/src/styles/main.css">
+<link rel="stylesheet" href="../frontend/src/styles/hud.css">
+<link rel="stylesheet" href="../frontend/src/styles/meta.css">
+<script type="importmap">{ "imports": { "three": "../frontend/vendor/three/build/three.module.js" } }</script>
+<style>
+  /* preview-only scaffolding: a game screenshot behind the overlays + a toast stack */
+  body.pv { background:#0b1520 url(../docs/img/av_console.jpg) center / cover no-repeat; }
+  body.pv.theme-parchment { background-image:url(../docs/img/av_parchment.jpg); }
+  #pv-toasts { position:fixed; top:12px; right:12px; z-index:950; display:flex; flex-direction:column; gap:6px; pointer-events:none; }
+  #pv-toasts div { font:14px/1.3 Spectral, Georgia, serif; padding:7px 12px; border-radius:4px; background:#f3e6c4; color:#24160a;
+    border-left:4px solid #8a6a2a; box-shadow:0 4px 12px rgba(0,0,0,.4); max-width:360px; }
+  #pv-toasts .bad { border-left-color:#a3321f } #pv-toasts .good { border-left-color:#4f7a35 }
+  .pv-sheet { position:fixed; inset:0; overflow:auto; padding:24px; background:#efe2c2; color:#24160a; font:14px Spectral, Georgia, serif; }
+  .pv-sheet h2 { font:28px 'Pirata One', serif; margin:4px 0 12px; }
+  .pv-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:14px; }
+  .pv-cell { background:#f7eed6; border:1px solid #8f6c3c; border-radius:4px; padding:8px; text-align:center; }
+  .pv-cell .sv-well { height:92px; margin-bottom:6px; }
+  .pv-row { display:flex; flex-wrap:wrap; gap:14px; align-items:center; margin:12px 0; }
+  .pv-row .mx-ic { width:28px; height:28px; }
+  .pv-row .rb { width:64px; height:64px; }
+</style>
+</head>
+<body class="theme-admiralty pv">
+<div id="pv-toasts"></div>
+<script type="module">
+import { newProfile } from '../frontend/src/Meta/Profile.js';
+import { applyBattleResult, getMission } from '../frontend/src/Meta/Campaign.js';
+import { HULLS } from '../frontend/src/data/harbor.js';
+import { setLang } from '../frontend/src/i18n.js';
+
+const q = new URLSearchParams(location.search);
+const view = q.get('view') || 'harbor';
+if (q.get('theme') === 'parchment') { document.body.classList.add('theme-parchment'); document.body.classList.remove('theme-admiralty'); }
+if (q.get('lang')) setLang(q.get('lang'));
+if (q.get('motion') === 'reduce') document.documentElement.dataset.reduce = '1';
+
+const NOW = Date.now();
+const S = 1000;
+
+/** A mid-campaign profile: damaged / wrecked / building / repairing ships, 3 wins, renown 45. */
+function fakeProfile() {
+  const p = newProfile(NOW - 86400 * S);
+  p.renown = Number(q.get('renown') || 45);
+  p.res = { wood: 640, gold: 410 };
+  p.harbor.buildings = [
+    { buildingId: 'shipyard', gridKey: '6_4', level: 3, state: 'active' },
+    { buildingId: 'shipyard', gridKey: '8_4', level: 1, state: 'active' },
+    { buildingId: 'barracks', gridKey: '2_2', level: 1, state: 'active' },
+    { buildingId: 'lumber_mill', gridKey: '3_3', level: 2, state: 'active' },
+    { buildingId: 'gold_mine', gridKey: '3_6', level: 1, state: 'active' },
+  ];
+  const [brig, sl1, sl2] = p.fleet;
+  Object.assign(brig, { hpFrac: 0.72, battles: 4, sinks: 3, loadout: { L: 'demi_culv', R: 'demi_culv', B: 'swivel' } });
+  Object.assign(sl1, { hpFrac: 0.32, battles: 2, sinks: 1 });
+  Object.assign(sl2, { status: 'wreck', hpFrac: 0, battles: 3, sinks: 2 });
+  const add = (hullId, o) => {
+    const h = HULLS[hullId];
+    const base = { uid: 's_pv_' + hullId, hullId, nm: o.nm, hpFrac: 1, status: 'ready', readyAt: 0,
+      loadout: { L: 'carronade', R: 'carronade', B: 'swivel', S: 'swivel' }, upgrades: { spd: 0, hp: 0, rof: 0 }, battles: 0, sinks: 0 };
+    if (h.hull === 'light') delete base.loadout.B, delete base.loadout.S;
+    if (h.hull === 'standard') delete base.loadout.S;
+    p.fleet.push({ ...base, ...o });
+  };
+  add('frigate', { nm: 'Golden Heron', status: 'building', readyAt: NOW + 95 * S });
+  add('schooner', { nm: 'Coral Dancer', status: 'repairing', hpFrac: 0.35, readyAt: NOW + 12 * S });
+  add('galleon', { nm: 'Iron Pelican', battles: 1, sinks: 1, loadout: { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'long9' } });
+  add('corvette', { nm: '<b>Hook & "Eye"</b>', hpFrac: 0.9, battles: 6, sinks: 5, loadout: { L: 'falconet', R: 'chain_shot' } });
+  add('cutter', { nm: 'Driftwood Queen of the Southern Reaches', hpFrac: 0.55 });
+  p.campaign.won = { reef_1: true, reef_2: true, reef_3: true };
+  p.campaign.stars = { reef_1: 3, reef_2: 2, reef_3: 1 };
+  p.campaign.patrolsWon = 3;
+  if (q.get('complete')) {
+    p.renown = 420;
+    for (const id of ['straits_1', 'straits_2', 'straits_3', 'storm_1', 'storm_2', 'storm_3']) { p.campaign.won[id] = true; p.campaign.stars[id] = 3; }
+  }
+  if (q.get('noyard')) p.harbor.buildings = p.harbor.buildings.filter((b) => b.buildingId !== 'shipyard');
+  return p;
+}
+
+const profile = fakeProfile();
+window._pvProfile = profile;
+const log = (...a) => console.info('[pv]', ...a);
+const ctx = {
+  getProfile: () => profile,
+  save: () => log('save'),
+  now: () => Date.now(),
+  toast: (msg, type = 'info') => {
+    const d = document.createElement('div'); d.className = type; d.textContent = msg;
+    document.getElementById('pv-toasts').prepend(d); setTimeout(() => d.remove(), 3500);
+  },
+  sfx: (n) => log('sfx', n),
+  onSetSail: (o) => { window._pvSail = o; ctx.toast('onSetSail ' + JSON.stringify(o), 'good'); },
+  onOpenWar: () => ctx.toast('onOpenWar()', 'good'),
+  onReturn: () => ctx.toast('onReturn()', 'good'),
+  onRetry: () => ctx.toast('onRetry()', 'info'),
+  onProfileChanged: () => log('profile changed'),
+};
+window._pvCtx = ctx;
+
+async function run() {
+  if (view === 'icons') {
+    const { hullSvg, rankBadge, icon, tierBadge, resIcon, starIcon } = await import('../frontend/src/Meta/UI/icons.js');
+    const { ensureMetaCss } = await import('../frontend/src/Meta/UI/dom.js');
+    await ensureMetaCss();
+    const glyphs = ['anchor', 'map', 'compass', 'clock', 'wrench', 'hammer', 'bolt', 'axe', 'skull', 'swords', 'castle', 'hourglass', 'flag', 'lock', 'check', 'warn', 'spyglass', 'cannon', 'ship', 'crown', 'help', 'scroll', 'sparkle'];
+    document.body.insertAdjacentHTML('beforeend', `<div class="pv-sheet"><h2>Hull silhouettes</h2><div class="pv-grid">${Object.values(HULLS).map((h) =>
+      `<div class="pv-cell"><div class="sv-well wl-ready" style="--tc:#888">${hullSvg(h.id)}</div><b>${h.nm}</b> ${tierBadge(h.tier)}</div>`).join('')}</div>
+      <div class="pv-row">${['ready', 'building', 'repairing', 'wreck', 'plan'].map((w) => `<div class="pv-cell" style="width:170px"><div class="sv-well wl-${w}">${hullSvg('frigate')}</div>${w}</div>`).join('')}</div>
+      <h2>Glyphs, ranks, resources</h2><div class="pv-row">${glyphs.map((g) => icon(g)).join('')}</div>
+      <div class="pv-row">${[0, 1, 2, 3, 4].map((i) => rankBadge(i)).join('')} ${resIcon('wood')} ${resIcon('gold')} ${resIcon('renown')} ${starIcon('on')} ${starIcon('off')}</div></div>`);
+    return;
+  }
+  const UI = await import('../frontend/src/Meta/UI/index.js');
+  window._pvUI = UI;
+  if (view === 'shipyard') { const y = new UI.ShipyardPanel(ctx); y.open(); if (q.get('tab')) y._setTab(q.get('tab')); window._pv = y; }
+  else if (view === 'chart') { const c = new UI.WorldChart(ctx); c.open(); window._pv = c; }
+  else if (view === 'briefing') { const c = new UI.WorldChart(ctx); c.open(); c.openBriefing(q.get('m') || 'straits_1'); window._pv = c; }
+  else if (view === 'help') { const c = new UI.WorldChart(ctx); c.open(); UI.showHowToWin(ctx); }
+  else if (view === 'result') {
+    const outcome = q.get('outcome') || 'victory';
+    const clone = structuredClone(profile);
+    const mid = q.get('m') || (q.get('campaign') ? 'storm_3' : 'straits_1');
+    if (q.get('campaign')) for (const id of ['straits_1', 'straits_2', 'straits_3', 'storm_1', 'storm_2']) clone.campaign.won[id] = true;
+    if (q.get('campaign')) clone.renown = 330;
+    const m = getMission(mid);
+    const ships = clone.fleet.filter((s) => s.status === 'ready').slice(0, 4);
+    const res = {
+      won: outcome === 'victory', retreated: outcome === 'retreat', timeSec: outcome === 'victory' ? 251 : 132,
+      ships: ships.map((s, i) => ({ uid: s.uid, hpFrac: i === 1 ? 0.18 : 0.64 + i * 0.08, sunk: i === 2, sinks: i === 0 ? 2 : 1 })),
+      sunkEnemyClasses: outcome === 'victory' ? ['standard', 'light', 'light'] : ['light'], fortsDestroyed: 0,
+    };
+    const summary = applyBattleResult(clone, m, res);
+    const rctx = { ...ctx, getProfile: () => clone, ships: res.ships.map((r) => ({ ...r, nm: clone.fleet.find((x) => x.uid === r.uid).nm, hullId: clone.fleet.find((x) => x.uid === r.uid).hullId })) };
+    if (q.get('noretry')) delete rctx.onRetry;
+    UI.showBattleResult(summary, rctx);
+  } else {
+    const ui = UI.mountHarborUI(ctx);
+    window._pv = ui;
+    if (!q.get('noaway')) UI.showOfflineReport({ seconds: 8040, wood: 1240, gold: 860, finished: ['lumber_mill', 'warehouse'] });
+  }
+}
+run().catch((e) => { console.error(e); document.body.insertAdjacentHTML('beforeend', `<pre style="position:fixed;inset:20px;background:#fff;color:#900;z-index:99999">${String(e.stack || e)}</pre>`); });
+</script>
+</body>
+</html>

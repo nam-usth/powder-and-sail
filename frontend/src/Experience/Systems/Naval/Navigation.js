@@ -12,6 +12,25 @@ const EDGE = MAP / 2 - 4;   // ships are clamped to this square by MovementSyste
 
 const clampMap = v => Math.max(-EDGE, Math.min(EDGE, v));
 
+// AW: an island may carry `colliders` [{x, z, r}] (the HARBOR home port wraps
+// a bay ships must reach); everything here then works on those circles.
+const _circles = new WeakMap();
+/**
+ * Flatten islands into collision circles: island.colliders when present,
+ * else the island's own (x, z, r). Cached per islands array.
+ * @param {Array<{x:number,z:number,r:number,colliders?:Array}>} islands
+ */
+export function islandCircles(islands) {
+  if (!islands) return [];
+  let c = _circles.get(islands);
+  if (!c || c.n !== islands.length) {
+    c = islands.flatMap(i => (i && i.colliders && i.colliders.length) ? i.colliders : [i]);
+    c.n = islands.length;
+    _circles.set(islands, c);
+  }
+  return c;
+}
+
 /** Does segment A→B pass within R of C? (strict: touching the circle is fine) */
 export function segmentHitsCircle(ax, az, bx, bz, cx, cz, R) {
   const dx = bx - ax, dz = bz - az;
@@ -24,6 +43,7 @@ export function segmentHitsCircle(ax, az, bx, bz, cx, cz, R) {
 
 /** Move a point out of every island it sits in (clearance included). */
 export function pushOutside(x, z, islands, clearance = 4) {
+  islands = islandCircles(islands);
   let px = x, pz = z;
   for (let pass = 0; pass < 3; pass++) {
     let moved = false;
@@ -59,7 +79,7 @@ function blocked(ax, az, bx, bz, circles, skip) {
  */
 export function planPath(ax, az, bx, bz, islands, clearance = 4) {
   const goal = pushOutside(bx, bz, islands, clearance);
-  const circles = islands.map(i => ({ x: i.x, z: i.z, R: i.r + clearance }));
+  const circles = islandCircles(islands).map(i => ({ x: i.x, z: i.z, R: i.r + clearance }));
 
   const startInside = new Set();
   circles.forEach((c, k) => { if (Math.hypot(ax - c.x, az - c.z) < c.R) startInside.add(k); });

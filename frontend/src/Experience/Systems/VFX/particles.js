@@ -1,372 +1,482 @@
 import * as THREE from 'three';
+import { GpuParticleField, getPuffTexture, sharedPointUniforms } from './gpuParticles.js';
+import { ENV } from './env.js';
+import { GLSL_HASH, GLSL_FIRE_RAMP, GLSL_FOG } from './glsl.js';
 
-// ── GLSL: Simplex noise shared by fire + smoke shaders ────────────
-const P_NOISE = /* glsl */`
-vec3 _m3(vec3 x){return x-floor(x*(1./289.))*289.;}
-vec4 _m4(vec4 x){return x-floor(x*(1./289.))*289.;}
-float snoise(vec3 v){
-  const vec2 C=vec2(1./6.,1./3.);const vec4 D=vec4(0.,.5,1.,2.);
-  vec3 i=floor(v+dot(v,C.yyy));vec3 x0=v-i+dot(i,C.xxx);
-  vec3 g=step(x0.yzx,x0.xyz);vec3 l=1.-g;
-  vec3 i1=min(g.xyz,l.zxy);vec3 i2=max(g.xyz,l.zxy);
-  vec3 x1=x0-i1+C.xxx;vec3 x2=x0-i2+C.yyy;vec3 x3=x0-D.yyy;
-  i=_m3(i);
-  vec4 p=_m4(_m4(_m4(i.z+vec4(0.,i1.z,i2.z,1.))+i.y+vec4(0.,i1.y,i2.y,1.))+i.x+vec4(0.,i1.x,i2.x,1.));
-  float n_=.142857;vec3 ns=n_*D.wyz-D.xzx;
-  vec4 j=p-49.*floor(p*ns.z*ns.z);vec4 x_=floor(j*ns.z);vec4 y_=floor(j-7.*x_);
-  vec4 x=x_*ns.x+ns.yyyy;vec4 y=y_*ns.x+ns.yyyy;vec4 h=1.-abs(x)-abs(y);
-  vec4 b0=vec4(x.xy,y.xy);vec4 b1=vec4(x.zw,y.zw);
-  vec4 s0=floor(b0)*2.+1.;vec4 s1=floor(b1)*2.+1.;vec4 sh=-step(h,vec4(0.));
-  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy;vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
-  vec3 p0=vec3(a0.xy,h.x);vec3 p1=vec3(a0.zw,h.y);vec3 p2=vec3(a1.xy,h.z);vec3 p3=vec3(a1.zw,h.w);
-  vec4 nm=1.79284291-0.85373472*vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3));
-  p0*=nm.x;p1*=nm.y;p2*=nm.z;p3*=nm.w;
-  vec4 m=max(.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.);m=m*m;
-  return 42.*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
-}
-float fbm2(vec3 p){return snoise(p)*.5+snoise(p*2.1+vec3(1.7,9.2,5.5))*.25;}
-`;
+// ── Particle fields (one draw call each) ───────────────────────────
+//   SmokeField  — lit, normal-blended billows: gun smoke banks, fire smoke,
+//                 explosion columns, cannonball trails. Puff atlas + baked
+//                 normals → volumetric look for one texture fetch per pixel.
+//   FlameField  — additive fire tongues / fireball cores (black-body ramp).
+//   SparkField  — additive velocity-stretched streaks: sparks, embers,
+//                 coloured ability bits (spawnPart).
+//   SprayField  — white water: splash columns, droplets, mist, bubbles.
+//
+// All are stateless GPU ring buffers (see gpuParticles.js). Every emit call
+// writes one 16-float record; nothing is touched per frame afterwards.
 
-// ── GLSL: Flame shaders ───────────────────────────────────────────
-const FIRE_VERT = /* glsl */`
-  attribute float aLifeFrac;
-  attribute float aSize;
-  attribute float aRand;
+export const POOL_FIRE  = 2048;   // kept for backward-compatible imports
+export const POOL_SMOKE = 3072;
+const POOL_SPARK = 2048;
+const POOL_SPRAY = 2048;
 
-  varying float vLifeFrac;
-  varying float vRand;
+const R = Math.random;
 
-  void main() {
-    vLifeFrac = aLifeFrac;
-    vRand     = aRand;
-
-    float rise    = aLifeFrac * 2.8;
-    float flicker = sin(aRand * 6.28318 + aLifeFrac * 14.0) * (1.0 - aLifeFrac) * 0.38;
-    float drift   = cos(aRand * 3.14159 + aLifeFrac *  7.0) * 0.14;
-
-    vec3 pos = position;
-    pos.y += rise;
-    pos.x += flicker + drift;
-    pos.z += drift * 0.6;
-
-    vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
-    float sz = aSize * (1.0 - aLifeFrac * 0.55) * (280.0 / -mvPos.z);
-    gl_PointSize = sz;
-    gl_Position  = projectionMatrix * mvPos;
+// ═══ SMOKE ═════════════════════════════════════════════════════════
+const SMOKE_VERT = GLSL_FOG + /* glsl */`
+uniform float uTime, uPxScale, uMaxPx, uSoft, uFogDensity;
+uniform vec3  uWind, uSunDir, uSunCol, uAmbCol, uFlashCol;
+uniform vec4  uFlashPos[3];
+attribute float aT0;
+attribute vec4  aVel;    // v0.xyz, life
+attribute vec4  aShape;  // size0, size1, drag k, rise g
+attribute vec4  aLook;   // seed, albedo, alpha, warm
+varying vec4 vCellRot;   // atlas cell offset (xy), rotation cos/sin (zw)
+varying vec4 vInfo;      // age frac, alpha, fog, heat
+varying vec3 vAmb, vSun, vL, vGlow;
+void main(){
+  float age = uTime - aT0, life = aVel.w;
+  if (age < 0.0 || age >= life) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  float x = age / life, seed = aLook.x;
+  float k = max(aShape.z, 0.02);
+  vec3 term = uWind + vec3(0.0, aShape.w / k, 0.0);       // drift = wind + buoyant terminal speed
+  vec3 p = position + term * age + (aVel.xyz - term) * ((1.0 - exp(-k * age)) / k);
+  p.x += sin(age * 0.71 + seed * 40.0) * 0.30 * x;          // slow curl so banks are not rigid sheets
+  p.z += cos(age * 0.57 + seed * 23.0) * 0.30 * x;
+  float size = mix(aShape.x, aShape.y, 1.0 - pow(1.0 - x, 2.4));
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  float depth = -mv.z;
+  gl_Position  = projectionMatrix * mv;
+  gl_PointSize = min(size * uPxScale / max(depth, 0.1), uMaxPx);
+  float a = aLook.z * smoothstep(0.0, min(0.08 / life, 0.5), x) * (1.0 - smoothstep(0.35, 1.0, x));
+  if (uSoft > 0.5) {
+    a *= smoothstep(-0.35, 0.45 * size, p.y);   // soft contact with the sea surface
+    a *= smoothstep(1.0, 5.0, depth);           // fade before it fills the lens
   }
-`;
+  vL   = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+  vAmb = aLook.y * uAmbCol * 1.05;
+  vSun = aLook.y * uSunCol * 0.62;
+  vec3 g = vec3(0.0);
+  for (int i = 0; i < 3; i++) { vec3 d = uFlashPos[i].xyz - p; g += uFlashCol * (uFlashPos[i].w / (1.0 + dot(d, d) * 0.30)); }
+  vGlow = g * 0.05;
+  vInfo = vec4(x, a, vfxFog(depth, uFogDensity), aLook.w * (1.0 - smoothstep(0.0, 0.32, x)));
+  float cell = floor(fract(seed * 7.13) * 4.0);
+  float rot  = seed * 6.2831 + age * (fract(seed * 3.7) - 0.5) * 0.5;
+  vCellRot = vec4(mod(cell, 2.0) * 0.5, floor(cell * 0.5) * 0.5, cos(rot), sin(rot));
+}`;
 
-const FIRE_FRAG = P_NOISE + /* glsl */`
-  varying float vLifeFrac;
-  varying float vRand;
+const SMOKE_FRAG = /* glsl */`
+uniform sampler2D uPuff;
+uniform vec3 uFogCol;
+varying vec4 vCellRot, vInfo;
+varying vec3 vAmb, vSun, vL, vGlow;
+void main(){
+  vec2 pc = gl_PointCoord - 0.5; pc.y = -pc.y;
+  vec2 q = vec2(vCellRot.z * pc.x - vCellRot.w * pc.y, vCellRot.w * pc.x + vCellRot.z * pc.y);
+  if (dot(q, q) > 0.25) discard;
+  vec4 t = texture2D(uPuff, vCellRot.xy + (q + 0.5) * 0.5);
+  float er = vInfo.x * vInfo.x * 0.85;                        // edges erode, late in life
+  float d = clamp((t.a - er * (1.2 - t.b)) / max(1.0 - er * 0.9, 0.15), 0.0, 1.0);
+  float alpha = d * vInfo.y;
+  if (alpha < 0.004) discard;
+  vec2 n2 = t.rg * 2.0 - 1.0;
+  n2 = vec2(vCellRot.z * n2.x + vCellRot.w * n2.y, -vCellRot.w * n2.x + vCellRot.z * n2.y);
+  vec3 n = normalize(vec3(n2, 0.7));
+  float diff = clamp(dot(n, vL) * 0.55 + 0.45, 0.0, 1.0);
+  vec3 col = (vAmb + vSun * diff) * mix(1.0, 0.74, d) + vGlow * (0.5 + d);
+  col += vec3(1.0, 0.42, 0.10) * vInfo.w * (0.55 + 0.9 * (1.0 - d));   // lit from the fire below
+  col = mix(col, uFogCol, vInfo.z);
+#if defined( TONE_MAPPING )
+  col = toneMapping(col);
+#endif
+  gl_FragColor = vec4(col, alpha);
+}`;
 
-  void main() {
-    vec2 uv = gl_PointCoord * 2.0 - 1.0;
-
-    float taper  = clamp(uv.y * 0.5 + 0.5, 0.0, 1.0);
-    float wScale = mix(0.28, 1.0, taper);
-    float nx     = uv.x / wScale;
-    float wobble = sin(uv.y * 5.0 + vRand * 6.28318 + vLifeFrac * 11.0) * 0.16;
-
-    // Noise warps the flame edge organically (1 octave, cheap)
-    float n = snoise(vec3(uv * 2.0, vRand * 4.5 + vLifeFrac * 2.5)) * 0.5 + 0.5;
-    float r = nx * nx + uv.y * uv.y * 0.28 + wobble * wobble;
-    float rEdge = 0.80 + n * 0.22;
-    if (r > rEdge) discard;
-
-    float soft = 1.0 - smoothstep(0.36 + n * 0.14, rEdge, r);
-
-    float t = vLifeFrac;
-    vec3 col;
-    if (t < 0.15)
-      col = mix(vec3(1.00, 1.00, 0.95), vec3(1.00, 0.90, 0.20), t / 0.15);
-    else if (t < 0.40)
-      col = mix(vec3(1.00, 0.82, 0.08), vec3(1.00, 0.35, 0.02), (t - 0.15) / 0.25);
-    else if (t < 0.70)
-      col = mix(vec3(0.95, 0.28, 0.01), vec3(0.50, 0.06, 0.01), (t - 0.40) / 0.30);
-    else
-      col = mix(vec3(0.42, 0.05, 0.01), vec3(0.10, 0.04, 0.03), (t - 0.70) / 0.30);
-
-    col = mix(col * 1.38, col, smoothstep(0.0, 0.55, length(uv)));
-    col *= (0.78 + n * 0.44); // noise-modulated brightness variation
-    float alpha = soft * (1.0 - t * t) * 0.88;
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
-
-// ── GLSL: Smoke shaders ───────────────────────────────────────────
-const SMOKE_VERT = /* glsl */`
-  attribute float aLifeFrac;
-  attribute float aSize;
-  attribute float aRand;
-
-  varying float vLifeFrac;
-  varying float vRand;
-
-  void main() {
-    vLifeFrac = aLifeFrac;
-    vRand     = aRand;
-
-    vec3 pos = position;
-    float wind = aRand * 0.8 - 0.4;
-    pos.y += aLifeFrac * 3.5;
-    pos.x += wind * aLifeFrac * 1.5;
-    pos.z += (aRand - 0.5) * aLifeFrac * 0.8;
-
-    vec4 mvPos = modelViewMatrix * vec4(pos, 1.0);
-    float sz = aSize * (0.4 + aLifeFrac * 1.6);
-    gl_PointSize = sz * (280.0 / -mvPos.z);
-    gl_Position  = projectionMatrix * mvPos;
-  }
-`;
-
-const SMOKE_FRAG = P_NOISE + /* glsl */`
-  varying float vLifeFrac;
-  varying float vRand;
-
-  float hash2(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
-  float noise2(vec2 p){
-    vec2 i=floor(p);vec2 f=fract(p);f=f*f*(3.-2.*f);
-    return mix(mix(hash2(i),hash2(i+vec2(1,0)),f.x),
-               mix(hash2(i+vec2(0,1)),hash2(i+vec2(1,1)),f.x),f.y);
-  }
-
-  void main() {
-    vec2 uv = gl_PointCoord - 0.5;
-    float d = length(uv);
-    if (d > 0.5) discard;
-
-    // Noise dissolve — puff erodes from edges as it ages
-    float dNoise = noise2(uv * 5.2 + vLifeFrac * 1.8 + vRand * 3.5);
-    float dThr   = vLifeFrac * (1.15 + vRand * 3.2);
-    if (dNoise < dThr) discard;
-
-    float rim  = smoothstep(0.10, 0.47, d);
-    float n    = fbm2(vec3(uv * 3.2, vRand * 6.0)) * 0.5 + 0.5;
-    float nEdge = 1.0 - smoothstep(0.14 + n * 0.16, 0.50, d);
-    float alpha = nEdge * (1.0 - vLifeFrac * 0.82) * 0.34;
-    alpha *= (1.0 - rim * 0.52);
-
-    // Warm tint when freshly spawned (born near fire), greying as it rises
-    float warm = max(0.0, 1.0 - vLifeFrac * 3.5);
-    float bright = mix(0.50, 0.88, n);
-    vec3 cloudCol = vec3(bright * 0.90, bright * 0.88, bright * 0.84);
-    vec3 fireCol  = mix(vec3(0.80, 0.36, 0.08), vec3(1.0, 0.88, 0.55), n);
-    vec3 col = mix(cloudCol, fireCol, warm * 0.65);
-    col *= mix(0.52, 1.0, 1.0 - rim) + n * 0.15;
-
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
-
-// ── Pool sizes ────────────────────────────────────────────────────
-export const POOL_FIRE  = 1200;
-export const POOL_SMOKE = 800;
-const        POOL_MISC  = 1200;
-const        GRAVITY_P  = 9.0;
-
-// ── ShaderParticlePool — GPU point sprites (fire + smoke) ─────────
-export class ShaderParticlePool {
-  constructor(scene, vertShader, fragShader, poolSize, label) {
-    this._size  = poolSize;
-    this._free  = Array.from({ length: poolSize }, (_, i) => i);
-
-    this._alive   = new Uint8Array(poolSize);
-    this._px      = new Float32Array(poolSize);
-    this._py      = new Float32Array(poolSize);
-    this._pz      = new Float32Array(poolSize);
-    this._vx      = new Float32Array(poolSize);
-    this._vy      = new Float32Array(poolSize);
-    this._vz      = new Float32Array(poolSize);
-    this._life    = new Float32Array(poolSize);
-    this._maxLife = new Float32Array(poolSize);
-    this._sizeArr = new Float32Array(poolSize);
-    this._randArr = new Float32Array(poolSize);
-
-    this._geo       = new THREE.BufferGeometry();
-    this._positions = new Float32Array(poolSize * 3);
-    this._lifeFracs = new Float32Array(poolSize);
-    this._sizes     = new Float32Array(poolSize);
-    this._rands     = new Float32Array(poolSize);
-
-    this._geo.setAttribute('position',  new THREE.BufferAttribute(this._positions, 3).setUsage(THREE.DynamicDrawUsage));
-    this._geo.setAttribute('aLifeFrac', new THREE.BufferAttribute(this._lifeFracs, 1).setUsage(THREE.DynamicDrawUsage));
-    this._geo.setAttribute('aSize',     new THREE.BufferAttribute(this._sizes,     1).setUsage(THREE.DynamicDrawUsage));
-    this._geo.setAttribute('aRand',     new THREE.BufferAttribute(this._rands,     1).setUsage(THREE.DynamicDrawUsage));
-    this._geo.setDrawRange(0, 0);
-
-    this._mat = new THREE.ShaderMaterial({
-      vertexShader:   vertShader,
-      fragmentShader: fragShader,
-      transparent:    true,
-      depthWrite:     false,
-      blending:       label === 'fire' ? THREE.AdditiveBlending : THREE.NormalBlending,
+/** Lit billowing smoke. */
+export class SmokeField extends GpuParticleField {
+  constructor(scene, capacity = POOL_SMOKE) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: sharedPointUniforms({
+        uPuff: { value: getPuffTexture() },
+        uFlashPos: ENV.uFlashPos, uFlashCol: ENV.uFlashCol,
+      }),
+      vertexShader: SMOKE_VERT, fragmentShader: SMOKE_FRAG,
+      transparent: true, depthWrite: false, blending: THREE.NormalBlending,
     });
-
-    this._points = new THREE.Points(this._geo, this._mat);
-    this._points.frustumCulled = false;
-    scene.add(this._points);
+    super({ scene, capacity, material: mat, renderOrder: 20, name: 'vfx-smoke',
+      layout: [['position', 3], ['aT0', 1], ['aVel', 4], ['aShape', 4], ['aLook', 4]] });
   }
 
+  /**
+   * Emit one smoke puff.
+   * @param {number} shade albedo 0 (soot) … 1 (white powder smoke)
+   * @param {number} warm  0…1 orange under-glow while young (born in fire)
+   */
+  emit(x, y, z, vx, vy, vz, life, size0, size1, drag, rise, shade, alpha, warm = 0, delay = 0) {
+    const i = this._next(), d = this.data, o = i * 16, t0 = ENV.uTime.value + delay;
+    d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = t0;
+    d[o + 4] = vx; d[o + 5] = vy; d[o + 6] = vz; d[o + 7] = life;
+    d[o + 8] = size0; d[o + 9] = size1; d[o + 10] = drag; d[o + 11] = rise;
+    d[o + 12] = R(); d[o + 13] = shade; d[o + 14] = alpha; d[o + 15] = warm;
+    this._commit(i, t0 + life);
+  }
+
+  /**
+   * Legacy pool signature (FireSource / IslandEntity forts):
+   * spawn(x, y, z, { n, speed, life, size, spread }).
+   */
   spawn(x, y, z, opts = {}) {
-    const n      = opts.n      || 6;
-    const speed  = opts.speed  || 2.5;
-    const life   = opts.life   || 1.2;
-    const size   = opts.size   || 18;
-    const spread = opts.spread || 0.5;
-
-    for (let i = 0; i < n; i++) {
-      if (!this._free.length) break;
-      const id = this._free.pop();
-      this._alive[id]   = 1;
-      this._px[id]      = x + (Math.random() - 0.5) * spread;
-      this._py[id]      = y + Math.random() * 0.2;
-      this._pz[id]      = z + (Math.random() - 0.5) * spread;
-      this._vx[id]      = (Math.random() - 0.5) * speed * 0.4;
-      this._vy[id]      = speed * (0.4 + Math.random() * 0.6);
-      this._vz[id]      = (Math.random() - 0.5) * speed * 0.4;
-      this._life[id]    = life * (0.7 + Math.random() * 0.6);
-      this._maxLife[id] = this._life[id];
-      this._sizeArr[id] = size * (0.6 + Math.random() * 0.8);
-      this._randArr[id] = Math.random();
+    const n = opts.n || 6, speed = opts.speed || 2.5, life = opts.life || 1.2;
+    const size = opts.size || 18, spread = opts.spread || 0.5;
+    for (let k = 0; k < n; k++) {
+      const l = life * (1.6 + R() * 1.4);
+      this.emit(x + (R() - 0.5) * spread, y + R() * 0.2, z + (R() - 0.5) * spread,
+        (R() - 0.5) * speed * 0.4, speed * (0.4 + R() * 0.6), (R() - 0.5) * speed * 0.4,
+        l, size * 0.05, size * (0.18 + R() * 0.08), 1.4, 0.55, 0.30 + R() * 0.12, 0.42, 0.65);
     }
-  }
-
-  update(dt) {
-    for (let id = 0; id < this._size; id++) {
-      if (!this._alive[id]) {
-        this._positions[id * 3 + 1] = -9999;
-        this._lifeFracs[id]          = 1.0;
-        continue;
-      }
-
-      this._life[id] -= dt;
-      if (this._life[id] <= 0) {
-        this._alive[id] = 0;
-        this._free.push(id);
-        this._positions[id * 3 + 1] = -9999;
-        this._lifeFracs[id]          = 1.0;
-        continue;
-      }
-
-      this._px[id] += this._vx[id] * dt;
-      this._py[id] += this._vy[id] * dt;
-      this._pz[id] += this._vz[id] * dt;
-      this._vx[id] *= 1.0 - dt * 1.2;
-      this._vz[id] *= 1.0 - dt * 1.2;
-
-      const lifeFrac = 1.0 - this._life[id] / this._maxLife[id];
-      this._positions[id * 3]     = this._px[id];
-      this._positions[id * 3 + 1] = this._py[id];
-      this._positions[id * 3 + 2] = this._pz[id];
-      this._lifeFracs[id]          = lifeFrac;
-      this._sizes[id]              = this._sizeArr[id];
-      this._rands[id]              = this._randArr[id];
-    }
-
-    this._geo.drawRange.count = this._size;
-    this._geo.attributes.position.needsUpdate  = true;
-    this._geo.attributes.aLifeFrac.needsUpdate = true;
-    this._geo.attributes.aSize.needsUpdate     = true;
-    this._geo.attributes.aRand.needsUpdate     = true;
-  }
-
-  destroy(scene) {
-    scene.remove(this._points);
-    this._geo.dispose();
-    this._mat.dispose();
   }
 }
 
-// ── MiscParticlePool — instanced spheres (water, wood chips) ──────
-export class MiscParticlePool {
-  constructor(scene) {
-    this._geo  = new THREE.SphereGeometry(0.13, 4, 4);
-    this._mat  = new THREE.MeshBasicMaterial({ vertexColors: true });
-    this._mesh = new THREE.InstancedMesh(this._geo, this._mat, POOL_MISC);
-    this._mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this._mesh.count = 0;
-    scene.add(this._mesh);
+// ═══ FLAME ═════════════════════════════════════════════════════════
+const FLAME_VERT = GLSL_FOG + /* glsl */`
+uniform float uTime, uPxScale, uMaxPx, uFogDensity;
+uniform vec3  uWind;
+attribute float aT0;
+attribute vec4  aVel;    // v0, life
+attribute vec4  aShape;  // size0, size1, drag, rise
+attribute vec4  aLook;   // seed, heat, alpha, tongue (0 round … 1 flame tongue)
+varying vec4 vCellRot;
+varying vec4 vInfo;      // age frac, alpha, fog fade, heat
+varying float vTongue;
+void main(){
+  float age = uTime - aT0, life = aVel.w;
+  if (age < 0.0 || age >= life) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  float x = age / life, seed = aLook.x;
+  float k = max(aShape.z, 0.02);
+  vec3 term = uWind * 0.35 + vec3(0.0, aShape.w / k, 0.0);
+  vec3 p = position + term * age + (aVel.xyz - term) * ((1.0 - exp(-k * age)) / k);
+  p.x += sin(age * 9.0 + seed * 30.0) * 0.05 * x;                 // licking flicker
+  float size = mix(aShape.x, aShape.y, sin(min(x * 1.7, 1.0) * 1.5708)) * (1.0 - 0.5 * smoothstep(0.55, 1.0, x));
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  float depth = -mv.z;
+  gl_Position  = projectionMatrix * mv;
+  gl_PointSize = min(size * uPxScale / max(depth, 0.1), uMaxPx);
+  float a = aLook.z * smoothstep(0.0, 0.04, x) * (1.0 - smoothstep(0.5, 1.0, x));
+  a *= smoothstep(-0.1, 0.25, p.y) * smoothstep(0.6, 2.5, depth);
+  vInfo = vec4(x, a, 1.0 - vfxFog(depth, uFogDensity), aLook.y * pow(1.0 - x, 1.15));
+  vTongue = aLook.w;
+  float cell = floor(fract(seed * 5.31) * 4.0);
+  float rot  = (seed - 0.5) * mix(6.2831, 0.5, aLook.w) + age * (seed - 0.5) * 1.5;
+  vCellRot = vec4(mod(cell, 2.0) * 0.5, floor(cell * 0.5) * 0.5, cos(rot), sin(rot));
+}`;
 
-    this._colors = new Float32Array(POOL_MISC * 3);
-    this._mesh.instanceColor = new THREE.InstancedBufferAttribute(this._colors, 3);
+const FLAME_FRAG = GLSL_FIRE_RAMP + /* glsl */`
+uniform sampler2D uPuff;
+uniform float uTime;
+varying vec4 vCellRot, vInfo;
+varying float vTongue;
+void main(){
+  vec2 pc = gl_PointCoord - 0.5; pc.y = -pc.y;
+  vec2 q = vec2(vCellRot.z * pc.x - vCellRot.w * pc.y, vCellRot.w * pc.x + vCellRot.z * pc.y);
+  // flame tongue: stretch upward + taper toward the tip
+  q.y = mix(q.y, q.y * 0.62 - 0.10, vTongue);
+  q.x *= mix(1.0, 1.0 + max(q.y + 0.1, 0.0) * 2.2, vTongue);
+  if (dot(q, q) > 0.25) discard;
+  vec2 fl = vec2(sin(uTime * 7.0 + vCellRot.z * 9.0), cos(uTime * 5.3 + vCellRot.w * 7.0)) * 0.025;
+  vec4 t = texture2D(uPuff, vCellRot.xy + (clamp(q + fl, -0.5, 0.5) + 0.5) * 0.5);
+  float d = t.a * (0.75 + 0.5 * t.b);
+  float heat = vInfo.w * (0.30 + 0.75 * d);                     // hot core, cooler licking edges
+  vec3 col = vfxFireRamp(heat) * (0.85 + heat * 0.9);
+  float a = smoothstep(0.06, 0.55, d) * vInfo.y * vInfo.z;
+  if (a < 0.004) discard;
+  gl_FragColor = vec4(col, a);
+}`;
 
-    this._alive = new Uint8Array(POOL_MISC);
-    this._px = new Float32Array(POOL_MISC); this._py = new Float32Array(POOL_MISC); this._pz = new Float32Array(POOL_MISC);
-    this._vx = new Float32Array(POOL_MISC); this._vy = new Float32Array(POOL_MISC); this._vz = new Float32Array(POOL_MISC);
-    this._life = new Float32Array(POOL_MISC); this._maxL = new Float32Array(POOL_MISC);
-    this._cr = new Float32Array(POOL_MISC); this._cg = new Float32Array(POOL_MISC); this._cb = new Float32Array(POOL_MISC);
-    this._free  = Array.from({ length: POOL_MISC }, (_, i) => i);
-    this._dummy = new THREE.Object3D();
+/** Additive flames / fireball cores. */
+export class FlameField extends GpuParticleField {
+  constructor(scene, capacity = POOL_FIRE) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: sharedPointUniforms({ uPuff: { value: getPuffTexture() } }),
+      vertexShader: FLAME_VERT, fragmentShader: FLAME_FRAG,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    super({ scene, capacity, material: mat, renderOrder: 24, name: 'vfx-flame',
+      layout: [['position', 3], ['aT0', 1], ['aVel', 4], ['aShape', 4], ['aLook', 4]] });
   }
 
+  /** @param {number} heat 0…1 start temperature  @param {number} tongue 0 round … 1 flame */
+  emit(x, y, z, vx, vy, vz, life, size0, size1, drag, rise, heat, alpha, tongue, delay = 0) {
+    const i = this._next(), d = this.data, o = i * 16, t0 = ENV.uTime.value + delay;
+    d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = t0;
+    d[o + 4] = vx; d[o + 5] = vy; d[o + 6] = vz; d[o + 7] = life;
+    d[o + 8] = size0; d[o + 9] = size1; d[o + 10] = drag; d[o + 11] = rise;
+    d[o + 12] = R(); d[o + 13] = heat; d[o + 14] = alpha; d[o + 15] = tongue;
+    this._commit(i, t0 + life);
+  }
+
+  /** Legacy pool signature: spawn(x, y, z, { n, speed, life, size, spread }). */
+  spawn(x, y, z, opts = {}) {
+    const n = opts.n || 6, speed = opts.speed || 2.5, life = opts.life || 1.2;
+    const size = opts.size || 18, spread = opts.spread || 0.5;
+    for (let k = 0; k < n; k++) {
+      const s = size * 0.06 * (0.6 + R() * 0.8);
+      this.emit(x + (R() - 0.5) * spread, y + R() * 0.2, z + (R() - 0.5) * spread,
+        (R() - 0.5) * speed * 0.4, speed * (0.4 + R() * 0.6), (R() - 0.5) * speed * 0.4,
+        life * (0.7 + R() * 0.6), s, s * 1.5, 1.6, 1.6, 0.95, 0.8, 1.0);
+    }
+  }
+}
+
+// ═══ SPARKS (velocity-stretched streaks) ═══════════════════════════
+const STREAK_VERT_BODY = /* glsl */`
+  float k = max(aPhys.z, 0.02);
+  vec3 term = vec3(0.0, aPhys.w / k, 0.0) + uWind * WINDF;
+  float ek = exp(-k * age);
+  vec3 p = position + term * age + (aVel.xyz - term) * ((1.0 - ek) / k);
+  vec3 v = term + (aVel.xyz - term) * ek;
+  vec4 mv1 = modelViewMatrix * vec4(p, 1.0);
+  vec4 mv2 = modelViewMatrix * vec4(p - v * aPhys.y, 1.0);
+  if (mv1.z > -0.3 || mv2.z > -0.3) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  vec4 c1 = projectionMatrix * mv1, c2 = projectionMatrix * mv2;
+  vec2 dpx = (c1.xy / c1.w - c2.xy / c2.w) * 0.5 * uViewport;
+  float len = length(dpx);
+  float w = max(aPhys.x * uPxScale / -mv1.z, 1.6);
+  float sz = min(len + w * 2.0, uMaxPx);
+  gl_Position  = projectionMatrix * ((mv1 + mv2) * 0.5);
+  gl_PointSize = sz;
+  vSeg = vec4(len > 0.001 ? dpx / len : vec2(1.0, 0.0), 0.5 * min(len, sz - w) / sz, 0.5 * w / sz);
+`;
+
+const STREAK_FRAG_FN = /* glsl */`
+float vfxStreak(vec4 seg){
+  vec2 pc = gl_PointCoord - 0.5; pc.y = -pc.y;
+  float along = dot(pc, seg.xy), across = dot(pc, vec2(-seg.y, seg.x));
+  float da = max(abs(along) - seg.z, 0.0);
+  float d = length(vec2(da, across)) / max(seg.w, 1e-3);
+  float head = 0.55 + 0.45 * smoothstep(-seg.z - 0.001, seg.z + 0.001, along);
+  return (1.0 - smoothstep(0.25, 1.0, d)) * head;
+}`;
+
+const SPARK_VERT = GLSL_FOG + /* glsl */`
+#define WINDF 0.3
+uniform float uTime, uPxScale, uMaxPx, uFogDensity;
+uniform vec2  uViewport;
+uniform vec3  uWind;
+attribute float aT0;
+attribute vec4  aVel;    // v0, life
+attribute vec4  aPhys;   // width, stretch (s), drag, gravity
+attribute vec4  aCol;    // rgb, brightness
+varying vec4 vSeg;
+varying vec4 vCol;
+void main(){
+  float age = uTime - aT0, life = aVel.w;
+  if (age < 0.0 || age >= life) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  float x = age / life;
+  ${STREAK_VERT_BODY}
+  float a = (1.0 - smoothstep(0.5, 1.0, x)) * smoothstep(-0.05, 0.2, p.y);
+  vCol = vec4(aCol.rgb * aCol.w * mix(1.7, 0.7, x), a * (1.0 - vfxFog(-mv1.z, uFogDensity)));
+}`;
+
+const SPARK_FRAG = STREAK_FRAG_FN + /* glsl */`
+varying vec4 vSeg;
+varying vec4 vCol;
+void main(){
+  float a = vfxStreak(vSeg) * vCol.a;
+  if (a < 0.01) discard;
+  gl_FragColor = vec4(vCol.rgb, a);
+}`;
+
+/** Additive streak sparks / embers / coloured bits. */
+export class SparkField extends GpuParticleField {
+  constructor(scene, capacity = POOL_SPARK) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: sharedPointUniforms(),
+      vertexShader: SPARK_VERT, fragmentShader: SPARK_FRAG,
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    super({ scene, capacity, material: mat, renderOrder: 26, name: 'vfx-spark',
+      layout: [['position', 3], ['aT0', 1], ['aVel', 4], ['aPhys', 4], ['aCol', 4]] });
+  }
+
+  /** @param {number} stretch streak length in seconds of travel */
+  emit(x, y, z, vx, vy, vz, life, width, stretch, drag, gravity, r, g, b, bright, delay = 0) {
+    const i = this._next(), d = this.data, o = i * 16, t0 = ENV.uTime.value + delay;
+    d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = t0;
+    d[o + 4] = vx; d[o + 5] = vy; d[o + 6] = vz; d[o + 7] = life;
+    d[o + 8] = width; d[o + 9] = stretch; d[o + 10] = drag; d[o + 11] = gravity;
+    d[o + 12] = r; d[o + 13] = g; d[o + 14] = b; d[o + 15] = bright;
+    this._commit(i, t0 + life);
+  }
+
+  /**
+   * Legacy MiscParticlePool signature (spawnPart / ability bursts):
+   * spawn(x, y, z, hexCol, n, { speed, life, upward }).
+   */
   spawn(x, y, z, hexCol, n = 8, opts = {}) {
-    const r = ((hexCol >> 16) & 0xff) / 255;
-    const g = ((hexCol >>  8) & 0xff) / 255;
-    const b = ( hexCol        & 0xff) / 255;
-    const speed    = opts.speed  || 4.5;
-    const lifetime = opts.life   || 0.85;
-    const phiMax   = opts.upward ? Math.PI * 0.42 : Math.PI;
-
-    for (let i = 0; i < n; i++) {
-      if (!this._free.length) break;
-      const id = this._free.pop();
-      this._alive[id] = 1;
-      this._px[id] = x; this._py[id] = y; this._pz[id] = z;
-      this._cr[id] = r; this._cg[id] = g; this._cb[id] = b;
-      this._life[id] = lifetime; this._maxL[id] = lifetime;
-
-      const theta = Math.random() * Math.PI * 2;
-      const phi   = Math.random() * phiMax;
-      const spd   = speed * (0.5 + Math.random() * 0.5);
-      this._vx[id] = Math.sin(phi) * Math.cos(theta) * spd;
-      this._vy[id] = Math.abs(Math.cos(phi)) * spd + 1.5;
-      this._vz[id] = Math.sin(phi) * Math.sin(theta) * spd;
+    const r = ((hexCol >> 16) & 255) / 255, g = ((hexCol >> 8) & 255) / 255, b = (hexCol & 255) / 255;
+    const speed = opts.speed || 4.5, life = opts.life || 0.85;
+    const phiMax = opts.upward ? Math.PI * 0.42 : Math.PI;
+    for (let k = 0; k < n; k++) {
+      const th = R() * Math.PI * 2, ph = R() * phiMax, s = speed * (0.5 + R() * 0.5);
+      this.emit(x, y, z, Math.sin(ph) * Math.cos(th) * s, Math.abs(Math.cos(ph)) * s + 1.5, Math.sin(ph) * Math.sin(th) * s,
+        life * (0.8 + R() * 0.5), 0.09, 0.05, 0.6, -9.0, r, g, b, 1.1);
     }
-  }
-
-  update(dt) {
-    const dummy = this._dummy;
-    for (let id = 0; id < POOL_MISC; id++) {
-      if (!this._alive[id]) continue;
-      this._life[id] -= dt * 1.3;
-      if (this._life[id] <= 0) {
-        this._alive[id] = 0; this._free.push(id);
-        dummy.scale.setScalar(0); dummy.updateMatrix();
-        this._mesh.setMatrixAt(id, dummy.matrix);
-        continue;
-      }
-      this._px[id] += this._vx[id] * dt;
-      this._py[id] += this._vy[id] * dt;
-      this._pz[id] += this._vz[id] * dt;
-      this._vy[id] -= GRAVITY_P * dt;
-
-      const lifeFrac = this._life[id] / this._maxL[id];
-      dummy.position.set(this._px[id], this._py[id], this._pz[id]);
-      dummy.scale.setScalar(lifeFrac * 0.9 + 0.1); dummy.updateMatrix();
-      this._mesh.setMatrixAt(id, dummy.matrix);
-
-      const alpha = lifeFrac;
-      this._colors[id * 3]     = this._cr[id] * alpha;
-      this._colors[id * 3 + 1] = this._cg[id] * alpha;
-      this._colors[id * 3 + 2] = this._cb[id] * alpha;
-    }
-    this._mesh.count = POOL_MISC;
-    this._mesh.instanceMatrix.needsUpdate = true;
-    this._mesh.instanceColor.needsUpdate  = true;
-  }
-
-  destroy(scene) {
-    scene.remove(this._mesh);
-    this._geo.dispose(); this._mat.dispose();
   }
 }
 
-// ── Factory: create the standard fire + smoke pools ───────────────
+// ═══ SPRAY (white water) ═══════════════════════════════════════════
+const SPRAY_VERT = GLSL_FOG + GLSL_HASH + /* glsl */`
+#define WINDF 0.25
+uniform float uTime, uPxScale, uMaxPx, uFogDensity, uSoft;
+uniform vec2  uViewport;
+uniform vec3  uWind, uSunDir, uSunCol, uAmbCol;
+attribute float aT0;
+attribute vec4  aVel;    // v0, life
+attribute vec4  aPhys;   // size0, size1/stretch, drag, gravity
+attribute vec4  aLook;   // seed, kind (0 puff · 1 droplet · 2 bubble), alpha, stretch(s)
+varying vec4 vSeg;       // droplet streak OR puff cell/rot
+varying vec4 vInfo;      // kind, alpha, fog, age frac
+varying vec3 vLight;
+varying vec3 vL;
+void main(){
+  float age = uTime - aT0, life = aVel.w;
+  if (age < 0.0 || age >= life) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); gl_PointSize = 0.0; return; }
+  float x = age / life, seed = aLook.x, kind = aLook.y;
+  vec3 sunL = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+  vL = sunL;
+  vLight = uAmbCol * 1.0 + uSunCol * 0.62;
+  if (kind > 0.5 && kind < 1.5) {
+    // droplet streak — reuses the spark integrator (aPhys = width, stretch, drag, g)
+    vec4 aPhysS = vec4(aPhys.x, aLook.w, aPhys.z, aPhys.w);
+    #define aPhys aPhysS
+    ${STREAK_VERT_BODY}
+    #undef aPhys
+    float a = aLook.z * (1.0 - smoothstep(0.6, 1.0, x)) * smoothstep(-0.25, 0.05, p.y);
+    vInfo = vec4(1.0, a, vfxFog(-mv1.z, uFogDensity), x);
+    return;
+  }
+  vec3 p;
+  float size;
+  if (kind > 1.5) {
+    // bubble / foam fleck riding the surface
+    p = position + vec3(sin(seed * 50.0 + age * 2.1), 0.0, cos(seed * 31.0 + age * 1.7)) * 0.10 * age;
+    size = mix(aPhys.x, aPhys.y, sqrt(x));
+  } else {
+    float k = max(aPhys.z, 0.02);
+    vec3 term = vec3(0.0, aPhys.w / k, 0.0) + uWind * WINDF;
+    p = position + term * age + (aVel.xyz - term) * ((1.0 - exp(-k * age)) / k);
+    size = mix(aPhys.x, aPhys.y, 1.0 - pow(1.0 - x, 2.0));
+  }
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  float depth = -mv.z;
+  gl_Position  = projectionMatrix * mv;
+  gl_PointSize = min(size * uPxScale / max(depth, 0.1), uMaxPx);
+  float a = aLook.z * smoothstep(0.0, 0.05, x) * (1.0 - smoothstep(0.45, 1.0, x));
+  if (kind < 0.5) {
+    a *= smoothstep(-0.45, 0.1, p.y);          // falling water rejoins the sea
+    if (uSoft > 0.5) a *= smoothstep(1.0, 4.0, depth);
+  }
+  float rot = seed * 6.2831;
+  float cell = floor(fract(seed * 3.77) * 4.0);
+  vSeg  = vec4(mod(cell, 2.0) * 0.5, floor(cell * 0.5) * 0.5, cos(rot), sin(rot));
+  vInfo = vec4(kind, a, vfxFog(depth, uFogDensity), x);
+}`;
+
+const SPRAY_FRAG = STREAK_FRAG_FN + /* glsl */`
+uniform sampler2D uPuff;
+uniform vec3 uFogCol;
+varying vec4 vSeg, vInfo;
+varying vec3 vLight, vL;
+void main(){
+  vec3 water = vec3(0.86, 0.93, 1.0);
+  if (vInfo.x > 0.5 && vInfo.x < 1.5) {
+    float a = vfxStreak(vSeg) * vInfo.y;
+    if (a < 0.01) discard;
+    vec3 dc = mix(water * vLight * 0.95, uFogCol, vInfo.z);
+#if defined( TONE_MAPPING )
+  dc = toneMapping(dc);
+#endif
+    gl_FragColor = vec4(dc, a);
+    return;
+  }
+  vec2 pc = gl_PointCoord - 0.5; pc.y = -pc.y;
+  if (vInfo.x > 1.5) {
+    // bubble: bright rim + faint fill, pops (rim thins) at the end of life
+    float r = length(pc) * 2.0;
+    float rim = (1.0 - smoothstep(0.0, 0.16, abs(r - 0.78))) * (1.0 - vInfo.w * 0.6);
+    float a = (rim * 0.9 + (1.0 - smoothstep(0.5, 0.9, r)) * 0.18) * vInfo.y;
+    if (a < 0.01) discard;
+    vec3 bc = mix(water * vLight, uFogCol, vInfo.z);
+#if defined( TONE_MAPPING )
+  bc = toneMapping(bc);
+#endif
+    gl_FragColor = vec4(bc, a);
+    return;
+  }
+  vec2 q = vec2(vSeg.z * pc.x - vSeg.w * pc.y, vSeg.w * pc.x + vSeg.z * pc.y);
+  if (dot(q, q) > 0.25) discard;
+  vec4 t = texture2D(uPuff, vSeg.xy + (q + 0.5) * 0.5);
+  float er = vInfo.w * 0.65;
+  float d = clamp((t.a - er * (1.2 - t.b)) / max(1.0 - er * 0.9, 0.15), 0.0, 1.0);
+  float a = d * vInfo.y;
+  if (a < 0.004) discard;
+  vec2 n2 = t.rg * 2.0 - 1.0;
+  n2 = vec2(vSeg.z * n2.x + vSeg.w * n2.y, -vSeg.w * n2.x + vSeg.z * n2.y);
+  float diff = clamp(dot(normalize(vec3(n2, 0.75)), vL) * 0.5 + 0.5, 0.0, 1.0);
+  vec3 col = water * vLight * mix(0.62, 1.05, diff);
+  col = mix(col, uFogCol, vInfo.z);
+#if defined( TONE_MAPPING )
+  col = toneMapping(col);
+#endif
+  gl_FragColor = vec4(col, a);
+}`;
+
+/** White water: splash columns (puffs), droplets (streaks), bubbles. */
+export class SprayField extends GpuParticleField {
+  constructor(scene, capacity = POOL_SPRAY) {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: sharedPointUniforms({ uPuff: { value: getPuffTexture() } }),
+      vertexShader: SPRAY_VERT, fragmentShader: SPRAY_FRAG,
+      transparent: true, depthWrite: false, blending: THREE.NormalBlending,
+    });
+    super({ scene, capacity, material: mat, renderOrder: 22, name: 'vfx-spray',
+      layout: [['position', 3], ['aT0', 1], ['aVel', 4], ['aPhys', 4], ['aLook', 4]] });
+  }
+
+  /** White-water puff (column chunk / mist). gravity < 0 falls. */
+  puff(x, y, z, vx, vy, vz, life, size0, size1, drag, gravity, alpha, delay = 0) {
+    this._rec(x, y, z, vx, vy, vz, life, size0, size1, drag, gravity, 0, alpha, 0, delay);
+  }
+
+  /** Droplet streak. */
+  droplet(x, y, z, vx, vy, vz, life, width, alpha, delay = 0) {
+    this._rec(x, y, z, vx, vy, vz, life, width, 0, 0.25, -14.0, 1, alpha, 0.045, delay);
+  }
+
+  /** Bubble / foam fleck on the surface at height y. */
+  bubble(x, y, z, life, size0, size1, alpha, delay = 0) {
+    this._rec(x, y, z, 0, 0, 0, life, size0, size1, 1, 0, 2, alpha, 0, delay);
+  }
+
+  _rec(x, y, z, vx, vy, vz, life, s0, s1, drag, g, kind, alpha, stretch, delay) {
+    const i = this._next(), d = this.data, o = i * 16, t0 = ENV.uTime.value + delay;
+    d[o] = x; d[o + 1] = y; d[o + 2] = z; d[o + 3] = t0;
+    d[o + 4] = vx; d[o + 5] = vy; d[o + 6] = vz; d[o + 7] = life;
+    d[o + 8] = s0; d[o + 9] = s1; d[o + 10] = drag; d[o + 11] = g;
+    d[o + 12] = R(); d[o + 13] = kind; d[o + 14] = alpha; d[o + 15] = stretch;
+    this._commit(i, t0 + life);
+  }
+}
+
+/**
+ * Build the standard field set. `fire`/`smoke` keep the legacy pool names
+ * (IslandEntity reads vfx._fire / vfx._smoke for fort fires).
+ */
 export function createParticlePools(scene) {
   return {
-    fire:  new ShaderParticlePool(scene, FIRE_VERT,  FIRE_FRAG,  POOL_FIRE,  'fire'),
-    smoke: new ShaderParticlePool(scene, SMOKE_VERT, SMOKE_FRAG, POOL_SMOKE, 'smoke'),
-    misc:  new MiscParticlePool(scene),
+    fire:  new FlameField(scene),
+    smoke: new SmokeField(scene),
+    spark: new SparkField(scene),
+    spray: new SprayField(scene),
   };
 }

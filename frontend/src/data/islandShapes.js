@@ -10,6 +10,8 @@
 // FORTRESS  — large core disc + 4 rotated arms + bastions  min=68
 // SPRAWL    — organic blob union, largest flat area        min=50
 //
+// HARBOR    — home port wrapped round a bay (own grid size, default 16)
+//
 // mirrorShape() flips col axis for enemy islands.
 
 export const GRID   = 10;
@@ -161,6 +163,53 @@ function genSprawl(seed) {
   return valid;
 }
 
+// ── HARBOR — the home port: land wrapped round a natural bay ────
+// AW: one big island (r ≈ 30) around an elliptical bay that opens south
+// (+Z, toward the RTS camera) through a channel. A straight stone quay closes
+// the bay's north side; finger piers run south from it. The land outline is
+// an analytic signed distance (world units, island-local) shared by the grid
+// (here) and the terrain mesh (World/IslandEntity), so they always agree.
+export const HARBOR = Object.freeze({
+  outerR: 27.5,                                   // outer coast radius
+  bay:    { x: 0, z: 7, rx: 14.5, rz: 11 },       // bay ellipse
+  quayZ:  -2.5,                                   // straight quay line (north edge of the bay)
+  mouth:  { z0: 12, z1: 44, r: 6.5 },             // channel to the open sea (|x| < r)
+  islets: [[-10.5, 33.5, 2.7], [10.8, 34.6, 2.3], [-6.2, 38.2, 1.25], [6.8, 39.5, 1.05]],
+  cellWorld: 2.4,                                 // = BUILD_CELL_WORLD (pure data module)
+  cellMargin: 2.4,                                // cells keep ≥ this from the water (quay strip)
+});
+
+/** Signed distance to the bay + mouth water (negative inside the water). */
+export function harborWaterSDF(x, z) {
+  const b = HARBOR.bay;
+  const qx = (x - b.x) / b.rx, qz = (z - b.z) / b.rz;
+  let bay = (Math.hypot(qx, qz) - 1) * Math.min(b.rx, b.rz);
+  bay = Math.max(bay, HARBOR.quayZ - z);                       // flat quay edge
+  const m = HARBOR.mouth;
+  const tz = Math.max(m.z0, Math.min(m.z1, z));
+  const mouth = Math.hypot(x, z - tz) - m.r;
+  return Math.min(bay, mouth);
+}
+
+/** Signed distance to HARBOR land (negative on land), islets included. */
+export function harborLandSDF(x, z) {
+  let d = Math.max(Math.hypot(x, z) - HARBOR.outerR, -harborWaterSDF(x, z));
+  for (const [ix, iz, ir] of HARBOR.islets) d = Math.min(d, Math.hypot(x - ix, z - iz) - ir);
+  return d;
+}
+
+function genHarbor(seed, G) {
+  const off = (G - 1) / 2 * HARBOR.cellWorld;
+  const valid = new Set();
+  for (let r = 0; r < G; r++) {
+    for (let c = 0; c < G; c++) {
+      const x = c * HARBOR.cellWorld - off, z = r * HARBOR.cellWorld - off;
+      if (harborLandSDF(x, z) < -HARBOR.cellMargin) valid.add(`${c}_${r}`);
+    }
+  }
+  return valid;
+}
+
 // ── PUBLIC API ───────────────────────────────────────────────────
 
 const GENERATORS = { CRESCENT: genCrescent, ATOLL: genAtoll, FORTRESS: genFortress, SPRAWL: genSprawl };
@@ -168,8 +217,14 @@ const GENERATORS = { CRESCENT: genCrescent, ATOLL: genAtoll, FORTRESS: genFortre
 /**
  * Generate valid-cell Set for a shape type + seed.
  * Falls back to SPRAWL + merge if result < 50 slots (belt-and-suspenders).
+ * 'HARBOR' (the home port) takes a grid size (default 16); the four battle
+ * shapes always use the GRID×GRID grid.
+ * @param {string} type
+ * @param {number} seed
+ * @param {number} [gridSize]
  */
-export function generateShape(type, seed) {
+export function generateShape(type, seed, gridSize) {
+  if (type === 'HARBOR') return genHarbor(seed, gridSize || 16);
   const gen  = GENERATORS[type] || genSprawl;
   const keys = gen(seed);
   if (keys.size < 50) {
@@ -179,11 +234,13 @@ export function generateShape(type, seed) {
 }
 
 /**
- * Mirror shape across the vertical axis (flip col = GRID-1-col).
+ * Mirror shape across the vertical axis (flip col = size-1-col).
  * Used for enemy islands so they visually mirror the player island.
+ * @param {Set<string>} keys
+ * @param {number} [gridSize=GRID]
  */
-export function mirrorShape(keys) {
-  const max      = GRID - 1;
+export function mirrorShape(keys, gridSize = GRID) {
+  const max      = gridSize - 1;
   const mirrored = new Set();
   keys.forEach(k => {
     const [c, r] = k.split('_').map(Number);

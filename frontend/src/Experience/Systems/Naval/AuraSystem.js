@@ -162,7 +162,9 @@ export class AuraSystem {
       const er=eh.r+12;
       st.enemyShips.filter(s=>s.alive).forEach(s=>{
         const dx=s.x-eh.x, dz=s.z-eh.z;
-        if(dx*dx+dz*dz<er*er &&  s.hp<s.maxHp) s.hp=Math.min(s.maxHp,s.hp+3*dt);
+        // Sea Battle: data/harbor.js BATTLE.fortShipRegen (Open War keeps 3 HP/s)
+        const regen = st.mode === 'battle' ? (st.battleFortShipRegen ?? 3) : 3;
+        if(dx*dx+dz*dz<er*er &&  s.hp<s.maxHp) s.hp=Math.min(s.maxHp,s.hp+regen*dt);
       });
     }
 

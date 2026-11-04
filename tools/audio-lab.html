@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Lab — Isles of War</title>
+<!--
+  Audio Lab: audition the procedural music, ambience and SFX, and render them
+  offline for level checks / WAV export.
+    node tools/serve.mjs 8080   →   http://localhost:8080/tools/audio-lab.html
+  Automation: ?auto=music | regions | sfx  (sets window.__labDone; used by tools/audio_check.mjs)
+-->
+<script type="importmap">{ "imports": { "three": "../frontend/vendor/three/build/three.module.js" } }</script>
+<style>
+  :root { --bg: #0d1420; --panel: #152033; --ink: #d9e3ee; --dim: #8296ad; --gold: #e3b54a; --ok: #5fd08f; --bad: #ff6b6b; --line: #22324a; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 18px 22px 40px; background: var(--bg); color: var(--ink); font: 13px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  h1 { margin: 0 0 2px; font: 600 20px Georgia, serif; color: var(--gold); letter-spacing: .04em; }
+  h2 { margin: 18px 0 8px; font: 600 14px Georgia, serif; color: var(--gold); letter-spacing: .06em; text-transform: uppercase; }
+  .sub { color: var(--dim); margin: 0 0 10px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px 12px; margin-top: 12px; }
+  button { background: #1f2f48; color: var(--ink); border: 1px solid #2f4566; border-radius: 5px; padding: 5px 10px; margin: 2px; cursor: pointer; font: inherit; }
+  button:hover { background: #2a3f60; }
+  button.on { background: #3b5f2e; border-color: #5d8c48; }
+  label { color: var(--dim); margin-right: 10px; }
+  input[type=range] { vertical-align: middle; width: 140px; }
+  #status { font: 11px ui-monospace, monospace; color: var(--dim); white-space: pre-wrap; margin-top: 6px; }
+  .row { display: grid; grid-template-columns: 210px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .meta b { color: var(--gold); font-weight: 600; }
+  .meta .k { color: var(--dim); }
+  .meta .pass { color: var(--ok); } .meta .fail { color: var(--bad); }
+  .meta a { color: #8cc4ff; }
+  canvas { display: block; width: 100%; background: #0a0f18; border-radius: 4px; }
+  canvas.wave { height: 64px; margin-bottom: 4px; }
+  canvas.spec { height: 120px; }
+  .legend { color: var(--dim); font-size: 11px; margin-top: 4px; }
+  table { border-collapse: collapse; width: 100%; font: 12px ui-monospace, monospace; margin-top: 8px; }
+  th, td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--dim); font-weight: 500; }
+</style>
+</head>
+<body>
+<h1>Isles of War — Audio Lab</h1>
+<p class="sub">Procedural period music (Web Audio, original scores in <code>frontend/src/data/music.js</code>), ambience and SFX. Click anything to unlock audio.</p>
+
+<section id="live">
+  <h2>Music</h2>
+  <div id="tracks"></div>
+  <div style="margin-top:6px">
+    <label>Intensity <input id="intensity" type="range" min="0" max="1" step="0.01" value="0.35"> <span id="iv">0.35</span></label>
+    <label>Volume <input id="volume" type="range" min="0" max="1" step="0.01"> <span id="vv"></span></label>
+    <button id="mute">Mute</button>
+  </div>
+  <div style="margin-top:6px"><label>Region</label><span id="regions"></span></div>
+  <div style="margin-top:6px"><label>Ambience</label><span id="amb"></span></div>
+  <div id="status"></div>
+</section>
+
+<section>
+  <h2>SFX</h2>
+  <div id="sfx"></div>
+</section>
+
+<section>
+  <h2>Offline analysis</h2>
+  <div>
+    <button data-set="music">Render music</button>
+    <button data-set="regions">Render regions</button>
+    <button data-set="sfx">Render SFX</button>
+    <label style="margin-left:12px">Seconds <input id="secs" type="number" value="24" min="4" max="90" style="width:56px"></label>
+  </div>
+  <p class="legend">Waveform (min/max per column, red = |x| ≥ 0.99) with the 400 ms RMS envelope in gold · spectrogram 40 Hz–16 kHz, log frequency, 72 dB range.</p>
+  <div id="rows"></div>
+  <table id="stats"></table>
+</section>
+
+<script type="module">
+import { audio, SFX_RECIPES, Audio } from '../frontend/src/Experience/Utils/Audio.js';
+import { music, MUSIC_TRACKS, AMBIENCE_KINDS, MUSIC_REGIONS, renderMusicOffline } from '../frontend/src/Experience/Utils/MusicDirector.js';
+
+const $ = (s) => document.querySelector(s);
+const qs = new URLSearchParams(location.search);
+
+// ── live controls ────────────────────────────────────────────────
+for (const t of [...MUSIC_TRACKS, 'stop']) {
+  const b = document.createElement('button');
+  b.textContent = t;
+  b.onclick = () => { music.unlock(); t === 'stop' ? music.stop() : music.play(t); };
+  $('#tracks').append(b);
+}
+for (const r of MUSIC_REGIONS) {
+  const b = document.createElement('button');
+  b.textContent = r;
+  b.onclick = () => { music.setRegion(r); };
+  $('#regions').append(b);
+}
+for (const k of [...AMBIENCE_KINDS, 'off']) {
+  const b = document.createElement('button');
+  b.textContent = k;
+  b.onclick = () => { music.unlock(); music.ambience(k === 'off' ? null : k); };
+  $('#amb').append(b);
+}
+for (const n of SFX_RECIPES) {
+  const b = document.createElement('button');
+  b.textContent = n;
+  b.onclick = () => { music.unlock(); audio.play(n); };
+  $('#sfx').append(b);
+}
+$('#intensity').oninput = (e) => { music.setIntensity(+e.target.value); $('#iv').textContent = (+e.target.value).toFixed(2); };
+$('#volume').value = music.volume; $('#vv').textContent = music.volume.toFixed(2);
+$('#volume').oninput = (e) => { music.setVolume(+e.target.value); $('#vv').textContent = (+e.target.value).toFixed(2); };
+$('#mute').onclick = () => { music.mute(!music.muted); $('#mute').classList.toggle('on', music.muted); };
+setInterval(() => { $('#status').textContent = JSON.stringify(music.status()); }, 400);
+
+// ── analysis ─────────────────────────────────────────────────────
+const SETS = {
+  music: () => [
+    { name: 'harbor',          opt: { track: 'harbor' } },
+    { name: 'chart',           opt: { track: 'chart' } },
+    { name: 'battle i=0.3',    opt: { track: 'battle', intensity: 0.3 } },
+    { name: 'battle i=0.9',    opt: { track: 'battle', intensity: 0.9 } },
+    { name: 'battle_intense',  opt: { track: 'battle_intense', intensity: 0.5 } },
+    { name: 'victory→calm',    opt: { track: 'victory', seconds: 14 } },
+    { name: 'defeat',          opt: { track: 'defeat', seconds: 9 } },
+    { name: 'calm',            opt: { track: 'calm' } },
+    { name: 'harbor→battle xfade, intensity ramp', opt: { track: 'harbor', seconds: 22, timeline: [{ at: 6, call: ['play', 'battle'] }, { at: 12, call: ['setIntensity', 1] }] } },
+    { name: 'ambience harbor', opt: { track: null, ambience: 'harbor', seconds: 20 } },
+    { name: 'ambience sea',    opt: { track: null, ambience: 'sea', seconds: 20 } },
+  ],
+  regions: () => MUSIC_REGIONS.flatMap((r) => [
+    { name: `battle · ${r} (i=0.75)`, opt: { track: 'battle', region: r, intensity: 0.75 } },
+    { name: `chart · ${r}`,          opt: { track: 'chart', region: r } },
+  ]),
+};
+
+function stats(buf, skip = 0.5) {
+  const chs = [...Array(buf.numberOfChannels)].map((_, c) => buf.getChannelData(c));
+  const sr = buf.sampleRate, n = buf.length, s0 = Math.min(n - 1, Math.floor(skip * sr));
+  let peak = 0, sum = 0, cnt = 0, nan = 0, clip = 0, dc = 0;
+  for (const d of chs) for (let i = 0; i < n; i++) {
+    const v = d[i];
+    if (!Number.isFinite(v)) { nan++; continue; }
+    const a = Math.abs(v);
+    if (a > peak) peak = a;
+    if (a >= 0.999) clip++;
+    if (i >= s0) { sum += v * v; cnt++; dc += v; }
+  }
+  const rms = Math.sqrt(sum / Math.max(1, cnt));
+  const win = Math.floor(sr * 0.4), env = [];
+  for (let i = 0; i + win <= n; i += win) {
+    let e = 0;
+    for (const d of chs) for (let k = i; k < i + win; k++) e += d[k] * d[k];
+    env.push(Math.sqrt(e / (win * chs.length)));
+  }
+  const loud = env.slice(Math.ceil(skip / 0.4));
+  return { peak, rms, nan, clip, dc: dc / Math.max(1, cnt), env, maxWinRms: Math.max(0, ...loud), minWinRms: Math.min(...loud, 9), dur: buf.duration };
+}
+
+function fft(re, im) {
+  const n = re.length;
+  for (let i = 1, j = 0; i < n; i++) {
+    let bit = n >> 1;
+    for (; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+  }
+  for (let len = 2; len <= n; len <<= 1) {
+    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+    for (let i = 0; i < n; i += len) {
+      let cr = 1, ci = 0;
+      for (let k = 0; k < len / 2; k++) {
+        const ar = re[i + k], ai = im[i + k], br = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci, bi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+        re[i + k] = ar + br; im[i + k] = ai + bi; re[i + k + len / 2] = ar - br; im[i + k + len / 2] = ai - bi;
+        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+      }
+    }
+  }
+}
+function color(v) {   // 0..1 → dark blue → purple → orange → pale yellow
+  const s = [[10, 15, 24], [60, 30, 110], [180, 50, 90], [245, 140, 40], [252, 240, 180]];
+  const x = Math.max(0, Math.min(0.9999, v)) * (s.length - 1), i = Math.floor(x), f = x - i;
+  return s[i].map((c, k) => Math.round(c + (s[i + 1][k] - c) * f));
+}
+function drawWave(cv, buf, st) {
+  const W = cv.width = cv.clientWidth * 2, H = cv.height = cv.clientHeight * 2, g = cv.getContext('2d');
+  const a = buf.getChannelData(0), b = buf.numberOfChannels > 1 ? buf.getChannelData(1) : a, n = buf.length;
+  g.fillStyle = '#0a0f18'; g.fillRect(0, 0, W, H);
+  g.strokeStyle = '#22324a'; g.beginPath(); g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.stroke();
+  for (let x = 0; x < W; x++) {
+    const i0 = Math.floor(x * n / W), i1 = Math.floor((x + 1) * n / W);
+    let lo = 0, hi = 0;
+    for (let i = i0; i < i1; i++) { const v = (a[i] + b[i]) / 2; if (v < lo) lo = v; if (v > hi) hi = v; }
+    g.fillStyle = Math.max(-lo, hi) >= 0.99 ? '#ff6b6b' : '#5f8fc4';
+    g.fillRect(x, H / 2 - hi * H / 2, 1, Math.max(1, (hi - lo) * H / 2));
+  }
+  g.strokeStyle = '#e3b54a'; g.lineWidth = 2; g.beginPath();
+  st.env.forEach((e, k) => { const x = (k + 0.5) * W / st.env.length, y = H / 2 - e * H / 2 * 2.5; k ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.stroke();
+}
+function drawSpec(cv, buf) {
+  const W = cv.width = Math.min(1400, cv.clientWidth * 2), H = cv.height = cv.clientHeight * 2, g = cv.getContext('2d');
+  const a = buf.getChannelData(0), b = buf.numberOfChannels > 1 ? buf.getChannelData(1) : a, n = buf.length, sr = buf.sampleRate;
+  const N = 2048, re = new Float32Array(N), im = new Float32Array(N), win = new Float32Array(N);
+  for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1));
+  const img = g.createImageData(W, H), f0 = 40, f1 = 16000;
+  const rowBin = [...Array(H)].map((_, y) => (f0 * Math.pow(f1 / f0, (H - 1 - y) / (H - 1))) * N / sr);
+  for (let x = 0; x < W; x++) {
+    const c = Math.floor(x * (n - N) / W);
+    for (let i = 0; i < N; i++) { re[i] = ((a[c + i] || 0) + (b[c + i] || 0)) * 0.5 * win[i]; im[i] = 0; }
+    fft(re, im);
+    for (let y = 0; y < H; y++) {
+      const k = Math.min(N / 2 - 1, Math.round(rowBin[y]));
+      const mag = Math.hypot(re[k], im[k]) / (N / 4);
+      const db = 20 * Math.log10(mag + 1e-9);
+      const [r, gg, bb] = color((db + 72) / 72);
+      const o = (y * W + x) * 4;
+      img.data[o] = r; img.data[o + 1] = gg; img.data[o + 2] = bb; img.data[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+}
+function wavBytes(buf) {
+  const ch = buf.numberOfChannels, n = buf.length, sr = buf.sampleRate, bytes = new ArrayBuffer(44 + n * ch * 2), v = new DataView(bytes);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * ch * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true); str(36, 'data'); v.setUint32(40, n * ch * 2, true);
+  const d = [...Array(ch)].map((_, c) => buf.getChannelData(c));
+  let o = 44;
+  for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) { const s = Math.max(-1, Math.min(1, d[c][i] || 0)); v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2; }
+  return new Uint8Array(bytes);
+}
+function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+
+const results = [];
+const fmt = (v, k = 3) => (v === undefined ? '' : v.toFixed(k));
+const db = (v) => (v > 0 ? (20 * Math.log10(v)).toFixed(1) : '-inf');
+function addRow(name, buf, st, ok) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  const url = URL.createObjectURL(new Blob([wavBytes(buf)], { type: 'audio/wav' }));
+  row.innerHTML = `<div class="meta"><b>${name}</b><br><span class="k">${st.dur.toFixed(1)} s · peak</span> ${fmt(st.peak)} <span class="k">(${db(st.peak)} dBFS)</span><br>`
+    + `<span class="k">RMS</span> ${fmt(st.rms)} <span class="k">(${db(st.rms)} dBFS)</span><br><span class="k">NaN</span> ${st.nan} · <span class="k">clipped</span> ${st.clip}<br>`
+    + `<span class="${ok ? 'pass' : 'fail'}">${ok ? 'PASS' : 'CHECK'}</span> · <a download="${name.replace(/[^a-z0-9_]+/gi, '_')}.wav" href="${url}">WAV</a></div>`
+    + `<div><canvas class="wave"></canvas><canvas class="spec"></canvas></div>`;
+  $('#rows').append(row);
+  drawWave(row.querySelector('.wave'), buf, st);
+  drawSpec(row.querySelector('.spec'), buf);
+}
+function table() {
+  $('#stats').innerHTML = '<tr><th>render</th><th>peak</th><th>RMS</th><th>RMS dBFS</th><th>loudest 0.4 s</th><th>quietest 0.4 s</th><th>NaN</th><th>clip</th><th>ok</th></tr>'
+    + results.map((r) => `<tr><td>${r.name}</td><td>${fmt(r.peak)}</td><td>${fmt(r.rms)}</td><td>${db(r.rms)}</td><td>${fmt(r.maxWinRms)}</td><td>${fmt(r.minWinRms)}</td><td>${r.nan}</td><td>${r.clip}</td><td>${r.ok ? '✓' : '✗'}</td></tr>`).join('');
+}
+
+const buffers = new Map();
+async function renderSet(set) {
+  $('#rows').innerHTML = ''; results.length = 0;
+  const secs = +$('#secs').value || 24;
+  if (set === 'sfx') return renderSfx();
+  for (const { name, opt } of SETS[set]()) {
+    const t0 = performance.now();
+    const buf = await renderMusicOffline({ seconds: secs, seed: 4242, ...opt });
+    const st = stats(buf);
+    const isAmb = name.startsWith('ambience');
+    const ok = st.nan === 0 && st.peak < 1 && (isAmb ? st.rms > 0.005 && st.rms < 0.2 : st.rms >= 0.04 && st.rms <= 0.25);
+    results.push({ name, ...st, env: undefined, ok, ms: Math.round(performance.now() - t0) });
+    buffers.set(name, buf);
+    addRow(name, buf, st, ok);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  table();
+}
+async function renderSfx() {
+  const sr = 44100, gap = 0.25;
+  const plan = SFX_RECIPES.map((n) => ({ n, len: ['sink', 'bell', 'ship_ready', 'set_sail', 'cannon', 'cannon_tail', 'explosion', 'defeat'].includes(n) ? 3.6 : 1.8 }));
+  for (const { n, len } of plan) {
+    const ctx = new OfflineAudioContext(2, Math.ceil(sr * len), sr);
+    const a = new Audio({ context: ctx });
+    a.play(n, null, { sfxOnly: true });
+    const buf = await ctx.startRendering();
+    const st = stats(buf, 0);
+    const ok = st.nan === 0 && st.peak < 1 && st.peak > 0.01;
+    results.push({ name: n, ...st, env: undefined, ok });
+    buffers.set(n, buf);
+    addRow(n, buf, st, ok);
+  }
+  // one reel with every recipe back to back (for listening)
+  const total = plan.reduce((s, p) => s + p.len * 0.6 + gap, 0) + 2;
+  const ctx = new OfflineAudioContext(2, Math.ceil(sr * total), sr);
+  const a = new Audio({ context: ctx });
+  let t = 0.1;
+  for (const { n, len } of plan) { a.play(n, null, { sfxOnly: true, delay: t }); t += len * 0.6 + gap; }
+  buffers.set('sfx_reel', await ctx.startRendering());
+  table();
+}
+for (const b of document.querySelectorAll('[data-set]')) b.onclick = () => renderSet(b.dataset.set);
+
+window.__lab = {
+  results, buffers,
+  wav: (name) => b64(wavBytes(buffers.get(name))),
+  names: () => [...buffers.keys()],
+};
+const auto = qs.get('auto');
+if (auto) {
+  if (qs.get('secs')) $('#secs').value = qs.get('secs');
+  renderSet(auto).then(() => { window.__labDone = results.map((r) => ({ ...r })); }, (e) => { window.__labDone = { error: String(e && e.stack || e) }; });
+}
+</script>
+</body>
+</html>

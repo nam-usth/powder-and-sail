@@ -34,11 +34,16 @@ export function uid(prefix = 's', now = Date.now()) {
   return `${prefix}_${now.toString(36)}${_uidN.toString(36)}`;
 }
 
-/** Default cannon fit for a fresh hull of the given class. */
+/**
+ * Default cannon fit for a fresh hull of the given class: demi-culverins on
+ * both broadsides (range 20 — reaches a fort from outside its shore line,
+ * which carronades/swivels at range 8 never can) + swivels fore/aft.
+ * Rationale: design/balance/report.md §Default loadout.
+ */
 export function defaultLoadout(hullClass) {
-  if (hullClass === 'heavy')    return { L: 'carronade', R: 'carronade', B: 'swivel', S: 'swivel' };
-  if (hullClass === 'standard') return { L: 'carronade', R: 'carronade', B: 'swivel' };
-  return { L: 'swivel', R: 'carronade' };
+  if (hullClass === 'heavy')    return { L: 'demi_culv', R: 'demi_culv', B: 'swivel', S: 'swivel' };
+  if (hullClass === 'standard') return { L: 'demi_culv', R: 'demi_culv', B: 'swivel' };
+  return { L: 'demi_culv', R: 'demi_culv' };
 }
 
 /**
@@ -110,7 +115,7 @@ export function migrate(raw, now = Date.now()) {
   p.campaign = { ...base.campaign, ...(raw.campaign || {}) };
   p.stats = { ...base.stats, ...(raw.stats || {}) };
   p.fleet = Array.isArray(raw.fleet) && raw.fleet.length
-    ? raw.fleet.filter(s => s && HULLS[s.hullId]).map(s => ({ ...makeRosterShip(s.hullId, {}, now), ...s }))
+    ? raw.fleet.filter(s => s && HULLS[s.hullId] && !HULLS[s.hullId].enemyOnly).map(s => ({ ...makeRosterShip(s.hullId, {}, now), ...s }))
     : base.fleet;
   if (!p.fleet.length) p.fleet = base.fleet;
   if (typeof p.lastSeen !== 'number' || !isFinite(p.lastSeen)) p.lastSeen = now;

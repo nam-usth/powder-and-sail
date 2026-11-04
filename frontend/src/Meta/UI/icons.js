@@ -38,7 +38,32 @@ const G = {
   chevron:   '<path d="M14.8 5.2L8 12l6.8 6.8"/>',
   wave:      '<path d="M2.5 14.5c2 0 2-2.2 4.6-2.2s2.5 2.2 4.9 2.2 2.4-2.2 4.9-2.2 2.5 2.2 4.6 2.2"/>',
   sparkle:   '<path d="M12 3.5l1.8 6.7 6.7 1.8-6.7 1.8L12 20.5l-1.8-6.7L3.5 12l6.7-1.8z"/>',
+  crown:     '<path d="M4 18.5h16M4.8 18.5L3.6 8.2l4.9 3.9L12 5.6l3.5 6.5 4.9-3.9-1.2 10.3"/><circle cx="12" cy="14.6" r=".9"/>',
+  help:      '<circle cx="12" cy="12" r="8.8"/><path d="M9.5 9.4a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2.2-2.5 4M12 17.1v.2"/>',
+  scroll:    '<path d="M7 4h11a2 2 0 0 1 0 4h-1v10a2 2 0 0 1-2 2H6a2 2 0 0 1 0-4h1V4z"/><path d="M7 16h8M10 8h4M10 11.5h4"/>',
 };
+
+/**
+ * Laurel wreath (two leafy branches) as raw SVG markup centred on (cx,cy),
+ * radius r. Classes wc-laurel / wc-laurel-l for styling.
+ */
+export function laurel(cx, cy, r, cls = 'mx-laurel') {
+  let leaves = '';
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 9; i++) {
+      const a = Math.PI / 2 + side * (0.35 + i * 0.27);           // from bottom, up each side
+      const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
+      const rotDeg = (a * 180) / Math.PI + (side > 0 ? -60 : 60);
+      const sz = r * (0.2 - i * 0.008);
+      leaves += `<ellipse cx="${f(x)}" cy="${f(y)}" rx="${f(sz)}" ry="${f(sz * 0.42)}" transform="rotate(${f(rotDeg)} ${f(x)} ${f(y)})"/>`;
+    }
+  }
+  const stem = (side) => {
+    const a0 = Math.PI / 2 + side * 0.25, a1 = Math.PI / 2 + side * 2.55;
+    return `M${f(cx + Math.cos(a0) * r)} ${f(cy + Math.sin(a0) * r)}A${f(r)} ${f(r)} 0 0 ${side > 0 ? 1 : 0} ${f(cx + Math.cos(a1) * r)} ${f(cy + Math.sin(a1) * r)}`;
+  };
+  return `<g class="${cls}"><path class="${cls}-stem" fill="none" d="${stem(-1)}${stem(1)}"/><g class="${cls}-l">${leaves}</g></g>`;
+}
 const FILLED = new Set(['bolt', 'sparkle']);
 
 /**
@@ -182,9 +207,14 @@ const _svgCache = new Map();
  * Parts carry classes sv-hull / sv-sail / sv-spar / sv-band / sv-port /
  * sv-flag / sv-water so meta.css can paint them per context.
  */
-export function hullSvg(hullId, cls = '') {
-  const key = hullId + '|' + cls;
+export function hullSvg(hullId, cls = '', style = 'european') {
+  const key = hullId + '|' + cls + '|' + style;
   if (_svgCache.has(key)) return _svgCache.get(key);
+  if (style === 'junk' || style === 'dhow' || style === 'prau') {
+    const svg = eastSvg(hullId, cls, style);
+    _svgCache.set(key, svg);
+    return svg;
+  }
   const a = artFor(hullId);
   let sails = '', spars = '', masts = '';
   for (const m of a.masts) {
@@ -219,6 +249,93 @@ export function hullSvg(hullId, cls = '') {
     + `<path class="sv-hull" d="${hullPath(a)}"/>${band}${water}</svg>`;
   _svgCache.set(key, svg);
   return svg;
+}
+
+
+// ── Asian & Indian Ocean rigs (faction style) ──────────────────────
+// junk: battened lug sails, high stern · dhow: raked lateens · prau: tanja + oars
+function eastSvg(hullId, cls, style) {
+  const h = HULLS[hullId];
+  const k = !h ? 1 : h.hull === 'heavy' ? 1.12 : h.hull === 'standard' ? 1 : 0.86;
+  const S = (v) => f(v);
+  const cx = 40, len = 56 * k, x0 = cx - len / 2, x1 = cx + len / 2, deck = 33.5, keel = 40.5;
+  let hull, sails = '', masts = '', spars = '', extra = '';
+  if (style === 'junk') {
+    hull = `M${S(x0 - 2)} ${S(deck - 8 * k)}L${S(x0 + 7)} ${S(deck - 7 * k)}L${S(x0 + 9)} ${S(deck)}L${S(x1 - 6)} ${S(deck)}`
+      + `L${S(x1 + 1)} ${S(deck - 3.5)}L${S(x1 - 2)} ${S(deck + 3)}Q${S(cx)} ${S(keel + 1)} ${S(x0 + 5)} ${S(keel - 1)}Z`;
+    const ms = [[x1 - 9, 13 / k], [cx - 1, 4 / k], [x0 + 9, 13 / k]];
+    ms.forEach(([x, top], i) => {
+      const w = (i === 1 ? 17 : 12) * k, t = top, b = deck - 4;
+      masts += `M${S(x)} ${S(deck)}V${S(t - 1)}`;
+      sails += `<path class="sv-sail" d="M${S(x + 1.5)} ${S(t)}L${S(x - w * 0.8)} ${S(t + 2.5)}Q${S(x - w * 1.08)} ${S((t + b) / 2)} ${S(x - w)} ${S(b)}L${S(x + w * 0.22)} ${S(b)}Z"/>`;
+      for (let y = t + 4; y < b - 1; y += 3.4) spars += `M${S(x - w * (0.82 + (y - t) / (b - t) * 0.2))} ${S(y)}L${S(x + 1.5 - (y - t) / (b - t) * -0.3)} ${S(y - 0.6)}`;
+    });
+    extra = `<circle class="sv-port" cx="${S(x1 - 4)}" cy="${S(deck + 1.4)}" r="0.9"/>`;
+  } else if (style === 'dhow') {
+    hull = `M${S(x0)} ${S(deck - 2)}L${S(x0 + 6)} ${S(deck)}L${S(x1 - 8)} ${S(deck)}L${S(x1 + 4)} ${S(deck - 5)}L${S(x1 - 4)} ${S(deck + 3)}Q${S(cx)} ${S(keel + 1)} ${S(x0 + 4)} ${S(keel - 1.5)}Z`;
+    [[cx + 7 * k, 5 / k, 20 * k], [x0 + 12 * k, 12 / k, 13 * k]].forEach(([x, t, w]) => {
+      const b = deck - 3.5;
+      masts += `M${S(x)} ${S(deck)}V${S(t + 3)}`;
+      sails += `<path class="sv-sail" d="M${S(x + w * 0.55)} ${S(b - 1.5)}L${S(x - w * 0.62)} ${S(t)}Q${S(x - w * 0.2)} ${S(b - 3)} ${S(x - w * 0.1)} ${S(b)}Z"/>`;
+      spars += `M${S(x + w * 0.66)} ${S(b - 0.5)}L${S(x - w * 0.7)} ${S(t - 1.2)}`;
+    });
+  } else {
+    hull = `M${S(x0 - 3)} ${S(deck - 1)}L${S(x1 + 3)} ${S(deck - 1)}L${S(x1 - 4)} ${S(deck + 4)}Q${S(cx)} ${S(keel)} ${S(x0 + 3)} ${S(deck + 4)}Z`;
+    [[cx + 9 * k, 12 / k, 11 * k], [cx - 8 * k, 9 / k, 13 * k]].forEach(([x, t, w]) => {
+      const b = deck - 4;
+      masts += `M${S(x)} ${S(deck - 1)}L${S(x - 1.5)} ${S(t)}`;
+      sails += `<path class="sv-sail" d="M${S(x - 1)} ${S(t)}L${S(x + w * 0.5)} ${S(t + 3)}L${S(x + w * 0.3)} ${S(b)}L${S(x - w * 0.55)} ${S(b - 2)}Z"/>`;
+    });
+    for (let x = x0 + 6; x < x1 - 4; x += 4.2) extra += `<path class="sv-spar" d="M${S(x)} ${S(deck + 1.5)}L${S(x - 3)} ${S(deck + 7)}"/>`;
+  }
+  const water = '<path class="sv-water" d="M-4 39.2c4 0 4-1.3 8-1.3s4 1.3 8 1.3 4-1.3 8-1.3 4 1.3 8 1.3 4-1.3 8-1.3 4 1.3 8 1.3 4-1.3 8-1.3 4 1.3 8 1.3 4-1.3 8-1.3 4 1.3 8 1.3V50H-4z"/>';
+  return `<svg class="sv sv-${style} ${cls}" viewBox="0 -3 80 50" aria-hidden="true" focusable="false">`
+    + `<path class="sv-mast" d="${masts}"/><path class="sv-spar" d="${spars}"/>${sails}`
+    + `<path class="sv-hull" d="${hull}"/>${extra}${water}</svg>`;
+}
+
+// ── faction flags (pattern + colours from data/factions.js) ───────────
+let _flagN = 0;
+const css = (n, d) => (typeof n === 'number' ? '#' + (n >>> 0).toString(16).padStart(6, '0') : n || d);
+
+/**
+ * Small waving flag for a faction record ({flag:{field, charge, pattern}}).
+ * Patterns: plain · skull · saltire · stripes · tricolour · quinas · banner · anchor.
+ */
+export function flagSvg(faction, cls = '') {
+  const fl = faction?.flag || {};
+  const fd = css(fl.field, '#f2ead8'), ch = css(fl.charge, '#24160a');
+  const p = fl.pattern || 'plain';
+  const id = 'mxfl' + (++_flagN);
+  const wave = 'M1 2.2Q8 0.6 15 2.2T29 2.2V17.8Q22 16.2 15 17.8T1 17.8Z';
+  let body = `<rect x="0" y="0" width="30" height="20" fill="${fd}"/>`;
+  if (p === 'skull') {
+    body += `<g fill="${ch}"><circle cx="15" cy="8.2" r="3.6"/><rect x="12.8" y="10.4" width="4.4" height="2.4" rx=".6"/></g>`
+      + `<g fill="${fd}"><circle cx="13.6" cy="8" r="1"/><circle cx="16.4" cy="8" r="1"/></g>`
+      + `<path d="M9.5 12.5L20.5 17M20.5 12.5L9.5 17" stroke="${ch}" stroke-width="1.5" stroke-linecap="round"/>`;
+  } else if (p === 'saltire') {
+    body += `<path d="M4 3.5L26 16.5M26 3.5L4 16.5" stroke="${ch}" stroke-width="2.6" stroke-linecap="round" stroke-dasharray="3.2 .9"/>`;
+  } else if (p === 'stripes') {
+    for (let i = 1; i < 13; i += 2) body += `<rect x="0" y="${f(i * 20 / 13)}" width="30" height="${f(20 / 13)}" fill="${ch}"/>`;
+  } else if (p === 'tricolour') {
+    body += `<rect x="0" y="6.7" width="30" height="6.6" fill="#f4f0e4"/><rect x="0" y="13.3" width="30" height="6.7" fill="${ch}"/>`;
+  } else if (p === 'quinas') {
+    body += `<path d="M11 4.5H19V11.5Q19 15.5 15 16.5 11 15.5 11 11.5Z" fill="${ch}" stroke="#7a1d1d" stroke-width=".6"/>`
+      + `<g fill="#f4f0e4"><circle cx="15" cy="7.4" r=".9"/><circle cx="13.2" cy="10" r=".9"/><circle cx="15" cy="10" r=".9"/><circle cx="16.8" cy="10" r=".9"/><circle cx="15" cy="12.6" r=".9"/></g>`;
+  } else if (p === 'banner') {
+    body = `<rect x="0" y="0" width="30" height="20" fill="none"/><path d="M1 1.5L29 10L1 18.5Z" fill="${fd}" stroke="${ch}" stroke-width="1.8" stroke-linejoin="round" stroke-dasharray="2.4 1.2"/>`
+      + `<circle cx="8.5" cy="10" r="2.6" fill="${ch}"/>`;
+  } else if (p === 'anchor') {
+    body += `<g transform="translate(9.6 4.2) scale(.45)" fill="none" stroke="${ch}" stroke-width="2.6" stroke-linecap="round">${G.anchor}</g>`;
+  } else {
+    body += `<rect x="1.2" y="1.2" width="27.6" height="17.6" fill="none" stroke="${ch}" stroke-width="1.2" opacity=".85"/>`;
+  }
+  const clip = p === 'banner' ? '' : ` clip-path="url(#${id})"`;
+  return `<svg class="mx-flag ${cls}" viewBox="0 0 30 20" aria-hidden="true" focusable="false">`
+    + (p === 'banner' ? '' : `<defs><clipPath id="${id}"><path d="${wave}"/></clipPath></defs>`)
+    + `<g${clip}>${body}<path d="M1 7Q8 5.4 15 7T29 7" stroke="rgba(0,0,0,.14)" stroke-width="3" fill="none"/></g>`
+    + (p === 'banner' ? '' : `<path d="${wave}" fill="none" stroke="rgba(30,18,6,.65)" stroke-width=".7"/>`)
+    + '</svg>';
 }
 
 // ── rank medallion ────────────────────────────────────────────────

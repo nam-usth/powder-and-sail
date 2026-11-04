@@ -1,36 +1,70 @@
-// ── CAMPAIGN DATA — World Chart regions + missions ─────────────────
+// ── CAMPAIGN DATA — World Chart seas + missions ───────────────────
 // design/gdd/sea-battle.md, design/gdd/campaign-meta.md
+// Balance values: design/balance/report.md (every number + rationale),
+// targets: design/balance/targets.md. Setting: c. 1570–1720, factions in
+// data/factions.js (FACTIONS / SEAS) — names are fictional analogues.
 //
 // Mission schema
-//   id, region, chart:{x,y} (0..1 on the chart image), nm, desc
+//   id, region (sea id), faction, chart:{x,y} (0..1 on the world chart), nm, desc
 //   objective: { type:'sink_all' }
 //            | { type:'destroy_forts' }
 //            | { type:'survive', seconds, waves:[{ at, ships:[EnemySpec] }] }
 //            | { type:'capture', islands:[islandId] }
-//   enemies:  [EnemySpec]  — EnemySpec = { hull, nm?, loadout?, x, z, hp? }
-//             hull = HULLS id (data/harbor.js) or class 'light'|'standard'|'heavy'
+//   enemies:  [EnemySpec]  — EnemySpec = { hull, nm?, loadout?, x, z, hp?, faction? }
+//             hull = HULLS id (data/harbor.js, incl. enemyOnly hulls) or a class
+//             'light'|'standard'|'heavy'; faction overrides the mission faction
 //   islands:  [IslandDef]  — data/maps.js format; `decor:true` = scenery only
 //   spawn:    { x, z, angle? } — player fleet start
 //   parTime:  seconds for ★★★ ; timeLimit?: seconds (defeat when exceeded)
 //   reward:{wood,gold}, firstClear:{wood,gold}, renown, requires:[missionId]
-//   aggro?: radius at which guarding enemies engage (default 70)
-// Coordinates: world units, map is ±150. Player usually spawns west.
+//   aggro?:   radius at which guarding enemies engage (default BATTLE.aggro)
+//   fortRegen?: fort HP regained per repair tick (fraction of max, default BATTLE.fortRegen)
+// Coordinates: world units, map is ±150. Player spawns west.
 
+/** Sea regions in campaign order (= data/factions.js SEAS). minRenown gates entry. */
 export const REGIONS = [
-  { id: 'reef',    nm: 'Coral Shallows',   minRenown: 0,  col: '#5cc8a8', desc: 'Warm shoals where smugglers hide among the reefs.' },
-  { id: 'straits', nm: 'Saltwind Straits', minRenown: 30, col: '#e8b840', desc: 'A narrow passage held by corsair captains and their batteries.' },
-  { id: 'storm',   nm: 'Stormreach',       minRenown: 90, col: '#cc6688', desc: 'Black water, iron fleets and the Citadel of Storms.' },
+  { id: 'caribbean',  nm: 'The Caribbean',       vi: 'Biển Caribe',          minRenown: 0,   col: '#5cc8a8',
+    factions: ['buccaneers', 'spain', 'france'],
+    desc: 'Warm shoals and coral cays where buccaneers, Spanish guarda-costas and French corsairs prey on free traders.' },
+  { id: 'atlantic',   nm: 'The Atlantic Lanes',  vi: 'Hải lộ Đại Tây Dương', minRenown: 30,  col: '#6f9fd8',
+    factions: ['england', 'france'],
+    desc: 'The open trade lanes, policed by the armed Indiamen and coastal batteries of the Honourable Saltwind Company.' },
+  { id: 'indian',     nm: 'The Indian Ocean',    vi: 'Ấn Độ Dương',          minRenown: 100, col: '#e8b840',
+    factions: ['portugal', 'malabar'],
+    desc: 'Monsoon seas of the pepper trade: Portuguese carracks out of Goa and the swift ghurabs of the Malabar corsairs.' },
+  { id: 'spice',      nm: 'The Spice Straits',   vi: 'Eo biển Hương liệu',   minRenown: 200, col: '#c97c3a',
+    factions: ['netherlands', 'malay'],
+    desc: 'Clove and nutmeg islands held by the Spice Company castles, and the lanong war-praus of the Orang Laut.' },
+  { id: 'southchina', nm: 'The South China Sea', vi: 'Biển Đông',            minRenown: 330, col: '#cc5566',
+    factions: ['chinese', 'vietnamese', 'portugal'],
+    desc: 'Typhoon waters ruled by the war junks of the Red Banner Fleet and the raiders of the Gulf of Tonkin.' },
 ];
 
 const rock = (id, x, z, r = 7, seed = 11, shape = 'SPRAWL') =>
   ({ id, x, z, r, hp: 60, nm: 'Rocks', own: 'neutral', tdmg: 0, trof: 99, shape, seed, decor: true });
 
+// Faction gun fits (flavour + counters, see design/balance/report.md §Enemy fits)
+const FIT = {
+  pirateL:  { L: 'swivel', R: 'carronade' },
+  falcL:    { L: 'falconet', R: 'carronade' },
+  culvL:    { L: 'demi_culv', R: 'demi_culv' },
+  grapeL:   { L: 'grapeshot', R: 'falconet' },
+  chainL:   { L: 'chain_shot', R: 'falconet' },
+  culvS:    { L: 'demi_culv', R: 'demi_culv', B: 'swivel' },
+  longS:    { L: 'demi_culv', R: 'demi_culv', B: 'long9' },
+  canS:     { L: 'demi_can', R: 'demi_culv', B: 'swivel' },
+  junkS:    { L: 'demi_can', R: 'grapeshot', B: 'swivel' },
+  galH:     { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'swivel' },
+  lineH:    { L: 'demi_can', R: 'demi_culv', B: 'long9', S: 'swivel' },
+  junkH:    { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'grapeshot' },
+};
+
 export const MISSIONS = [
-  // ── Coral Shallows ───────────────────────────────────────────
+  // ── The Caribbean — buccaneers, Spain, France (tiers I–II) ─────────
   {
-    id: 'reef_1', region: 'reef', chart: { x: .16, y: .70 },
+    id: 'reef_1', region: 'caribbean', faction: 'buccaneers', chart: { x: .133, y: .374 },
     nm: "Smugglers' Cove",
-    desc: 'Two smuggler sloops are running contraband past our waters. Sink them.',
+    desc: 'Two buccaneer sloops run contraband through our waters. Send them to the bottom.',
     objective: { type: 'sink_all' },
     enemies: [
       { hull: 'sloop', nm: 'Quiet Eel',   x: 55, z: -12, loadout: { L: 'swivel', R: 'swivel' } },
@@ -41,30 +75,30 @@ export const MISSIONS = [
     reward: { wood: 120, gold: 80 }, firstClear: { wood: 100, gold: 80 }, renown: 10, requires: [],
   },
   {
-    id: 'reef_2', region: 'reef', chart: { x: .27, y: .55 },
-    nm: 'Lantern Rock Battery',
-    desc: 'A smuggler battery on Lantern Rock fires on every merchant. Silence its fort.',
+    id: 'reef_2', region: 'caribbean', faction: 'spain', chart: { x: .070, y: .337 },
+    nm: 'The San Telmo Battery',
+    desc: 'A Spanish battery on a coral cay fires on every free trader that passes. Silence its guns.',
     objective: { type: 'destroy_forts' },
     enemies: [
-      { hull: 'sloop', nm: 'Rock Guard', x: 40, z: 18, loadout: { L: 'carronade', R: 'swivel' } },
+      { hull: 'sloop', nm: 'Santa Catalina', x: 40, z: 18, loadout: { L: 'carronade', R: 'swivel' } },
     ],
     islands: [
-      { id: 'lantern', x: 60, z: 0, r: 11, hp: 170, nm: 'Lantern Rock', own: 'enemy', tdmg: 9, trof: 8, shape: 'FORTRESS', seed: 3131 },
+      { id: 'lantern', x: 60, z: 0, r: 10, hp: 170, nm: 'Batería de San Telmo', own: 'enemy', tdmg: 9, trof: 8, shape: 'FORTRESS', seed: 3131 },
       rock('r3', -10, 46, 7, 303),
     ],
     spawn: { x: -70, z: 10 }, parTime: 200,
     reward: { wood: 160, gold: 120 }, firstClear: { wood: 140, gold: 100 }, renown: 14, requires: ['reef_1'],
   },
   {
-    id: 'reef_3', region: 'reef', chart: { x: .12, y: .40 },
-    nm: 'Hold the Channel',
-    desc: 'Raiders are coming in waves. Keep at least one ship afloat until the tide turns.',
+    id: 'reef_3', region: 'caribbean', faction: 'france', chart: { x: .198, y: .448 },
+    nm: 'Hold the Windward Channel',
+    desc: 'Corsairs of Saint-Domingue come at us in waves. Keep a ship afloat until the tide turns.',
     objective: {
       type: 'survive', seconds: 150,
       waves: [
-        { at: 4,   ships: [{ hull: 'sloop', x: 90, z: -30 }, { hull: 'sloop', x: 92, z: 30 }] },
-        { at: 55,  ships: [{ hull: 'schooner', x: 95, z: 0 }, { hull: 'sloop', x: 90, z: -45 }] },
-        { at: 100, ships: [{ hull: 'brigantine', x: 95, z: 10, loadout: { L: 'carronade', R: 'carronade' } }, { hull: 'sloop', x: 90, z: 45 }] },
+        { at: 4,   ships: [{ hull: 'sloop', nm: 'Le Faucon', x: 90, z: -30, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'La Railleuse', x: 92, z: 30, loadout: FIT.pirateL }] },
+        { at: 55,  ships: [{ hull: 'schooner', nm: 'La Licorne', x: 95, z: 0, loadout: FIT.falcL }, { hull: 'sloop', nm: 'Le Hardi', x: 90, z: -45, loadout: FIT.pirateL }] },
+        { at: 100, ships: [{ hull: 'brigantine', nm: 'La Belle Étoile', x: 95, z: 10, loadout: { L: 'carronade', R: 'carronade', B: 'swivel' } }, { hull: 'sloop', nm: 'Le Saint-Malo', x: 90, z: 45, loadout: FIT.pirateL }] },
       ],
     },
     enemies: [],
@@ -73,44 +107,44 @@ export const MISSIONS = [
     reward: { wood: 180, gold: 110 }, firstClear: { wood: 120, gold: 100 }, renown: 14, requires: ['reef_1'],
   },
 
-  // ── Saltwind Straits ─────────────────────────────────────────
+  // ── The Atlantic Lanes — the Saltwind Company, France (tiers II–III) ──
   {
-    id: 'straits_1', region: 'straits', chart: { x: .45, y: .48 },
-    nm: 'Corsair Squadron',
-    desc: 'Captain Vey leads a brigantine and two sloops through the straits. Break the squadron.',
+    id: 'straits_1', region: 'atlantic', faction: 'england', chart: { x: .265, y: .332 },
+    nm: 'The Saltwind Convoy',
+    desc: 'A Saltwind Company convoy carries powder and shot to our rivals. Take its escorts apart.',
     objective: { type: 'sink_all' },
     enemies: [
-      { hull: 'brigantine', nm: 'Red Vixen', x: 60, z: 0,   loadout: { L: 'demi_culv', R: 'demi_culv', B: 'swivel' } },
-      { hull: 'sloop',      nm: 'Barb',      x: 66, z: -16, loadout: { L: 'carronade', R: 'carronade' } },
-      { hull: 'sloop',      nm: 'Hook',      x: 66, z: 16,  loadout: { L: 'falconet', R: 'carronade' } },
+      { hull: 'brigantine', nm: 'Saltwind Merchant', x: 60, z: 0,   loadout: FIT.culvS },
+      { hull: 'sloop',      nm: 'Good Hope',         x: 66, z: -16, loadout: { L: 'carronade', R: 'carronade' } },
+      { hull: 'sloop',      nm: 'Hector',            x: 66, z: 16,  loadout: FIT.falcL },
     ],
     islands: [rock('s1', 5, -55, 12, 606, 'CRESCENT'), rock('s2', 5, 55, 12, 707)],
     spawn: { x: -72, z: 0 }, parTime: 220,
     reward: { wood: 240, gold: 180 }, firstClear: { wood: 200, gold: 160 }, renown: 18, requires: ['reef_2'],
   },
   {
-    id: 'straits_2', region: 'straits', chart: { x: .56, y: .32 },
+    id: 'straits_2', region: 'atlantic', faction: 'france', chart: { x: .388, y: .117 },
     nm: 'Seize Gullhaven',
-    desc: 'Gullhaven has a fine harbor and no master. Claim it before the corsairs do.',
+    desc: 'Saint-Malo corsairs have taken Gullhaven and its fine anchorage. Knock out their battery, then raise your flag over the island.',
     objective: { type: 'capture', islands: ['gullhaven'] },
     enemies: [
-      { hull: 'brigantine', nm: 'Saltjack', x: 40, z: -24, loadout: { L: 'demi_culv', R: 'carronade', B: 'swivel' } },
-      { hull: 'schooner',   nm: 'Skua',     x: 44, z: 24,  loadout: { L: 'carronade', R: 'carronade' } },
+      { hull: 'brigantine', nm: 'Le Hardi',   x: 44, z: -22, loadout: { L: 'demi_culv', R: 'carronade', B: 'swivel' } },
+      { hull: 'schooner',   nm: 'La Licorne', x: 48, z: 22,  loadout: FIT.falcL },
     ],
     islands: [
-      { id: 'gullhaven', x: 30, z: 0, r: 10, hp: 120, nm: 'Gullhaven', own: 'neutral', tdmg: 0, trof: 99, shape: 'ATOLL', seed: 8181, trait: 'haven' },
+      { id: 'gullhaven', x: 55, z: 0, r: 10, hp: 130, nm: 'Gullhaven', own: 'enemy', tdmg: 8, trof: 9, shape: 'ATOLL', seed: 8181, trait: 'haven' },
       rock('s3', -20, -50, 8, 808),
     ],
-    spawn: { x: -70, z: 0 }, parTime: 200,
+    spawn: { x: -70, z: 0 }, parTime: 240,
     reward: { wood: 260, gold: 200 }, firstClear: { wood: 220, gold: 180 }, renown: 18, requires: ['reef_3'],
   },
   {
-    id: 'straits_3', region: 'straits', chart: { x: .66, y: .52 },
+    id: 'straits_3', region: 'atlantic', faction: 'england', chart: { x: .345, y: .468 },
     nm: 'The Twin Batteries',
-    desc: 'Two batteries guard the Saltwind narrows, with a frigate on patrol. Bring them down.',
+    desc: 'Two Company batteries guard the Saltwind narrows, with a frigate on patrol between them. Bring both down.',
     objective: { type: 'destroy_forts' },
     enemies: [
-      { hull: 'frigate', nm: 'Grey Warden', x: 50, z: 0, loadout: { L: 'demi_culv', R: 'demi_culv', B: 'long9' } },
+      { hull: 'frigate', nm: 'Red Dragon', x: 50, z: 0, loadout: FIT.longS },
     ],
     islands: [
       { id: 'tw_n', x: 65, z: -32, r: 10, hp: 190, nm: 'North Battery', own: 'enemy', tdmg: 12, trof: 7, shape: 'FORTRESS', seed: 9191 },
@@ -120,71 +154,183 @@ export const MISSIONS = [
     reward: { wood: 320, gold: 260 }, firstClear: { wood: 260, gold: 220 }, renown: 24, requires: ['straits_1', 'straits_2'],
   },
 
-  // ── Stormreach ───────────────────────────────────────────────
+  // ── The Indian Ocean — Estado da Índia, Malabar corsairs (tier III) ──
   {
-    id: 'storm_1', region: 'storm', chart: { x: .76, y: .74 },
-    nm: 'Black Squall',
-    desc: 'Caught in the squall with raiders on every side. Survive until the storm breaks.',
+    id: 'indian_1', region: 'indian', faction: 'malabar', chart: { x: .711, y: .498 },
+    nm: 'Monsoon Raiders',
+    desc: 'The monsoon has turned and the Malabar ghurabs ride it in. Hold your anchorage until the squall passes.',
+    objective: {
+      type: 'survive', seconds: 180,
+      waves: [
+        { at: 4,   ships: [{ hull: 'ghurab', nm: 'Monsoon Hawk', x: 90, z: -20, loadout: FIT.grapeL }, { hull: 'dhow', nm: 'Pepper Wind', x: 90, z: 25, loadout: FIT.falcL }] },
+        { at: 60,  ships: [{ hull: 'ghurab', nm: 'Calicut Star', x: 95, z: 0, loadout: FIT.grapeL }, { hull: 'dhow', x: 20, z: -95, loadout: FIT.falcL }, { hull: 'dhow', x: 20, z: 95, loadout: FIT.falcL }] },
+        { at: 120, ships: [{ hull: 'ghurab', nm: 'Tiger of Kannur', x: 95, z: 15, loadout: FIT.grapeL }, { hull: 'ghurab', nm: "Kunjali's Wrath", x: 95, z: -15, loadout: FIT.grapeL }, { hull: 'frigate', nm: 'São Bento', faction: 'portugal', x: 100, z: 0, loadout: FIT.canS }] },
+      ],
+    },
+    enemies: [],
+    islands: [rock('i1', 10, -28, 9, 1101, 'ATOLL'), rock('i2', 15, 32, 8, 1102)],
+    spawn: { x: -55, z: 0 }, parTime: 180,
+    reward: { wood: 360, gold: 280 }, firstClear: { wood: 300, gold: 240 }, renown: 26, requires: ['straits_3'],
+  },
+  {
+    id: 'indian_2', region: 'indian', faction: 'portugal', chart: { x: .679, y: .388 },
+    nm: 'The Carracks of Goa',
+    desc: 'Three carracks of the Estado da Índia sail from Goa under escort. Break the squadron.',
+    objective: { type: 'sink_all' },
+    enemies: [
+      { hull: 'galleon',    nm: 'Madre de Deus', x: 70, z: 0,   loadout: FIT.galH },
+      { hull: 'frigate',    nm: 'São Gabriel',   x: 62, z: -22, loadout: FIT.longS },
+      { hull: 'brigantine', nm: 'Santa Cruz',    x: 62, z: 22,  loadout: FIT.canS },
+      { hull: 'ghurab',     nm: 'Pepper Wind', faction: 'malabar', x: 78, z: 30, loadout: FIT.grapeL },
+    ],
+    islands: [rock('i3', 0, -60, 12, 1203, 'CRESCENT'), rock('i4', 0, 60, 12, 1204, 'ATOLL')],
+    spawn: { x: -75, z: 0 }, parTime: 300,
+    reward: { wood: 400, gold: 320 }, firstClear: { wood: 340, gold: 280 }, renown: 28, requires: ['indian_1'],
+  },
+  {
+    id: 'indian_3', region: 'indian', faction: 'portugal', chart: { x: .734, y: .564 },
+    nm: 'The Pepper Fort',
+    desc: 'The Portuguese pepper fort at Kannur taxes every cargo on the coast. Batter down its walls and raise your flag over it.',
+    objective: { type: 'capture', islands: ['pepper_fort'] },
+    enemies: [
+      { hull: 'frigate', nm: 'Flor de la Mar', x: 45, z: -18, loadout: FIT.longS },
+      { hull: 'ghurab',  nm: 'Monsoon Hawk', faction: 'malabar', x: 50, z: 20, loadout: FIT.grapeL },
+    ],
+    islands: [
+      { id: 'pepper_fort', x: 62, z: 0, r: 11, hp: 260, nm: 'Fortaleza de Kannur', own: 'enemy', tdmg: 13, trof: 7, shape: 'FORTRESS', seed: 1313 },
+      rock('i5', 10, 40, 8, 1305), rock('i6', 20, -45, 7, 1306, 'CRESCENT'),
+    ],
+    spawn: { x: -70, z: 0 }, parTime: 330,
+    reward: { wood: 440, gold: 360 }, firstClear: { wood: 380, gold: 320 }, renown: 32, requires: ['indian_2'],
+  },
+
+  // ── The Spice Straits — the Spice Company, Orang Laut (tier IV) ─────
+  {
+    id: 'spice_1', region: 'spice', faction: 'malay', chart: { x: .839, y: .586 },
+    nm: 'Lanong Ambush',
+    desc: 'Orang Laut lanongs lie in wait among the islets of Singapura. Keep a ship afloat until the tide carries you clear.',
     objective: {
       type: 'survive', seconds: 200,
       waves: [
-        { at: 4,   ships: [{ hull: 'brigantine', x: 90, z: 0, loadout: { L: 'demi_culv', R: 'demi_culv' } }, { hull: 'sloop', x: 0, z: -95 }] },
-        { at: 60,  ships: [{ hull: 'frigate', x: 95, z: -30, loadout: { L: 'demi_culv', R: 'demi_culv', B: 'long9' } }, { hull: 'schooner', x: 0, z: 95 }] },
-        { at: 120, ships: [{ hull: 'galleon', x: 95, z: 25, loadout: { L: 'demi_can', R: 'demi_can', B: 'mortar1' } }, { hull: 'sloop', x: -20, z: -95 }, { hull: 'sloop', x: -20, z: 95 }] },
+        { at: 4,   ships: [{ hull: 'lanong', nm: 'Lanong Merah', x: 90, z: -20, loadout: FIT.grapeL }, { hull: 'lanong', nm: 'Naga Laut', x: 90, z: 20, loadout: FIT.grapeL }] },
+        { at: 60,  ships: [{ hull: 'lanong', nm: 'Angin Selatan', x: 10, z: -95, loadout: FIT.grapeL }, { hull: 'lanong', nm: 'Penjajap Hitam', x: 10, z: 95, loadout: FIT.grapeL }, { hull: 'ghurab', x: 95, z: 0, loadout: FIT.falcL }] },
+        { at: 125, ships: [{ hull: 'heavy_frigate', nm: 'Witte Valk', faction: 'netherlands', x: 100, z: 0, loadout: FIT.longS }, { hull: 'lanong', nm: 'Bintang Temasek', x: -20, z: -95, loadout: FIT.grapeL }, { hull: 'lanong', x: -20, z: 95, loadout: FIT.grapeL }] },
+      ],
+    },
+    enemies: [],
+    islands: [rock('p1', 5, -22, 8, 1401, 'ATOLL'), rock('p2', 15, 30, 9, 1402), rock('p3', -35, 45, 6, 1403, 'CRESCENT')],
+    spawn: { x: -50, z: 0 }, parTime: 200,
+    reward: { wood: 480, gold: 380 }, firstClear: { wood: 400, gold: 340 }, renown: 32, requires: ['indian_3'],
+  },
+  {
+    id: 'spice_2', region: 'spice', faction: 'netherlands', chart: { x: .869, y: .671 },
+    nm: 'The Homeward Fleet',
+    desc: "The Spice Company's homeward fleet is loaded with nutmeg and guarded like a treasury. Send it to the bottom.",
+    objective: { type: 'sink_all' },
+    enemies: [
+      { hull: 'war_galleon',   nm: 'Gouden Leeuw', x: 72, z: 0,   loadout: FIT.lineH },
+      { hull: 'heavy_frigate', nm: 'Witte Valk',   x: 62, z: -22, loadout: FIT.longS },
+      { hull: 'frigate',       nm: 'Zeerob',       x: 62, z: 22,  loadout: FIT.longS },
+      { hull: 'frigate',       nm: 'De Hoop',      x: 80, z: -30, loadout: FIT.canS },
+      { hull: 'lanong',        nm: 'Naga Laut', faction: 'malay', x: 80, z: 30, loadout: FIT.grapeL },
+    ],
+    islands: [rock('p4', 0, -62, 12, 1504, 'CRESCENT'), rock('p5', 0, 62, 12, 1505, 'ATOLL')],
+    spawn: { x: -78, z: 0 }, parTime: 330,
+    reward: { wood: 540, gold: 420 }, firstClear: { wood: 460, gold: 380 }, renown: 36, requires: ['spice_1'],
+  },
+  {
+    id: 'spice_3', region: 'spice', faction: 'netherlands', chart: { x: .974, y: .670 },
+    nm: 'Kasteel Amboina',
+    desc: 'The Company castle at Amboina chokes the clove trade with two bastions. Reduce them both.',
+    objective: { type: 'destroy_forts' },
+    enemies: [
+      { hull: 'heavy_frigate', nm: 'Nieuw Batavia', x: 48, z: -10, loadout: FIT.longS },
+      { hull: 'frigate',       nm: 'Amboina',       x: 52, z: 14,  loadout: FIT.canS },
+      { hull: 'lanong',        nm: 'Bintang Temasek', faction: 'malay', x: 40, z: 30, loadout: FIT.grapeL },
+    ],
+    islands: [
+      { id: 'amb_w', x: 62, z: -30, r: 11, hp: 300, nm: 'Bastion Zeeland', own: 'enemy', tdmg: 15, trof: 6, shape: 'FORTRESS', seed: 1515 },
+      { id: 'amb_e', x: 70, z: 30,  r: 11, hp: 300, nm: 'Bastion Holland', own: 'enemy', tdmg: 15, trof: 6, shape: 'FORTRESS', seed: 1516 },
+      rock('p6', 0, 0, 7, 1506, 'ATOLL'),
+    ],
+    spawn: { x: -72, z: 0 }, parTime: 360,
+    reward: { wood: 600, gold: 480 }, firstClear: { wood: 500, gold: 420 }, renown: 40, requires: ['spice_2'],
+  },
+
+  // ── The South China Sea — Red Banner Fleet, Tonkin raiders (tier V) ──
+  {
+    id: 'storm_1', region: 'southchina', faction: 'vietnamese', chart: { x: .876, y: .387 },
+    nm: 'Typhoon Season',
+    desc: 'A typhoon drives you onto the Tonkin raiders’ coast. Keep a ship afloat until the storm blows itself out.',
+    objective: {
+      type: 'survive', seconds: 210,
+      waves: [
+        { at: 4,   ships: [{ hull: 'junk', nm: 'Sóng Bạc', x: 90, z: 0, loadout: FIT.junkS }, { hull: 'ghe_bau', nm: 'Phong Ba', x: 0, z: -95, loadout: FIT.chainL }] },
+        { at: 65,  ships: [{ hull: 'war_junk', nm: 'Hải Long', x: 95, z: -30, loadout: FIT.junkH }, { hull: 'junk', nm: 'Cá Kình', x: 0, z: 95, loadout: FIT.junkS }] },
+        { at: 130, ships: [{ hull: 'war_junk', nm: 'Bạch Đằng Gió', x: 95, z: 25, loadout: FIT.junkH }, { hull: 'junk', nm: 'Jade Tide', faction: 'chinese', x: -20, z: -95, loadout: FIT.junkS }, { hull: 'ghe_bau', x: -20, z: 95, loadout: FIT.chainL }] },
       ],
     },
     enemies: [],
     islands: [rock('t1', 20, -20, 10, 1212, 'FORTRESS'), rock('t2', 20, 30, 8, 1313)],
-    spawn: { x: -40, z: 0 }, parTime: 200,
-    reward: { wood: 380, gold: 300 }, firstClear: { wood: 300, gold: 260 }, renown: 28, requires: ['straits_3'],
+    spawn: { x: -40, z: 0 }, parTime: 210,
+    reward: { wood: 640, gold: 520 }, firstClear: { wood: 540, gold: 460 }, renown: 40, requires: ['spice_3'],
   },
   {
-    id: 'storm_2', region: 'storm', chart: { x: .86, y: .55 },
-    nm: 'Iron Armada',
-    desc: 'The Iron Armada sails to blockade our ports. Meet it at sea and send it to the bottom.',
+    id: 'storm_2', region: 'southchina', faction: 'chinese', chart: { x: .917, y: .367 },
+    nm: 'The Red Banner Fleet',
+    desc: 'The Red Banner Fleet gathers off Amoy — war junks with painted eyes and a hundred guns. Meet it and sink it.',
     objective: { type: 'sink_all' },
     enemies: [
-      { hull: 'galleon',    nm: 'Ironclad Maw', x: 70, z: 0,   loadout: { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'long9' } },
-      { hull: 'frigate',    nm: 'Grim Tern',    x: 62, z: -22, loadout: { L: 'demi_culv', R: 'demi_culv', B: 'long9' } },
-      { hull: 'brigantine', nm: 'Ash Rook',     x: 62, z: 22,  loadout: { L: 'chain_shot', R: 'demi_culv', B: 'swivel' } },
-      { hull: 'sloop',      nm: 'Cinder',       x: 78, z: 30,  loadout: { L: 'grapeshot', R: 'carronade' } },
+      { hull: 'war_junk', nm: 'Golden Carp',  x: 70, z: 0,   loadout: FIT.junkH },
+      { hull: 'war_junk', nm: 'Red Kite',     x: 64, z: -24, loadout: FIT.junkH },
+      { hull: 'junk',     nm: 'Jade Tide',    x: 62, z: 24,  loadout: FIT.junkS },
+      { hull: 'junk',     nm: "Dragon's Whisker", x: 80, z: -34, loadout: FIT.junkS },
+      { hull: 'ghe_bau',  nm: 'Hải Long', faction: 'vietnamese', x: 80, z: 34, loadout: FIT.chainL },
     ],
     islands: [rock('t3', 0, -60, 12, 1414, 'CRESCENT'), rock('t4', 0, 60, 12, 1515, 'ATOLL')],
-    spawn: { x: -75, z: 0 }, parTime: 300,
-    reward: { wood: 460, gold: 380 }, firstClear: { wood: 400, gold: 320 }, renown: 32, requires: ['storm_1'],
+    spawn: { x: -78, z: 0 }, parTime: 330,
+    reward: { wood: 700, gold: 580 }, firstClear: { wood: 600, gold: 500 }, renown: 45, requires: ['storm_1'],
   },
   {
-    id: 'storm_3', region: 'storm', chart: { x: .90, y: .28 },
+    id: 'storm_3', region: 'southchina', faction: 'chinese', chart: { x: .948, y: .329 },
     nm: 'Citadel of Storms',
-    desc: 'The Citadel commands Stormreach. Its walls, its galleon and its man-o-war must fall.',
+    desc: "The Red Banner's island citadel commands the South China Sea. Its walls, its war junks and its admiral's flagship must fall.",
     objective: { type: 'destroy_forts' },
     enemies: [
-      { hull: 'man_o_war', nm: 'Leviathan', x: 55, z: -14, loadout: { L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'demi_culv' } },
-      { hull: 'galleon',   nm: 'Dread Gull', x: 55, z: 16, loadout: { L: 'demi_culv', R: 'demi_can', B: 'long9', S: 'swivel' } },
+      { hull: 'war_junk',  nm: 'Thunder of Amoy', x: 55, z: -14, loadout: FIT.junkH },
+      { hull: 'war_junk',  nm: 'Golden Carp',     x: 55, z: 16,  loadout: FIT.junkH },
+      { hull: 'man_o_war', nm: 'Nossa Senhora da Graça', faction: 'portugal', x: 65, z: 0, loadout: FIT.lineH },
     ],
     islands: [
       { id: 'citadel', x: 80, z: 0, r: 14, hp: 420, nm: 'Citadel of Storms', own: 'enemy', tdmg: 18, trof: 5, shape: 'FORTRESS', seed: 1616, trait: 'bastion' },
       rock('t5', 10, -50, 9, 1717), rock('t6', 10, 50, 9, 1818, 'CRESCENT'),
     ],
     spawn: { x: -75, z: 0 }, parTime: 420,
-    reward: { wood: 700, gold: 600 }, firstClear: { wood: 600, gold: 500 }, renown: 45, requires: ['storm_2'],
+    reward: { wood: 900, gold: 760 }, firstClear: { wood: 800, gold: 700 }, renown: 60, requires: ['storm_2'],
   },
 ];
 
-// ── Repeatable patrol (generated from rank, see Meta/Campaign.makePatrol) ──
+// ── Repeatable patrol (generated by Meta/Campaign.makePatrol) ─────────
+// Enemies come from the furthest unlocked sea (its factions + hull pool) and
+// are sized to the fleet that sails: Σ strength(enemies) ≤ strengthRatio ×
+// Σ strength(your ships), strength = hp × gun slots. Reward scales with the
+// enemy strength actually met, so a small fleet meets (and earns) less —
+// a wiped player can always win a patrol with what was salvaged.
 export const PATROL = {
-  id: 'patrol', chart: { x: .34, y: .80 }, nm: 'Pirate Patrol',
-  desc: 'Sweep the nearby waters for pirates. Repeatable; grows tougher with your rank.',
-  baseReward: { wood: 70, gold: 50 }, rewardPerRank: { wood: 40, gold: 30 },
+  id: 'patrol', chart: { x: .147, y: .440 }, nm: 'Pirate Patrol',
+  desc: 'Sweep the nearby waters for raiders. Repeatable; the enemy is sized to the fleet you bring.',
+  /** Enemy hull pools by sea (campaign order), strongest first. */
+  pools: {
+    caribbean:  ['brigantine', 'schooner', 'sloop', 'sloop', 'cutter'],
+    atlantic:   ['frigate', 'brigantine', 'brigantine', 'schooner', 'sloop'],
+    indian:     ['galleon', 'frigate', 'ghurab', 'ghurab', 'dhow', 'dhow'],
+    spice:      ['war_galleon', 'heavy_frigate', 'lanong', 'lanong', 'frigate', 'lanong'],
+    southchina: ['war_junk', 'war_junk', 'junk', 'junk', 'ghe_bau', 'ghe_bau'],
+  },
+  strengthRatio: 0.55,
+  maxShips: 5,
+  reward: { base: { wood: 40, gold: 30 }, perStrength: { wood: 0.10, gold: 0.075 } },
   renown: 4,
-  /** Enemy hull pools by rank index (0 = Captain). */
-  pools: [
-    ['sloop', 'sloop'],
-    ['sloop', 'schooner', 'sloop'],
-    ['brigantine', 'sloop', 'schooner'],
-    ['frigate', 'brigantine', 'sloop'],
-    ['galleon', 'frigate', 'brigantine', 'sloop'],
-  ],
   loadouts: {
     light:    { L: 'carronade', R: 'swivel' },
     standard: { L: 'demi_culv', R: 'demi_culv', B: 'swivel' },
@@ -192,5 +338,11 @@ export const PATROL = {
   },
 };
 
+/** Winning this mission wins the campaign (rank-independent). */
+export const FINAL_MISSION = 'storm_3';
+
 /** Open War = the classic full match (mode=skirmish). */
-export const OPEN_WAR = { id: 'open_war', chart: { x: .50, y: .84 }, nm: 'Open War' };
+export const OPEN_WAR = { id: 'open_war', chart: { x: .363, y: .792 }, nm: 'Open War' };
+
+/** The player's home port on the World Chart (Port Royal). */
+export const HOME = { chart: { x: .105, y: .407 } };

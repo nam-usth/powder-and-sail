@@ -94,13 +94,16 @@ export class Physics {
     const R = this._RAPIER;
     // Approximate island as a cylinder → use a flat cuboid for simplicity
     // (Rapier doesn't have cylinder in compat build — use 8-sided approximation)
-    const r = island.r * 0.85;  // slightly smaller than visual to feel fair
-    const bodyDesc = R.RigidBodyDesc.fixed()
-      .setTranslation(island.x, 0, island.z);
-    const body = this._world.createRigidBody(bodyDesc);
-    const collDesc = R.ColliderDesc.ball(r);
-    this._world.createCollider(collDesc, body);
-    this._islands.push(body);
+    // AW: islands with `colliders` (HARBOR home port around its bay) get one
+    // ball per circle; others one ball slightly smaller than the visual r.
+    const circles = island.colliders?.length
+      ? island.colliders.map(c => ({ x: c.x, z: c.z, r: c.r * 0.95 }))
+      : [{ x: island.x, z: island.z, r: island.r * 0.85 }];
+    for (const c of circles) {
+      const body = this._world.createRigidBody(R.RigidBodyDesc.fixed().setTranslation(c.x, 0, c.z));
+      this._world.createCollider(R.ColliderDesc.ball(c.r), body);
+      this._islands.push(body);
+    }
   }
 
   // ── Per-frame update ─────────────────────────────────────────

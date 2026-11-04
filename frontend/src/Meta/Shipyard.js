@@ -50,7 +50,7 @@ const pay = (res, c) => { res.wood -= c.wood || 0; res.gold -= c.gold || 0; };
 /** Can the player start building this hull right now? → {ok, reason} */
 export function canBuild(profile, hullId) {
   const h = HULLS[hullId];
-  if (!h) return { ok: false, reason: 'unknown_hull' };
+  if (!h || h.enemyOnly) return { ok: false, reason: 'unknown_hull' };   // enemy-only flavour hulls are never built
   const lv = shipyardLevel(profile);
   if (lv < 1) return { ok: false, reason: 'no_shipyard' };
   if (lv < h.shipyardLevel) return { ok: false, reason: 'shipyard_level', need: h.shipyardLevel };

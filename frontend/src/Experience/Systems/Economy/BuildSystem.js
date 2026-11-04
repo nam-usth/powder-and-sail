@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { BUILD_GRID_SIZE, BUILD_CELL_WORLD, BUILD_TIME_MULT } from '../../../data/constants.js';
+import { BUILD_GRID_SIZE, BUILD_CELL_WORLD, BUILD_TIME_MULT, BUILD_DECK_Y } from '../../../data/constants.js';
 import { BUILDINGS, createBuildingInstance, getBuildingProduction } from '../../../data/buildings.js';
 import { ISLAND_TRAITS } from '../../../data/traits.js';
 import { DEFENSES, getDefenseStats } from '../../../data/defenses.js';
+import { makeBuildingMesh, makeBuildingGhost, modelYaw } from '../../World/BuildingModels.js';
 
 // ── Grid cell ShaderMaterial ──────────────────────────────────────
 // Always drawn above ocean (depthTest:false, renderOrder:15).
@@ -257,12 +258,13 @@ export class BuildSystem {
   canPlaceFootprint(isl, anchorKey, fp){
     const [anchorCol, anchorRow] = anchorKey.split('_').map(Number);
     const occupied = this._occupiedKeys(isl);
+    const G = isl.gridSize ?? BUILD_GRID_SIZE;   // AW: per-island grid (HARBOR = 16)
     for(let dr=0; dr<fp.h; dr++){
       for(let dc=0; dc<fp.w; dc++){
         const col=anchorCol+dc, row=anchorRow+dr;
         const key=`${col}_${row}`;
         // Must be within grid bounds
-        if(col<0||col>=BUILD_GRID_SIZE||row<0||row>=BUILD_GRID_SIZE) return false;
+        if(col<0||col>=G||row<0||row>=G) return false;
         // AF8: must be within island's valid shape cells
         if(isl.validGridKeys && !isl.validGridKeys.has(key)) return false;
         // Must not be occupied
@@ -275,10 +277,11 @@ export class BuildSystem {
   // ── GRID ─────────────────────────────────────────────────────
   _cells(isl){
     // AF8: only return cells within island's shape-masked valid keys
-    const off = (BUILD_GRID_SIZE - 1) / 2 * BUILD_CELL_WORLD;
+    const G = isl.gridSize ?? BUILD_GRID_SIZE;   // AW: per-island grid (HARBOR = 16)
+    const off = (G - 1) / 2 * BUILD_CELL_WORLD;
     const cells = [];
-    for (let r = 0; r < BUILD_GRID_SIZE; r++) {
-      for (let c = 0; c < BUILD_GRID_SIZE; c++) {
+    for (let r = 0; r < G; r++) {
+      for (let c = 0; c < G; c++) {
         const key = `${c}_${r}`;
         // Skip cells outside this island's shape
         if (isl.validGridKeys && !isl.validGridKeys.has(key)) continue;
@@ -323,7 +326,7 @@ export class BuildSystem {
       const mat = makeGridMat(occ ? 0xff4433 : 0x44ff66, occ ? 0.42 : 0.16);
       const m   = new THREE.Mesh(getGridGeo(), mat);
       m.rotation.x  = -Math.PI / 2;
-      m.position.set(cell.cx, 2.2, cell.cz);  // above max wave height
+      m.position.set(cell.cx, BUILD_DECK_Y + 0.08, cell.cz);  // on the island deck (depthTest off)
       m.renderOrder = 15;
       m.userData    = { ...cell, occupied: occ };
       this._scene.add(m); this._gridMeshes.push(m);
@@ -359,9 +362,14 @@ export class BuildSystem {
           if(inst.buildTimer <= 0){
             inst.state = 'active';
             inst.buildTimer = 0;
-            // Restore full opacity when construction finishes
+            // Restore full opacity when construction finishes. Model meshes
+            // (World/BuildingModels) get their shared material back — the fade
+            // clone is dropped; anything else is made opaque as before.
             if(inst.mesh) inst.mesh.traverse(c => {
               if(!c.isMesh) return;
+              const base = c.userData.baseMat;
+              if(base && c.material !== base){ c.material.dispose?.(); c.material = base; return; }
+              if(base) return;
               const mats = Array.isArray(c.material) ? c.material : [c.material];
               mats.forEach(m => { if(m){ m.opacity=1; m.transparent=false; } });
             });
@@ -436,33 +444,27 @@ export class BuildSystem {
         }
       }
     }
+    inst.mesh?.userData?.setLevel?.(inst.level);   // AW-art: level pennants
     this._bus.emit('building:upgraded', { instance:inst, island:isl });
     this.recalcWarehouse();
   }
 
 
   // ── AQ: SC2-style placement ghost ──────────────────────────────
-  // Semi-transparent preview of the ACTUAL building mesh follows the
-  // cursor, snapped to the hovered cell; green = placeable, red = not.
-  // One shared material (colour flipped per state) — zero per-frame alloc.
+  // Semi-transparent preview of the ACTUAL building model (same silhouette
+  // as World/BuildingModels) follows the cursor, snapped to the footprint
+  // centre; green = placeable, red = not. One shared material (colour
+  // flipped per state) + crease edges — zero per-frame alloc.
   _ensureGhost(def){
     if(this._ghost && this._ghostFor === def.id) return;
     this._clearGhost();
     if(!this._ghostMat){
       this._ghostMat = new THREE.MeshBasicMaterial({
         transparent:true, opacity:.55, depthWrite:false, blending:THREE.AdditiveBlending });  // hologram glow
+      // Dark edge outline — keeps the ghost legible over same-hue terrain
       this._ghostEdgeMat = new THREE.LineBasicMaterial({ transparent:true, opacity:.9 });
     }
-    const grp = new THREE.Group();
-    const geo = def.model === 'cylinder'
-      ? new THREE.CylinderGeometry(.7, 1, 1.5, 8)
-      : new THREE.BoxGeometry(1.4, 1.4, 1.4);
-    const msh = new THREE.Mesh(geo, this._ghostMat);
-    msh.renderOrder = 14;
-    // Dark edge outline — keeps the ghost legible over same-hue terrain
-    const edge = new THREE.LineSegments(new THREE.EdgesGeometry(geo), this._ghostEdgeMat);
-    edge.renderOrder = 15;
-    grp.add(msh); grp.add(edge);
+    const grp = makeBuildingGhost(def, this._ghostMat, this._ghostEdgeMat);
     grp.visible = false;
     this._scene.add(grp);
     this._ghost = grp;
@@ -471,8 +473,7 @@ export class BuildSystem {
 
   _clearGhost(){
     if(!this._ghost) return;
-    this._scene.remove(this._ghost);
-    this._ghost.traverse(c => { if(c.isMesh) c.geometry?.dispose(); });  // material is shared — keep
+    this._scene.remove(this._ghost);   // geometry is the shared model cache — never disposed here
     this._ghost = null;
     this._ghostFor = null;
   }
@@ -501,9 +502,10 @@ export class BuildSystem {
     // AQ ghost: snap to footprint CENTRE, tint by validity, follow R-rotation
     if(bldOrDef && hoveredCell){
       this._ensureGhost(bldOrDef);
-      const offX=(fp.w-1)/2*BUILD_CELL_WORLD, offZ=(fp.h-1)/2*BUILD_CELL_WORLD;
-      this._ghost.position.set(hoveredCell.cx+offX, 2.4, hoveredCell.cz+offZ);
-      this._ghost.rotation.y = st.buildRotated ? Math.PI/2 : 0;
+      const gp = this.meshPosFor(bldOrDef, hoveredKey, fp, curIsl);
+      this._ghost.position.set(gp.x, BUILD_DECK_Y + 0.02, gp.z);
+      this._ghost.rotation.y = modelYaw(bldOrDef, { rotated: st.buildRotated,
+        outwardDeg: Math.atan2(gp.x - curIsl.x, gp.z - curIsl.z) * 180 / Math.PI });
       this._ghostMat.color.setHex(footprintValid ? 0x35ff6a : 0xff3322);
       this._ghostEdgeMat.color.setHex(footprintValid ? 0x06381a : 0x4a0c06);
       this._ghost.visible = true;
@@ -628,7 +630,9 @@ export class BuildSystem {
       inst.buildDuration = inst.buildTimer;
     }
 
-    inst.mesh=this._spawnMesh(bldOrDef,{x:clickedMesh.userData.cx,z:clickedMesh.userData.cz});
+    // AW-art: the model is centred on its whole footprint (inst.worldX/Z stay the anchor cell)
+    inst.mesh=this._spawnMesh(bldOrDef, this.meshPosFor(bldOrDef, clickedMesh.userData.key, fp, isl),
+      { level: inst.level, rotated: inst.rotated, facingDeg: inst.facingDeg });
     // Dim mesh while under construction — clone each material first to avoid mutating shared materials
     if(inst.state === 'building') inst.mesh.traverse(c => {
       if(c.isMesh && c.material){
@@ -881,7 +885,7 @@ export class BuildSystem {
           rotated: false,
           upgradeTimer: 0,
         };
-        inst.mesh = this._spawnMesh(bldDef, { x: cell.cx, z: cell.cz });
+        inst.mesh = this._spawnMesh(bldDef, { x: cell.cx, z: cell.cz }, { level: 1 });
         if (!Array.isArray(st.islandBuildings[isl.def.id])) st.islandBuildings[isl.def.id] = [];
         st.islandBuildings[isl.def.id].push(inst);
         occupied.add(cell.key);
@@ -889,21 +893,51 @@ export class BuildSystem {
     });
   }
 
-  _spawnMesh(bldOrDef, pos){
-    // AQ fix: y=1.2 buried meshes INSIDE the island (deck sits ~2.0,
-    // grid plane at 2.2) — buildings & neutral starter mills were invisible.
-    const grp=new THREE.Group(); grp.position.set(pos.x,2.35,pos.z);
-    const mat=new THREE.MeshStandardMaterial({color:bldOrDef.color||0x8b7355,roughness:.8});
-    const msh=bldOrDef.model==='cylinder'
-      ? new THREE.Mesh(new THREE.CylinderGeometry(.7,1,1.5,8),mat)
-      : new THREE.Mesh(new THREE.BoxGeometry(1.4,1.4,1.4),mat);
-    msh.castShadow=true; grp.add(msh);
-    const sc=document.createElement('canvas'); sc.width=64; sc.height=32;
-    const sx=sc.getContext('2d'); sx.fillStyle='rgba(0,0,0,.6)'; sx.fillRect(0,0,64,32);
-    sx.font='18px serif'; sx.fillStyle='#fff'; sx.textAlign='center'; sx.fillText(bldOrDef.icon,32,24);
-    const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(sc),transparent:true,depthTest:false}));
-    sp.scale.set(2,.8,1); sp.position.y=1.5; grp.add(sp);
-    this._scene.add(grp); return grp;
+  /**
+   * World position {x, z} of a building model: the centre of its footprint
+   * (anchor cell = top-left of the footprint, as in canPlaceFootprint).
+   * @param {object} def        building / defense definition
+   * @param {string} anchorKey  "col_row" of the anchor cell
+   * @param {{w:number,h:number}} [fp] effective (rotated) footprint; def.footprint if omitted
+   * @param {object} isl        IslandEntity
+   */
+  meshPosFor(def, anchorKey, fp, isl){
+    const f = fp || def?.footprint || { w:1, h:1 };
+    const [c, r] = String(anchorKey).split('_').map(Number);
+    const off = ((isl.gridSize ?? BUILD_GRID_SIZE) - 1) / 2 * BUILD_CELL_WORLD;
+    return {
+      x: isl.x + (c + (f.w - 1) / 2) * BUILD_CELL_WORLD - off,
+      z: isl.z + (r + (f.h - 1) / 2) * BUILD_CELL_WORLD - off,
+    };
+  }
+
+  /**
+   * Create a building model (World/BuildingModels) standing on the island
+   * deck at `pos` (use meshPosFor) and add it to the scene.
+   * @param {object} bldOrDef  building / defense definition
+   * @param {{x:number,z:number}} pos  world position of the footprint centre
+   * @param {{level?:number, rotated?:boolean, facingDeg?:number}} [opts]
+   * @returns {THREE.Group}
+   */
+  _spawnMesh(bldOrDef, pos, opts = {}){
+    // Owning island = nearest centre (team colours, outward facing, stilts on the beach)
+    let isl = null, best = Infinity;
+    for(const i of this._islands){
+      const d = (pos.x - i.x) ** 2 + (pos.z - i.z) ** 2;
+      if(d < best){ best = d; isl = i; }
+    }
+    const grp = makeBuildingMesh(bldOrDef, {
+      level:      opts.level || 1,
+      rotated:    !!opts.rotated,
+      facingDeg:  opts.facingDeg,
+      team:       isl?.own || 'player',
+      outwardDeg: isl ? Math.atan2(pos.x - isl.x, pos.z - isl.z) * 180 / Math.PI : 0,
+      drop:       isl?.deckDropAt ? isl.deckDropAt(pos.x, pos.z) : 0,
+    });
+    // AQ: y=1.2 buried meshes inside the island — models stand ON the deck.
+    grp.position.set(pos.x, BUILD_DECK_Y, pos.z);
+    this._scene.add(grp);
+    return grp;
   }
 
   // Fix L2c: find building at world pos (checks all footprint cells)

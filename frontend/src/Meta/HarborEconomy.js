@@ -4,7 +4,7 @@
 
 import { BUILDINGS } from '../data/buildings.js';
 import { WOOD_CAP, GOLD_CAP, WOOD_RATE, GOLD_RATE } from '../data/constants.js';
-import { OFFLINE_MAX_SEC } from '../data/harbor.js';
+import { OFFLINE_MAX_SEC, HARBOR_ECONOMY } from '../data/harbor.js';
 
 const BY_ID = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
 
@@ -29,8 +29,12 @@ export function harborCaps(buildings) {
   return { wood: WOOD_CAP + bonus, gold: GOLD_CAP + bonus };
 }
 
-/** Wood/gold per second from base income + ready producers (no adjacency/traits). */
-export function harborRates(buildings) {
+/**
+ * Wood/gold per second from base income + ready producers (no adjacency/traits),
+ * on the harbor clock: × HARBOR_ECONOMY.rateMult (the same factor EconomySystem
+ * applies live in harbor mode via state.econRateMult).
+ */
+export function harborRates(buildings, rateMult = HARBOR_ECONOMY.rateMult) {
   let wood = WOOD_RATE, gold = GOLD_RATE;
   for (const b of buildings) {
     if (!isReady(b)) continue;
@@ -40,7 +44,7 @@ export function harborRates(buildings) {
     if (b.buildingId === 'lumber_mill') wood += p;
     else if (b.buildingId === 'gold_mine') gold += p;
   }
-  return { wood, gold };
+  return { wood: wood * rateMult, gold: gold * rateMult };
 }
 
 /**

@@ -142,6 +142,37 @@ export const MS = {
     away_finished: (nm) => `${nm} completed`,
     away_full: 'Storehouses are full',
     away_ok: 'Splendid!',
+
+    // ── campaign progress + how to win ──────────────────────
+    wc_campaign: (w, t) => `Campaign ${w}/${t}`,
+    wc_campaignTip: (w, t, s, m) => `Missions won ${w}/${t} · stars ${s}/${m}`,
+    wc_campaignDone: 'Campaign won',
+    wc_help: 'How to win',
+    help_title: 'How to win',
+    help_battle_h: 'Sea battles',
+    help_battle_1: 'Complete the mission objective: sink every enemy ship, destroy the enemy forts, hold out until the timer runs out, or capture the marked island.',
+    help_battle_2: 'You lose if every ship you brought is sunk, if you retreat, or if a time limit runs out.',
+    help_stars: 'Stars: ★ win · ★★ win without losing a ship · ★★★ also beat the par time.',
+    help_campaign_h: 'The campaign',
+    help_campaign_1: (nm, rank) => `Win the final battle, ${nm}, to complete the campaign and be named ${rank}.`,
+    help_campaign_2: 'Battles earn renown. Renown raises your admiral rank and opens new sea regions.',
+    help_fleet_h: 'Your fleet',
+    help_fleet_1: 'Ships sunk in battle come home as wrecks — salvage them in the Shipyard. Damaged ships come home damaged; repair them there too.',
+    help_war_h: 'Open War',
+    help_war_1: 'The classic match: push the War Front to 100% to win.',
+    help_ok: 'Understood',
+    br_campaign: 'Campaign won!',
+    br_campaignSub: (nm, rank) => `${nm} is won — you are ${rank}!`,
+
+    // ── world map ───────────────────────────────────────────
+    wc_cartoucheW: 'A New Chart of the World',
+    wc_cartoucheWSub: 'with the sea-roads of the East and West Indies',
+    wc_faction: 'Enemy colours',
+    lbl_america: 'America', lbl_brasil: 'Brasil', lbl_africa: 'Africa', lbl_europa: 'Europa',
+    lbl_arabia: 'Arabia', lbl_persia: 'Persia', lbl_india: 'India', lbl_china: 'China', lbl_asia: 'Asia',
+    lbl_holland: 'Nova Hollandia', lbl_newspain: 'Nueva España',
+    sea_atlantic: 'Oceanus Atlanticus', sea_indian: 'Mare Indicum', sea_pacific: 'Mar del Sur',
+    sea_ethiopic: 'Oceanus Æthiopicus', sea_north: 'Mar del Norte',
   },
 
   vi: {
@@ -250,9 +281,9 @@ export const MS = {
     // ── Battle result ───────────────────────────────────────
     br_victory: 'Chiến thắng', br_defeat: 'Thất bại', br_retreat: 'Rút lui',
     br_firstClear: 'Chiến thắng đầu tiên!',
-    br_spoils: 'Chiến lợi phẩm',
-    br_missionReward: 'Thưởng nhiệm vụ', br_plunder: 'Hàng cướp được',
-    br_plunderKept: (pct) => `Giữ lại hàng cướp được (${pct}%)`,
+    br_spoils: 'Phần thưởng',
+    br_missionReward: 'Thưởng nhiệm vụ', br_plunder: 'Chiến lợi phẩm',
+    br_plunderKept: (pct) => `Giữ lại chiến lợi phẩm (${pct}%)`,
     br_firstBonus: 'Thưởng chiến thắng đầu', br_total: 'Tổng cộng',
     br_time: 'Thời gian', br_par: (t) => `chuẩn ${t}`,
     br_fleet: 'Báo cáo hạm đội',
@@ -274,6 +305,37 @@ export const MS = {
     away_full: 'Kho đã đầy',
     away_ok: 'Tuyệt vời!',
 
+    // ── campaign progress + how to win ──────────────────────
+    wc_campaign: (w, t) => `Chiến dịch ${w}/${t}`,
+    wc_campaignTip: (w, t, s, m) => `Đã thắng ${w}/${t} nhiệm vụ · ${s}/${m} sao`,
+    wc_campaignDone: 'Đã chinh phục chiến dịch',
+    wc_help: 'Cách giành chiến thắng',
+    help_title: 'Cách giành chiến thắng',
+    help_battle_h: 'Hải chiến',
+    help_battle_1: 'Hoàn thành mục tiêu nhiệm vụ: đánh chìm toàn bộ tàu địch, phá huỷ pháo đài địch, cầm cự đến hết giờ hoặc chiếm hòn đảo được đánh dấu.',
+    help_battle_2: 'Bạn thua nếu mọi tàu mang theo đều bị đánh chìm, nếu bạn rút lui, hoặc khi hết thời gian giới hạn.',
+    help_stars: 'Sao: ★ chiến thắng · ★★ thắng mà không mất tàu nào · ★★★ thắng nhanh hơn thời gian chuẩn.',
+    help_campaign_h: 'Chiến dịch',
+    help_campaign_1: (nm, rank) => `Thắng trận cuối cùng, ${nm}, để hoàn thành chiến dịch và được phong ${rank}.`,
+    help_campaign_2: 'Mỗi trận đánh mang lại danh vọng. Danh vọng nâng quân hàm và mở ra những vùng biển mới.',
+    help_fleet_h: 'Hạm đội',
+    help_fleet_1: 'Tàu bị đánh chìm sẽ trở về cảng dưới dạng xác tàu — hãy trục vớt ở Xưởng tàu. Tàu hư hại vẫn mang thương tích về cảng; sửa chữa cũng tại đó.',
+    help_war_h: 'Đại chiến',
+    help_war_1: 'Trận đấu kinh điển: đẩy Mặt trận lên 100% để giành chiến thắng.',
+    help_ok: 'Đã hiểu',
+    br_campaign: 'Chiến dịch toàn thắng!',
+    br_campaignSub: (nm, rank) => `Đã chiến thắng ${nm} — bạn là ${rank}!`,
+
+    // ── world map ───────────────────────────────────────────
+    wc_cartoucheW: 'Tân Hải Đồ Thế Giới',
+    wc_cartoucheWSub: 'cùng các hải lộ Đông Ấn và Tây Ấn',
+    wc_faction: 'Cờ hiệu địch',
+    lbl_america: 'Châu Mỹ', lbl_brasil: 'Brasil', lbl_africa: 'Châu Phi', lbl_europa: 'Châu Âu',
+    lbl_arabia: 'Ả Rập', lbl_persia: 'Ba Tư', lbl_india: 'Ấn Độ', lbl_china: 'Trung Hoa', lbl_asia: 'Châu Á',
+    lbl_holland: 'Tân Hà Lan', lbl_newspain: 'Tân Tây Ban Nha',
+    sea_atlantic: 'Đại Tây Dương', sea_indian: 'Ấn Độ Dương', sea_pacific: 'Thái Bình Dương',
+    sea_ethiopic: 'Biển Nam Phi', sea_north: 'Bắc Đại Tây Dương',
+
     // ── data names (EN comes from data/*.js) ────────────────
     rank_captain: 'Thuyền trưởng', rank_commodore: 'Đề đốc', rank_rear_admiral: 'Chuẩn Đô đốc',
     rank_vice_admiral: 'Phó Đô đốc', rank_admiral: 'Đô đốc Quần đảo',
@@ -281,7 +343,7 @@ export const MS = {
     region_reef: 'Bãi San Hô', region_straits: 'Eo Gió Mặn', region_storm: 'Vùng Bão Tố',
     regiond_reef: 'Vùng nước ấm nơi bọn buôn lậu ẩn nấp giữa các rạn san hô.',
     regiond_straits: 'Eo biển hẹp do các thuyền trưởng cướp biển và khẩu đội của chúng trấn giữ.',
-    regiond_storm: 'Nước đen, hạm đội sắt và Thành Trì Bão Tố.',
+    regiond_storm: 'Nước đen, hạm đội sắt và Thành Bão Tố.',
 
     hull_sloop: 'Thuyền Sloop', hull_cutter: 'Thuyền Cutter', hull_schooner: 'Thuyền Schooner',
     hull_brigantine: 'Tàu Brigantine', hull_brig: 'Tàu Brig chiến', hull_corvette: 'Tàu hộ tống',
@@ -305,13 +367,13 @@ export const MS = {
     misd_storm_1: 'Mắc kẹt giữa cơn giông với tàu đột kích tứ phía. Hãy trụ vững cho đến khi bão tan.',
     mis_storm_2: 'Hạm đội Sắt',
     misd_storm_2: 'Hạm đội Sắt đang tiến đến phong toả các cảng của ta. Hãy đón đánh ngoài khơi và nhấn chìm chúng.',
-    mis_storm_3: 'Thành Trì Bão Tố',
-    misd_storm_3: 'Thành Trì thống trị Vùng Bão Tố. Tường thành, tàu galleon và chiến hạm của nó đều phải sụp đổ.',
+    mis_storm_3: 'Thành Bão Tố',
+    misd_storm_3: 'Thành Bão Tố thống trị cả vùng biển. Tường thành, tàu galleon và chiến hạm của nó đều phải sụp đổ.',
     mis_patrol: 'Tuần tra Cướp biển',
     misd_patrol: 'Càn quét hải phận lân cận để truy lùng cướp biển. Có thể lặp lại; càng lên quân hàm địch càng mạnh.',
 
     isle_gullhaven: 'Cảng Hải Âu', isle_lantern: 'Đá Đèn', isle_tw_n: 'Khẩu đội Bắc',
-    isle_tw_s: 'Khẩu đội Nam', isle_citadel: 'Thành Trì Bão Tố',
+    isle_tw_s: 'Khẩu đội Nam', isle_citadel: 'Thành Bão Tố',
   },
 };
 
@@ -345,13 +407,21 @@ function dataName(key, fallback) {
   return v === undefined ? fallback : (typeof v === 'function' ? v() : v);
 }
 
-export const hullName    = (h) => dataName('hull_' + h.id, h.nm);
-export const rankName    = (r) => dataName('rank_' + r.id, r.nm);
-export const regionName  = (r) => dataName('region_' + r.id, r.nm);
-export const regionDesc  = (r) => dataName('regiond_' + r.id, r.desc || '');
-export const missionName = (m) => dataName('mis_' + m.id, m.nm);
-export const missionDesc = (m) => dataName('misd_' + m.id, m.desc || '');
-export const isleName    = (i) => dataName('isle_' + i.id, i.nm);
+/** Vietnamese name/desc carried by the data record itself (faction.vi, sea.vi, mission.vi). */
+function viData(o, field) {
+  if (!o || lang() !== 'vi') return undefined;
+  if (field === 'nm') return o.vi || o.nmVi || o.nm_vi || undefined;
+  return o.descVi || o.desc_vi || o.vi_desc || undefined;
+}
+
+export const hullName    = (h) => viData(h, 'nm') ?? dataName('hull_' + h.id, h.nm);
+export const rankName    = (r) => viData(r, 'nm') ?? dataName('rank_' + r.id, r.nm);
+export const regionName  = (r) => viData(r, 'nm') ?? dataName('region_' + r.id, r.nm);
+export const regionDesc  = (r) => viData(r, 'desc') ?? dataName('regiond_' + r.id, r.desc || '');
+export const missionName = (m) => viData(m, 'nm') ?? dataName('mis_' + m.id, m.nm);
+export const missionDesc = (m) => viData(m, 'desc') ?? dataName('misd_' + m.id, m.desc || '');
+export const isleName    = (i) => viData(i, 'nm') ?? dataName('isle_' + i.id, i.nm);
+export const factionName = (f) => (f ? viData(f, 'nm') ?? f.nm ?? f.id ?? '' : '');
 export const className   = (c) => ms('cls_' + c);
 
 /** Locale-aware integer formatting (1,234 / 1.234). */

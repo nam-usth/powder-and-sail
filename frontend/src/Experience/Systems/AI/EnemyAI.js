@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { moveToward, separateFleet } from '../Naval/MovementSystem.js';
 import { DEFENSES, getDefenseStats } from '../../../data/defenses.js';
+import { BUILD_DECK_Y } from '../../../data/constants.js';
+import { makeBuildingMesh } from '../../World/BuildingModels.js';
 
 // ── EnemyAI v2 ────────────────────────────────────────────────────
 // Priority-weighted decision system with wolfpack tactics and adaptive
@@ -335,8 +337,10 @@ export class EnemyAI {
     this._repairTimer = 4 + Math.random() * 3;
 
     const enemyIslands = this._islands.filter(i => i.own === 'enemy');
+    const battle = st.mode === 'battle';
     for (const isl of enemyIslands) {
       if (isl.down) {
+        if (battle && !st.battleFortRebuild) continue;   // Sea Battle: data/harbor.js BATTLE.fortRebuild
         isl._aiRepairProgress = (isl._aiRepairProgress || 0) + 1;
         if (isl._aiRepairProgress >= 4) {
           isl._aiRepairProgress = 0;
@@ -348,7 +352,9 @@ export class EnemyAI {
 
       isl._aiRepairProgress = 0;
       if (isl.hp < isl.maxHp) {
-        isl.hp = Math.min(isl.maxHp, isl.hp + Math.max(6, isl.maxHp * 0.06));
+        // Sea Battle: mission.fortRegen ?? BATTLE.fortRegen (fraction of max HP per tick)
+        const heal = battle ? isl.maxHp * (st.battleFortRegen ?? 0.06) : Math.max(6, isl.maxHp * 0.06);
+        isl.hp = Math.min(isl.maxHp, isl.hp + heal);
         isl.drawHP(isl.hp / isl.maxHp);
       }
 
@@ -372,12 +378,19 @@ export class EnemyAI {
     }
   }
 
+  // AW-art: the same period models the player builds (World/BuildingModels),
+  // squeezed into the single cell the AI reserves, standing on the island deck.
   _spawnDefenseMesh(inst) {
-    const mat  = new THREE.MeshStandardMaterial({ color: 0x5a3a3a, roughness: 0.8 });
-    const geo  = new THREE.CylinderGeometry(0.6, 0.8, 1.4, 8);
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(inst.worldX, 1.5, inst.worldZ);
-    mesh.castShadow = true;
+    const def = DEFENSES.find(d => d.id === inst.buildingId) || { id: inst.buildingId, footprint: { w: 1, h: 1 } };
+    const fp  = def.footprint || { w: 1, h: 1 };
+    const isl = this._islands.find(i => Math.hypot(i.x - inst.worldX, i.z - inst.worldZ) < i.r + 4);
+    const mesh = makeBuildingMesh(def, {
+      team: isl?.own || 'enemy', level: inst.level || 1, facingDeg: inst.facingDeg,
+      outwardDeg: isl ? Math.atan2(inst.worldX - isl.x, inst.worldZ - isl.z) * 180 / Math.PI : 0,
+      drop: isl?.deckDropAt ? isl.deckDropAt(inst.worldX, inst.worldZ) : 0,
+      fit: 1 / Math.max(fp.w, fp.h),
+    });
+    mesh.position.set(inst.worldX, BUILD_DECK_Y, inst.worldZ);
     this._scene?.add(mesh);
     inst.mesh = mesh;
   }

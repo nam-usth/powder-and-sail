@@ -1,6 +1,7 @@
 import { MAP } from '../../../data/constants.js';
 import { HULL_HANDLING, BRAKE_MULT } from '../../../data/ships.js';
 import { StatusEffects } from '../Combat/StatusEffects.js';
+import { islandCircles } from './Navigation.js';
 
 // ── MOVEMENT SYSTEM ─────────────────────────────────────────────
 // AU: steering is frame-rate independent and hull-aware. Ships turn at most
@@ -12,7 +13,7 @@ import { StatusEffects } from '../Combat/StatusEffects.js';
 const TURN_GAIN = 4.2;   // 1/s — matches the old 0.07-per-frame feel at 60 fps
 
 export function isBlocked(x, z, islands, mg=1.8){
-  return islands.some(i => {
+  return islandCircles(islands).some(i => {
     const dx=x-i.x, dz=z-i.z;
     return dx*dx + dz*dz < (i.r+mg)**2;
   });
@@ -20,7 +21,7 @@ export function isBlocked(x, z, islands, mg=1.8){
 
 export function steerAvoid(ship, islands){
   let ax=0, az=0;
-  for(const i of islands){
+  for(const i of islandCircles(islands)){
     const dx=ship.x-i.x, dz=ship.z-i.z;
     const d=Math.sqrt(dx*dx+dz*dz), cl=i.r+7;
     if(d<cl && d>.1){
@@ -110,7 +111,8 @@ export function advance(ship, dt, islands){
     ship._stuckFrames=(ship._stuckFrames||0)+1;
     if(ship._stuckFrames>30){
       let near=null, nearD=Infinity;
-      islands.forEach(i=>{ const d=Math.hypot(ship.x-i.x,ship.z-i.z); if(d<nearD){nearD=d;near=i;} });
+      islandCircles(islands).forEach(i=>{ const d=Math.hypot(ship.x-i.x,ship.z-i.z)-i.r; if(d<nearD){nearD=d;near=i;} });
+      if(near) nearD+=near.r;
       if(near){
         const ex=ship.x-near.x, ez=ship.z-near.z, ed=Math.sqrt(ex*ex+ez*ez)||1;
         ship.x+=(ex/ed)*(near.r+2.5-nearD+.5);

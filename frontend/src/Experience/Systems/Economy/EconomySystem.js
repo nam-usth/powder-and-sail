@@ -15,14 +15,18 @@ export class EconomySystem {
     const st=this._state;
     if(st.gameOver) return;
 
+    // AW: the harbor runs the same economy on a slower clock (data/harbor.js
+    // HARBOR_ECONOMY.rateMult, set by HarborSession); Open War leaves it at 1.
+    const k = st.econRateMult ?? 1;
+
     // Base resource tick (1/s)
     st.econTimer+=dt;
     if(st.econTimer>=1){
       st.econTimer=0;
       const capW = WOOD_CAP + (st._warehouseCapBonus||0);
       const capG = GOLD_CAP + (st._warehouseCapBonus||0);
-      st.resWood = Math.min(capW, st.resWood + WOOD_RATE);
-      st.resGold = Math.min(capG, st.resGold + GOLD_RATE);
+      if(st.resWood < capW) st.resWood = Math.min(capW, st.resWood + WOOD_RATE*k);
+      if(st.resGold < capG) st.resGold = Math.min(capG, st.resGold + GOLD_RATE*k);
     }
 
     // Building production — get rates from BuildSystem, apply+clamp ONCE here
@@ -30,8 +34,8 @@ export class EconomySystem {
       const {woodRate, goldRate} = this._build.getProductionRates();
       const capW = WOOD_CAP + (st._warehouseCapBonus||0);
       const capG = GOLD_CAP + (st._warehouseCapBonus||0);
-      if(woodRate>0) st.resWood = Math.min(capW, st.resWood + woodRate*dt);
-      if(goldRate>0) st.resGold = Math.min(capG, st.resGold + goldRate*dt);
+      if(woodRate>0 && st.resWood < capW) st.resWood = Math.min(capW, st.resWood + woodRate*k*dt);
+      if(goldRate>0 && st.resGold < capG) st.resGold = Math.min(capG, st.resGold + goldRate*k*dt);
     }
 
     // AN/G2: floating "+N" income ticks above each producing building.
@@ -46,7 +50,7 @@ export class EconomySystem {
         if(x == null) return;
         const wood = id === 'lumber_mill';
         this._vfx.floatText(x, (mp?.y ?? 2) + 2.4, z,
-          `+${Math.round(prod*3)} ${wood ? '🪵' : '🪙'}`,
+          `+${Math.round(prod*3*k)} ${wood ? '🪵' : '🪙'}`,
           { col: wood ? '#b8e09a' : '#f1d27a', size: 12, life: 1.5, rise: 1.9, weight: 500 });
       });
     }
