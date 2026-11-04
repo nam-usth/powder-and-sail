@@ -163,37 +163,59 @@ function genSprawl(seed) {
   return valid;
 }
 
-// ── HARBOR — the home port: land wrapped round a natural bay ────
-// AW: one big island (r ≈ 30) around an elliptical bay that opens south
-// (+Z, toward the RTS camera) through a channel. A straight stone quay closes
-// the bay's north side; finger piers run south from it. The land outline is
-// an analytic signed distance (world units, island-local) shared by the grid
-// (here) and the terrain mesh (World/IslandEntity), so they always agree.
+// ── HARBOR — the home port: a natural island with a sheltered cove ──
+// AW (rev 2): the coast is an irregular outline (headlands, coves), the
+// harbor is a lobed cove — not a ring — that opens south-east (+Z, toward
+// the RTS camera) through a winding inlet. A straight stone quay (man-made)
+// closes the cove's north side; finger piers run south from it. The land
+// outline is an analytic signed distance (world units, island-local) shared
+// by the grid (here) and the terrain mesh (World/IslandEntity).
 export const HARBOR = Object.freeze({
-  outerR: 27.5,                                   // outer coast radius
-  bay:    { x: 0, z: 7, rx: 14.5, rz: 11 },       // bay ellipse
-  quayZ:  -2.5,                                   // straight quay line (north edge of the bay)
-  mouth:  { z0: 12, z1: 44, r: 6.5 },             // channel to the open sea (|x| < r)
-  islets: [[-10.5, 33.5, 2.7], [10.8, 34.6, 2.3], [-6.2, 38.2, 1.25], [6.8, 39.5, 1.05]],
+  outerR: 27.5,                                   // mean coast radius (see harborCoastR)
+  // cove = smooth union of lobes; the first lobe holds the quay
+  bay:    { x: 0, z: 7, rx: 14.5, rz: 11 },       // main lobe (quay + piers live here)
+  lobes:  [[0.5, 7.5, 14.5, 10.5], [-9.5, 12.5, 6.5, 5.2], [10.5, 14.5, 6.0, 6.5]],
+  quayZ:  -2.5,                                   // straight quay line (north edge of the cove)
+  inlet:  [[3, 15, 7.0], [7.5, 22, 6.2], [5.5, 29, 5.6], [10.5, 37, 5.4], [13, 46, 6.0]], // winding channel [x,z,r]
+  coast:  [[2, 3.4, 0.6], [3, 2.2, 2.1], [5, 1.3, 0.3], [7, 0.7, 1.9], [11, 0.35, 4.0]],   // [k, amp, phase]
+  islets: [[-2.5, 37.5, 2.6], [19.5, 33.5, 2.2], [-5.5, 41.0, 1.25], [18.0, 39.5, 1.0]],
   cellWorld: 2.4,                                 // = BUILD_CELL_WORLD (pure data module)
   cellMargin: 2.4,                                // cells keep ≥ this from the water (quay strip)
 });
 
-/** Signed distance to the bay + mouth water (negative inside the water). */
+/** Coast radius at local (x, z): mean radius modulated by low-frequency harmonics. */
+export function harborCoastR(x, z) {
+  const t = Math.atan2(x, z);
+  let r = HARBOR.outerR;
+  for (const [k, amp, ph] of HARBOR.coast) r += amp * Math.sin(k * t + ph);
+  return r;
+}
+
+const _smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
+
+/** Signed distance to the cove + inlet water (negative inside the water). */
 export function harborWaterSDF(x, z) {
-  const b = HARBOR.bay;
-  const qx = (x - b.x) / b.rx, qz = (z - b.z) / b.rz;
-  let bay = (Math.hypot(qx, qz) - 1) * Math.min(b.rx, b.rz);
-  bay = Math.max(bay, HARBOR.quayZ - z);                       // flat quay edge
-  const m = HARBOR.mouth;
-  const tz = Math.max(m.z0, Math.min(m.z1, z));
-  const mouth = Math.hypot(x, z - tz) - m.r;
-  return Math.min(bay, mouth);
+  let bay = Infinity;
+  for (const [cx, cz, rx, rz] of HARBOR.lobes) {
+    const d = (Math.hypot((x - cx) / rx, (z - cz) / rz) - 1) * Math.min(rx, rz);
+    bay = _smin(bay, d, 3.0);
+  }
+  bay += 0.55 * Math.sin(x * 0.42 + 1.3) * Math.sin(z * 0.37 - 0.4);   // ragged natural shore
+  bay = Math.max(bay, HARBOR.quayZ - z);                                 // flat quay edge
+  const pts = HARBOR.inlet;
+  let inlet = Infinity;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [ax, az, ar] = pts[i], [bx, bz, br] = pts[i + 1];
+    const dx = bx - ax, dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+    inlet = Math.min(inlet, Math.hypot(x - ax - dx * t, z - az - dz * t) - (ar + (br - ar) * t));
+  }
+  return _smin(bay, inlet, 2.5);
 }
 
 /** Signed distance to HARBOR land (negative on land), islets included. */
 export function harborLandSDF(x, z) {
-  let d = Math.max(Math.hypot(x, z) - HARBOR.outerR, -harborWaterSDF(x, z));
+  let d = Math.max(Math.hypot(x, z) - harborCoastR(x, z), -harborWaterSDF(x, z));
   for (const [ix, iz, ir] of HARBOR.islets) d = Math.min(d, Math.hypot(x - ix, z - iz) - ir);
   return d;
 }

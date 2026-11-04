@@ -171,7 +171,7 @@ window.addEventListener('DOMContentLoaded', () => {
     rangeFill: 'filled',
     quality:   _lowEnd ? 'low' : 'high',
     shadows:   _lowEnd ? 'off' : 'on',
-    theme:     'admiralty',
+    theme:     'parchment',
   };
 
   function loadGfx()  { try { return { ...GFX_DEFAULTS, ...JSON.parse(localStorage.getItem(GFX_KEY)) }; } catch { return { ...GFX_DEFAULTS }; } }

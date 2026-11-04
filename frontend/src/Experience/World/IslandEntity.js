@@ -19,7 +19,7 @@ import * as THREE from 'three';
 // GFX: follows Render/GfxQuality (gfx.level) live; setIslandQuality('high'|'low')
 // overrides. HIGH adds ground detail shading, palm sway, stone-shaded boulders,
 // shrubs, contact shadows, pier/fort/harbour props; LOW halves vegetation.
-import { generateShape, mirrorShape, GRID, makePrng, HARBOR, harborWaterSDF } from '../../data/islandShapes.js';
+import { generateShape, mirrorShape, GRID, makePrng, HARBOR, harborWaterSDF, harborCoastR, harborLandSDF } from '../../data/islandShapes.js';
 import { BUILD_CELL_WORLD, BUILD_DECK_Y } from '../../data/constants.js';
 import { ModelKit, PALETTE as P, kindMaterial, teamMaterial, chiselledRock,
          contactShadowTexture, setBuildingQuality, updateModelLighting, makeBuildingMesh } from './BuildingModels.js';
@@ -645,7 +645,7 @@ export class IslandEntity {
   // a fort islet at the centre, coastline noise, held inside the sailing radius.
   _sdf(x, z) {
     if (this.isHarbor) {
-      const dOut = Math.hypot(x, z) - HARBOR.outerR + (fbm(x * 0.17 + 4.0, z * 0.17) - 0.5) * 1.0;
+      const dOut = Math.hypot(x, z) - harborCoastR(x, z) + (fbm(x * 0.17 + 4.0, z * 0.17) - 0.5) * 1.4;
       let d = Math.max(dOut, -harborWaterSDF(x, z));
       for (const [ix, iz, ir] of HARBOR.islets)
         d = Math.min(d, Math.hypot(x - ix, z - iz) - ir + (fbm(x * 0.6 + ix, z * 0.6) - 0.5) * 1.2);
@@ -886,15 +886,30 @@ export class IslandEntity {
     this._quayHalf = b.rx * Math.sqrt(Math.max(0, 1 - ((q - b.z) / b.rz) ** 2));
     this._pierXs = [-6.4, 0, 6.4];
     this._pierLen = 11;
-    this._fortLocal  = { x: 12.6, z: 21.6 };
-    this._lightLocal = { x: -12.9, z: 22.0 };
-    this._noDecor.push([12.6, 21.6, 4.6], [-12.9, 22.0, 3.2], [-10.5, 33.5, 3.2], [10.8, 34.6, 2.8]);
-    // outer sea walls: two arcs on the flanks, bastions at the ends and middle
+    // landmarks snap to solid ground near their wanted spot (the coast is irregular)
+    const onLand = (x0, z0, need) => {
+      let best = [x0, z0], bd = Infinity;
+      for (let r = 0; r <= 12; r += 0.8) for (let a = 0; a < TAU; a += 0.35) {
+        const x = x0 + Math.sin(a) * r, z = z0 + Math.cos(a) * r, d = harborLandSDF(x, z);
+        if (d < -need && r < bd) { bd = r; best = [x, z]; }
+        if (bd < Infinity) break;
+      }
+      return { x: best[0], z: best[1] };
+    };
+    this._lightLocal = onLand(-15.5, 19.0, 2.4);      // west headland over the cove
+    this._fortLocal  = onLand(17.5, 22.0, 3.2);       // east point commanding the inlet
+    this._noDecor.push([this._fortLocal.x, this._fortLocal.z, 4.6], [this._lightLocal.x, this._lightLocal.z, 3.2]);
+    HARBOR.islets.slice(0, 2).forEach(([x, z, r]) => this._noDecor.push([x, z, r + 0.6]));
+    // sea walls along the exposed north-west and north-east shores, set back from the coast
     this._wallArcs = [];
-    for (const side of [-1, 1]) {
+    for (const [a0, a1] of [[-2.55, -1.55], [1.75, 2.65]]) {
       const pts = [];
-      for (let a = 0.8; a <= 1.86; a += 0.106) pts.push([side * Math.sin(a) * 25.4, Math.cos(a) * 25.4, a]);
-      this._wallArcs.push({ side, pts });
+      for (let a = a0; a <= a1 + 1e-6; a += 0.1) {
+        const sx = Math.sin(a), sz = Math.cos(a);
+        let R = 28; while (R > 8 && harborLandSDF(sx * R, sz * R) > -2.2) R -= 0.25;
+        pts.push([sx * R, sz * R, a]);
+      }
+      this._wallArcs.push({ side: Math.sign(a0), pts });
       pts.forEach(([x, z]) => this._noDecor.push([x, z, 2.1]));
     }
     // berths: both sides of every finger pier, two ships deep, bows to the mouth
@@ -969,7 +984,8 @@ export class IslandEntity {
           const [ax, az] = pts[i], [bx, bz] = pts[i + 1];
           const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
           k.box('matte', L + 0.1, 3.0, 0.95, (ax + bx) / 2, D - 1.6, (az + bz) / 2, faces(P.stone, P.stoneLt), { ry: Math.atan2(-dz, dx), jit: 0.08 });
-          k.box('matte', L + 0.1, 0.32, 0.3, (ax + bx) / 2 + (ax + bx) / 2 / 25.4 * 0.32, D + 1.4, (az + bz) / 2 + (az + bz) / 2 / 25.4 * 0.32, P.stone, { ry: Math.atan2(-dz, dx) });
+          const mx = (ax + bx) / 2, mz = (az + bz) / 2, ml = Math.hypot(mx, mz) || 1;
+          k.box('matte', L + 0.1, 0.32, 0.3, mx + mx / ml * 0.32, D + 1.4, mz + mz / ml * 0.32, P.stone, { ry: Math.atan2(-dz, dx) });
         }
         for (const i of [0, Math.floor(pts.length / 2), pts.length - 1]) {
           const [x, z] = pts[i], ry = Math.atan2(x, z);
@@ -990,10 +1006,11 @@ export class IslandEntity {
     lh.position.set(this._lightLocal.x, DECK, this._lightLocal.z);
     this.grp.add(lh);
     const bat = makeBuildingMesh({ id: 'culverin_battery', footprint: { w: 2, h: 1 } }, { team: this._own, fit: 0.68, facingDeg: 0, outwardDeg: 0 });
-    bat.position.set(-10.5, this._heightAt(-10.5, 33.5), 33.5);
+    const [i0, i1] = HARBOR.islets;
+    bat.position.set(i0[0], this._heightAt(i0[0], i0[1]), i0[1]);
     bat.rotation.y = -0.25;
     const wt = makeBuildingMesh({ id: 'watchtower', footprint: { w: 1, h: 1 } }, { team: this._own, fit: 0.95, facingDeg: 10, outwardDeg: 10 });
-    wt.position.set(10.8, this._heightAt(10.8, 34.6), 34.6);
+    wt.position.set(i1[0], this._heightAt(i1[0], i1[1]), i1[1]);
     this.grp.add(bat, wt);
     this._harborProps = [lh, bat, wt];
 
@@ -1018,7 +1035,7 @@ export class IslandEntity {
   _buildColliders() {
     const cand = [];
     for (let z = -32; z <= 30; z += 2.5) for (let x = -32; x <= 32; x += 2.5) {
-      const d = Math.max(Math.hypot(x, z) - HARBOR.outerR, -harborWaterSDF(x, z));
+      const d = Math.max(Math.hypot(x, z) - harborCoastR(x, z), -harborWaterSDF(x, z));
       if (d < -1.4) cand.push([x, z, Math.min(-d, 8)]);
     }
     cand.sort((a, b) => b[2] - a[2]);
