@@ -24,6 +24,7 @@ import { BUILD_CELL_WORLD, BUILD_DECK_Y } from '../../data/constants.js';
 import { ModelKit, PALETTE as P, kindMaterial, teamMaterial, chiselledRock,
          contactShadowTexture, setBuildingQuality, updateModelLighting, makeBuildingMesh } from './BuildingModels.js';
 import { getWaveHeight } from './Ocean.js';
+import { planHarborTown, townPathAt, dressHarborTown, makeChimneySmoke } from './HarborTown.js';
 import { time } from '../Time.js';
 import { gfx } from '../Render/GfxQuality.js';
 
@@ -69,6 +70,10 @@ const C = {
   earth: new THREE.Color(0x8C7152), rockBank: new THREE.Color(0x8F877A), bed: new THREE.Color(0x4F8A87),
 };
 const ASIAN = new Set(['malay', 'chinese', 'vietnamese', 'malabar']);
+/** Seas whose islands carry the Asian biome (broadleaf, bamboo, darker basalt). */
+const ASIAN_SEAS = new Set(['indian', 'spice', 'southchina']);
+/** Unclaimed (no faction) islands take the local building tradition of their sea. */
+const REGION_FORT = { caribbean: 'castillo', atlantic: 'battery', indian: 'laterite', spice: 'kota', southchina: 'chinese' };
 const FORT_STYLE = {
   spain: 'castillo', portugal: 'fortaleza', netherlands: 'starfort', england: 'battery', france: 'battery',
   chinese: 'chinese', malay: 'kota', vietnamese: 'thanh', buccaneers: 'palisade', malabar: 'laterite',
@@ -589,8 +594,11 @@ export class IslandEntity {
 
     // AW-art: style + biome
     this.faction   = def.faction || null;
-    this.fortStyle = FORT_STYLE[def.faction] || 'castillo';
-    this.biome     = def.biome || (ASIAN.has(def.faction) ? 'asia' : 'caribbean');
+    this.region    = def.region || null;
+    this.fortStyle = FORT_STYLE[def.faction] || REGION_FORT[def.region] || 'castillo';
+    this.biome     = def.biome || (ASIAN.has(def.faction) || ASIAN_SEAS.has(def.region) ? 'asia' : 'caribbean');
+    // art pass 2: battle forts were toy-sized on r 10-14 islands; scale them with the island
+    this._fortScale = def.shape === 'HARBOR' ? 1 : Math.max(1, Math.min(1.55, (def.r || 7) / 7.5));
     this._seed     = (def.seed || 1) * 7 + Math.round((def.x || 0) * 3 + (def.z || 0) * 5);
 
     this.grp = new THREE.Group();
@@ -782,6 +790,8 @@ export class IslandEntity {
             t.setHex(0xC9BCA2).multiplyScalar(flag);
             c.lerp(t, pave);
           }
+          const street = townPathAt(this._town, x, z);
+          if (street > 0) c.lerp(t.setHex(0xB09A74).multiplyScalar(0.94 + 0.1 * n), street * 0.85);
         }
       } else if (this.isHarbor && h > 0.28) {                    // grey rock cliff, strata, grassy lip
         const strata = 0.85 + 0.15 * Math.sin(h * 9 + n * 4);
@@ -820,15 +830,15 @@ export class IslandEntity {
     const forest = this.isHarbor;   // the home port's hills carry a broadleaf forest
     for (let tries = 0; tries < (this.isHarbor ? 6000 : 1400); tries++) {
       const x = (rnd() * 2 - 1) * E, z = (rnd() * 2 - 1) * E;
-      if (!this.isHarbor && Math.hypot(x, z) < 3.4) continue;              // fort
+      if (!this.isHarbor && Math.hypot(x, z) < 3.4 * this._fortScale) continue;   // fort
       if (this._noDecor.some(([nx, nz, nr]) => (x - nx) ** 2 + (z - nz) ** 2 < nr * nr)) continue;
       const d = this._sdf(x, z), h = this._heightAtD(x, z, d);
       if (h < -0.6 || this._inCell(x, z, 0.3)) continue;
       if (this.isHarbor && (this._paveAt(x, z) > 0.2 || harborWaterSDF(x, z) < 2.2)) continue;
       const roll = rnd();
       if (h > 0.4 && (d > -0.9 || (forest && h > DECK + 0.2)) && d < 1.45) {
-        if (asia && roll < 0.28 && h > 0.8 && free(x, z, 1.0)) { trees.push([x, h, z, 0.85 + rnd() * 0.35]); taken.push([x, z, 1.0]); continue; }
-        if (asia && roll < 0.46 && h > 0.8 && free(x, z, 0.8)) { bamboo.push([x, h, z, 0.85 + rnd() * 0.3]); taken.push([x, z, 0.8]); continue; }
+        if (asia && roll < 0.34 && h > 0.8 && free(x, z, 1.0)) { trees.push([x, h, z, 0.85 + rnd() * 0.35]); taken.push([x, z, 1.0]); continue; }
+        if (asia && roll < 0.58 && h > 0.8 && free(x, z, 0.8)) { bamboo.push([x, h, z, 0.85 + rnd() * 0.3]); taken.push([x, z, 0.8]); continue; }
         if (!asia && roll < (forest && h > DECK + 0.25 ? 0.55 : 0.1) && h > 0.9 && free(x, z, 1.0)) { trees.push([x, h, z, 0.75 + rnd() * 0.35]); taken.push([x, z, 1.0]); continue; }
         if (roll < 0.78 && free(x, z, 0.95)) { palms.push([x, h, z, 0.82 + rnd() * 0.38]); taken.push([x, z, 0.95]); continue; }
         if (h > 0.75 && free(x, z, 0.5)) { shrubs.push([x, h, z, 0.7 + rnd() * 0.6]); taken.push([x, z, 0.5]); }
@@ -841,7 +851,7 @@ export class IslandEntity {
     const perim = this.isHarbor ? 70 : Math.max(8, Math.round(this.r * 1.5));
     this._decorSets = {
       palms: cap(palms, asia ? Math.round(perim * 0.55) : perim),
-      trees: cap(trees, Math.round(perim * 0.45)), bamboo: cap(bamboo, Math.round(perim * 0.35)),
+      trees: cap(trees, Math.round(perim * (asia ? 0.6 : 0.45))), bamboo: cap(bamboo, Math.round(perim * 0.45)),
       shrubs: cap(shrubs, perim), rocks: cap(rocks, Math.round(perim * 0.9)),
     };
     const S = this._decorSets;
@@ -931,6 +941,7 @@ export class IslandEntity {
       pts.forEach(([x, z]) => this._noDecor.push([x, z, 2.1]));
     }
     this._planRim();
+    this._town = planHarborTown(this);              // decorative town off the build grid (World/HarborTown.js)
     // berths: both sides of every finger pier, two ships deep, bows to the mouth
     const q = HARBOR.quayZ;
     for (const px of this._pierXs) for (const sd of [-1, 1]) for (const bz of [q + 3.8, q + 9.0])
@@ -1150,6 +1161,7 @@ export class IslandEntity {
     for (let tries = 0; tries < 900 && extra < 22; tries++) {
       const x = (rnd() * 2 - 1) * 30, z = (rnd() * 2 - 1) * 30, h = this._heightAt(x, z);
       if (h < DECK + 0.9 || this._inCell(x, z, 0.8)) continue;
+      if (this._town.lots.some(l => (x - l.x) ** 2 + (z - l.z) ** 2 < (l.r + 1.2) ** 2)) continue;
       const gx = this._heightAt(x + 0.6, z) - this._heightAt(x - 0.6, z), gz = this._heightAt(x, z + 0.6) - this._heightAt(x, z - 0.6);
       if (Math.hypot(gx, gz) < 0.55) continue;
       const r = 0.8 + rnd() * 0.8;
@@ -1235,6 +1247,7 @@ export class IslandEntity {
       k.box('matte', 0.02, 0.85, 0.02, 1.4, D + 1.15, q + 1.55, P.rope);
       k.box('matte', 0.42, 0.32, 0.42, 1.4, D + 0.85, q + 1.55, faces(P.plankLt, P.wood), { hi });
       this._dressRim(k);
+      dressHarborTown(k, this._town);
       // outer sea walls with bastions and domed garitas
       for (const arc of this._wallArcs) {
         const pts = arc.pts;
@@ -1256,6 +1269,8 @@ export class IslandEntity {
       return k.bake(tier === 'high');
     }));
     this._buildCliffRocks();
+    this._smoke = makeChimneySmoke(this._town.chimneys, SHARED.time);
+    if (this._smoke) this.grp.add(this._smoke);
     this._harborDress = { group: new THREE.Group(), build, meshes: [] };
     this.grp.add(this._harborDress.group);
     this._setHarborTier(_quality);
@@ -1360,12 +1375,13 @@ export class IslandEntity {
     this.fgrp = new THREE.Group();
     const fp = this._fortLocal || { x: 0, z: 0 };
     this.fgrp.position.set(fp.x, DECK, fp.z);
+    this.fgrp.scale.setScalar(this._fortScale);
     this.fgrp.name = 'fort:' + this.fortStyle;
     this._fortMeshes = [];
     this._fortTier = null;
     this._setFortTier(_quality);
     const { spec } = fortGeos(this.fortStyle, this._own, this.faction, _quality);
-    this._fireY = DECK + spec.fireY + 0.6;
+    this._fireY = DECK + spec.fireY * this._fortScale + 0.6;
     // team flag on a pole (sways)
     this._flags = [];
     for (const [fx, fy, fz, fw, fh] of spec.flags) {
@@ -1448,6 +1464,7 @@ export class IslandEntity {
       this._cliffRocks.count = hi ? this._cliffRocks.userData.fullCount : this._cliffRocks.userData.lowCount;
     }
     if (this._boat) this._boat.visible = hi;
+    if (this._smoke) this._smoke.visible = hi;
     this._setPierTier(_quality);
     this._setHarborTier(_quality);
     if (!this.down) this._setFortTier(_quality);
@@ -1481,7 +1498,7 @@ export class IslandEntity {
     const rubbleMat = cached('rubbleMat', () => new THREE.MeshStandardMaterial({ color: 0x8a7a62, roughness: 1 }));
     for (let k = 0; k < 7; k++) {
       const rub = new THREE.Mesh(geo, rubbleMat);
-      const a = Math.random() * Math.PI * 2, r = Math.random() * 2.2, s = 0.25 + Math.random() * 0.45;
+      const a = Math.random() * Math.PI * 2, r = Math.random() * 2.2 * this._fortScale, s = (0.25 + Math.random() * 0.45) * this._fortScale;
       rub.scale.set(s, s * 0.7, s);
       rub.position.set((this._fortLocal?.x || 0) + Math.cos(a) * r, DECK + s * 0.25, (this._fortLocal?.z || 0) + Math.sin(a) * r);
       rub.rotation.set(Math.random() * 3, Math.random() * Math.PI, Math.random() * 3);

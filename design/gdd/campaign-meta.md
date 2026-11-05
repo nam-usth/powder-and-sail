@@ -18,9 +18,21 @@ with histories, ranks earned through renown.
    `REPAIR_SEC_PER_HP × missingHp`. Ships moored in the harbor also regen
    slowly through the existing repair aura.
 4. Salvage (wreck): `SALVAGE_COST_FRAC` of build cost, `SALVAGE_SEC` → ready at full HP.
-5. Fleet cap for battle = `FLEET_CAP_BASE + shipyardLevelSum + barracks bonus`, max `FLEET_CAP_MAX`.
+5. Fleet cap for battle = `FLEET_CAP_BASE + (shipyard level − 1) + Σ barracks bonus`
+   (barracks Lv 1/3/5/7 → +1 each), max `FLEET_CAP_MAX`. A Barracks needs a
+   Research Lab at Lv 2 — the UI must say so: `Shipyard.fleetCapBreakdown(profile)`
+   returns the parts and the next steps with their blockers;
+   `Shipyard.buildingRequirements(profile, id)` and `labLevel(profile)` explain
+   any locked building; `Shipyard.buildBlockers(profile, hullId)` lists every
+   reason a hull cannot be laid down (`canBuild(...).blockers`).
 6. Missions unlock when all `requires` missions are won and renown ≥ region `minRenown`.
-7. Patrol (repeatable): random enemy mix scaled by Admiral rank; reward scaled.
+7. Patrol (repeatable): enemies from the frontier sea sized to the ships that
+   sail. Size-aware: budget = `ratioBySize[n] ?? strengthRatio` × Σ strength
+   (1 ship 0.30, 2 ships 0.38, 3+ 0.45); at most `n` enemy ships for fleets of
+   1–2 (n + `maxExtraShips` from 3 up); when even the weakest pool hull is over
+   budget, one `minFoe` trimmed to the budget with tier-I `loneLoadout`. A lone
+   salvaged hull can always win a patrol (no death spiral). Reward scales with
+   the strength met.
 8. Admiral rank from renown thresholds `RANKS`.
 
 ## Formulas

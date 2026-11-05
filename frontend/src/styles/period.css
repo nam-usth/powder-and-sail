@@ -1520,7 +1520,9 @@ body.lang-vi #top-header .hl { font-family: "Pirata One", "EB Garamond", serif !
 .snd-mute:focus-visible { outline: 2px solid var(--pd-azure); outline-offset: 2px; }
 
 /* help card: key legend in five columns + "how to win" footer */
-#help-modal .help-card { max-width: min(980px, calc(100vw - 24px)) !important; }
+#help-modal { z-index: 1000 !important; }
+#help-modal .help-card { width: min(1000px, calc(100vw - 24px)); max-width: min(1000px, calc(100vw - 24px)) !important; box-sizing: border-box; }
+.help-grid.hc5 .help-col { font-size: 13px !important; line-height: 1.75 !important; }
 .help-grid.hc5 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 16px !important; }
 .help-col > div { break-inside: avoid; }
 .help-col .hk-note { font: italic 400 12.5px/1.45 var(--pd-f-fell); color: var(--pd-ink-2); margin-top: 4px; }
@@ -1619,3 +1621,8 @@ body.lang-ja .ob-title, body.lang-ja .ob-btn, body.lang-ja .help-hdr b, body.lan
 body.lang-ja .help-sec, body.lang-ja .settings-section-label, body.lang-ja .help-win h4, body.lang-ja .help-win section b {
   font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "EB Garamond", serif !important; letter-spacing: 0 !important;
 }
+/* the harbor bar lives on <body>, above #ui's stacking context: tuck it away
+   while a #ui modal (help · settings) is open so it cannot cover the card */
+body:has(#help-modal.open, #help-modal.pm-open, #settings-modal.open, #settings-modal.pm-open) .hb-bar { visibility: hidden; }
+body:has(#warfront) #hud-top { top: 108px !important; }      /* clear the war-front beam (Open War) */
+@media (max-width: 760px) { body:has(#warfront) #hud-top { top: 142px !important; } }

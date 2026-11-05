@@ -1199,8 +1199,9 @@ class BasePlayer {
     const c = dir.ctx;
     this.dir = dir; this.id = id; this.score = score; this.b = dir.band;
     this.state = 'idle'; this.stopAt = null;
-    const fg = c.createGain(), sg = c.createGain();
-    fg.connect(dir.mix); sg.connect(dir.revIn);
+    const fg = c.createGain(), sg = c.createGain(), tr = c.createGain(), trs = c.createGain();
+    fg.connect(tr); tr.connect(dir.mix); sg.connect(trs); trs.connect(dir.revIn);   // tr/trs: per-region loudness trim
+    this._trim = [tr, trs];
     this.fader = new Fader(fg.gain, 0); this.sendFader = new Fader(sg.gain, 0);
     this._fg = fg; this._sg = sg;
     this.ch = {};
@@ -1212,7 +1213,7 @@ class BasePlayer {
   isDone(now) { return this.state === 'stopping' && now > this.stopAt + TAIL_SEC; }
   dispose() {
     for (const c of Object.values(this.ch)) c.dispose();
-    try { this._fg.disconnect(); this._sg.disconnect(); } catch (e) { /* gone */ }
+    try { this._fg.disconnect(); this._sg.disconnect(); this._trim.forEach((g) => g.disconnect()); } catch (e) { /* gone */ }
   }
 }
 
@@ -1237,7 +1238,12 @@ class TrackPlayer extends BasePlayer {
     this.mem = {};
     this._setRegion(dir._region);
   }
-  _setRegion(id) { this.regionId = REGIONS[id] ? id : 'caribbean'; this.region = REGIONS[this.regionId]; }
+  _setRegion(id) {
+    this.regionId = REGIONS[id] ? id : 'caribbean'; this.region = REGIONS[this.regionId];
+    // loudness trim per region × score (data/music.js REGIONS[*].trim, dB) — calibrated offline (±2 dB target)
+    const db = this.region.trim?.[this.scoreId] ?? 0, g = Math.pow(10, db / 20), c = this.dir.ctx;
+    for (const n of this._trim) { if (this.dir._offline || !c) n.gain.value = g; else n.gain.setTargetAtTime(g, c.currentTime, 0.5); }
+  }
   start(t, fade) { this.nextTime = t; super.start(t, fade); }
   /** Register `fn(t)` at `step` of the bar being built (fractional steps ok; ≥ bar length spills over). */
   at(step, fn) {

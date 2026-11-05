@@ -16,6 +16,12 @@
 //     toggle with audio.layering)
 //   • Voice limiting: a per-type start budget so broadsides don't pile up
 //   • Music ducking under big events (explosion, sink, warning)
+//   • Per-gun cannon recipes (playCannon) + per-gun impacts (playImpact),
+//     data in data/cannonSounds.js; gunfire voice budget + density
+//     compensation; SFX-bus safety compressor before the master soft clip
+//   • Listener = camera focus on the sea plane (setCameraPos / setListener)
+//   • Settings API: set/getSfxVolume, set/getMasterVolume, setMasterMute,
+//     isMasterMuted, getSettings — persisted in localStorage 'pas_audio'
 //   • 'victory' / 'defeat' hand over to the music stingers when the
 //     MusicDirector is running (setStingerHandler)
 //
@@ -23,6 +29,8 @@
 //   import { audio } from './Utils/Audio.js';
 //   audio.play('cannon', { x: 10, y: 0, z: -20 });  // spatial sfx
 //   audio.play('ui_click');                          // 2D sfx
+//   audio.playCannon('long24', x, y, z, tx, tz, tof); // gun report + in-flight sound
+//   audio.playImpact('long24', 'ship', x, y, z);       // 'ship'|'fort'|'building'|'ground'|'water'
 //   audio.masterVolume = 0.6;
 // Music + ambience: MusicDirector.js (`music.play('harbor')`).
 // Sound direction: design/audio-direction.md

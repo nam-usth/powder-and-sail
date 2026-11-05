@@ -9,6 +9,9 @@
 // English `nm` / `desc` in data/ when a translation is missing.
 
 import { getLang } from '../../i18n.js';
+import { UI2 } from './strings.ui2.js';
+import { FR } from './strings.fr.js';
+import { JA } from './strings.ja.js';
 
 const plural = (n, one, many) => (n === 1 ? one : many);
 
@@ -377,6 +380,12 @@ export const MS = {
   },
 };
 
+// UI2 pass: onboarding / help / settings keys (EN, VI) + full FR and JA tables
+Object.assign(MS.en, UI2.en);
+Object.assign(MS.vi, UI2.vi);
+MS.fr = FR;
+MS.ja = JA;
+
 /** Active language code, tolerant of i18n not being initialised (Node tests). */
 function lang() {
   try { return getLang() || 'en'; } catch { return 'en'; }
@@ -421,13 +430,13 @@ export const regionDesc  = (r) => viData(r, 'desc') ?? dataName('regiond_' + r.i
 export const missionName = (m) => viData(m, 'nm') ?? dataName('mis_' + m.id, m.nm);
 export const missionDesc = (m) => viData(m, 'desc') ?? dataName('misd_' + m.id, m.desc || '');
 export const isleName    = (i) => viData(i, 'nm') ?? dataName('isle_' + i.id, i.nm);
-export const factionName = (f) => (f ? viData(f, 'nm') ?? f.nm ?? f.id ?? '' : '');
+export const factionName = (f) => (f ? viData(f, 'nm') ?? dataName('fac_' + f.id, f.nm ?? f.id ?? '') : '');
 export const className   = (c) => ms('cls_' + c);
 
 /** Locale-aware integer formatting (1,234 / 1.234). */
 export function fmtNum(n) {
   const v = Math.floor(Number(n) || 0);
-  try { return v.toLocaleString(lang() === 'vi' ? 'vi-VN' : 'en-US'); } catch { return String(v); }
+  try { return v.toLocaleString({ vi: 'vi-VN', fr: 'fr-FR', ja: 'ja-JP' }[lang()] || 'en-US'); } catch { return String(v); }
 }
 
 /** Countdown clock: 45 → "0:45", 125 → "2:05", 3725 → "1:02:05". */

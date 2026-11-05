@@ -255,19 +255,20 @@ export const BATTLE = {
 // follows the score's chords; 'drone' holds the tonic so modal lines can float.
 export const REGIONS = {
   // Shanty & Iberian colours: string band, oboe, trumpets, castanets, baroque guitar.
-  caribbean:  { harmony: 'european', spanish: 1.0, chartLead: 'recorder' },
+  // trim: per-score loudness trim in dB (offline-calibrated: tools/audio-lab.html?auto=regions → ±2 dB across regions)
+  caribbean:  { harmony: 'european', spanish: 1.0, chartLead: 'recorder', trim: { chart: -1.0 } },
   // The Atlantic crowns: same palette, more fife-and-drum, less Spain.
-  atlantic:   { harmony: 'european', spanish: 0.5, chartLead: 'recorder' },
+  atlantic:   { harmony: 'european', spanish: 0.5, chartLead: 'recorder', trim: { chart: -1.0 } },
   // Indian Ocean: tanpura drone, shehnai/bansuri raga-like lines with meend, tabla-like drums, naubat trumpets & kettledrums.
-  indian:     { harmony: 'drone', battleDrone: 'Em', chartDrone: 'Dm', battleLead: 'shehnai', chartLead: 'bansuri',
+  indian:     { harmony: 'drone', trim: { chart: 1.2 }, battleDrone: 'Em', chartDrone: 'Dm', battleLead: 'shehnai', chartLead: 'bansuri',
                 battleScale: [4, 5, 7, 9, 11, 0, 2],   // E with flat 2nd & 6th (Bhairavi-like)
                 chartScale:  [2, 4, 5, 7, 9, 11, 0] }, // D Kafi-like (dorian)
   // Spice Straits: gong cycle, bonang/saron interlocking ostinato on a pelog-like set, suling flute.
-  spice:      { harmony: 'drone', battleDrone: 'Em', chartDrone: 'Dm', battleLead: 'suling', chartLead: 'suling',
+  spice:      { harmony: 'drone', trim: { chart: 2.6 }, battleDrone: 'Em', chartDrone: 'Dm', battleLead: 'suling', chartLead: 'suling',
                 battleScale: [4, 5, 7, 11, 0],         // E F G B C (pelog-like)
                 chartScale:  [2, 3, 5, 9, 10] },       // D Eb F A Bb
   // South China Sea: pentatonic dizi, đàn bầu pitch-bends, luo gongs, bo cymbals, woodblock.
-  southchina: { harmony: 'drone', battleDrone: 'Em', chartDrone: 'Dm', battleLead: 'dizi', chartLead: 'danbau',
+  southchina: { harmony: 'drone', trim: { chart: 3.4 }, battleDrone: 'Em', chartDrone: 'Dm', battleLead: 'dizi', chartLead: 'danbau',
                 battleScale: [4, 7, 9, 11, 2],         // E minor pentatonic
                 chartScale:  [2, 5, 7, 9, 0] },        // D yu-mode pentatonic
 };

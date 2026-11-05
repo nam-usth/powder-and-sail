@@ -33,3 +33,28 @@ music.muted                // getter
   setters; the value is applied when audio starts).
 - Preview click for the SFX slider: `audio.play('ui_click')` (2D, no position).
 - Audio.js no longer imports three.js, so it is safe to import from Meta/UI code.
+
+## Update — implemented + verified (audio2)
+
+Implemented exactly as above; persistence verified in a headless reload
+(`{"master":0.6,"sfx":0.4,"muted":1}` survives). Master mute silences music too
+(music runs through the master bus).
+
+New SFX names usable from Meta/UI `ctx.sfx(name)` (all procedural, period-plausible):
+
+| name | use for |
+|---|---|
+| `ui_click` | any button (existing) |
+| `ui_hover` | hover (existing, very faint) |
+| `ui_confirm` | confirm / accept / buy |
+| `ui_back` | close / back / cancel |
+| `ui_error` | can't afford / not allowed |
+| `ui_open` | open a panel / chart page (parchment rustle) |
+| `coin` | gold gained (existing) |
+| `bell` / `ship_ready` | single ship's bell / "two bells" ship ready (existing) |
+| `launch` | shipyard launch: yard bell ×3, hull down the ways, splash |
+| `set_sail` | bosun's pipe + horn call (existing) |
+| `place` | building placed (timber + mallet) |
+| `build` | construction complete flourish (existing) |
+| `reinforce` | reinforcements / wave incoming (signal gun + horn) |
+| `warning` | attack warning, drum roll + horns (existing) |

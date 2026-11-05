@@ -6,6 +6,8 @@
 // Pure DOM, updated each frame from GameApp.update (cheap: a few style
 // writes). The bar lives just under the top header.
 
+import { T } from '../../i18n.js';
+
 export class WarFrontHUD {
   constructor(state) {
     this._state = state;
@@ -18,15 +20,24 @@ export class WarFrontHUD {
     const wrap = document.createElement('div');
     wrap.id = 'warfront';
     wrap.innerHTML = `
-      <div class="wf-side wf-side-l"><span class="wf-crest">⚓</span><span class="wf-label" id="wf-label-l">YOU</span></div>
+      <div class="wf-side wf-side-l"><span class="wf-crest">⚓</span><span class="wf-label" id="wf-label-l"></span></div>
       <div class="wf-bar" id="warfront-bar">
         <div class="wf-fill-l" id="wf-fill-l"></div>
         <div class="wf-fill-r" id="wf-fill-r"></div>
         <div class="wf-mid" id="wf-mid"></div>
         <div class="wf-divider" id="wf-divider"><span class="wf-pct" id="wf-pct">50%</span></div>
       </div>
-      <div class="wf-side wf-side-r"><span class="wf-label" id="wf-label-r">ENEMY</span><span class="wf-crest">☠</span></div>`;
+      <div class="wf-side wf-side-r"><span class="wf-label" id="wf-label-r"></span><span class="wf-crest">☠</span></div>`;
     document.getElementById('ui')?.appendChild(wrap) || document.body.appendChild(wrap);
+    this._labels();
+    window.addEventListener('iow:langchange', () => this._labels());
+  }
+
+  /** Side labels in the active language (i18n T.wfYou / T.wfFoe). */
+  _labels() {
+    const l = document.getElementById('wf-label-l'), r = document.getElementById('wf-label-r');
+    if (l) l.textContent = T.wfYou || 'Your Flag';
+    if (r) r.textContent = T.wfFoe || 'The Enemy';
   }
 
   update() {

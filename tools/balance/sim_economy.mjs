@@ -75,7 +75,7 @@ const MODEL = {
 const BTM = H.HARBOR_ECONOMY?.buildTimeMult ?? K.BUILD_TIME_MULT;
 const BY_ID = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
 /** Harbor building prices: data/harbor.js HARBOR_ECONOMY.buildCostMult (CLI --cost-mult for what-ifs). */
-const BCM = args['cost-mult'] != null ? Number(args['cost-mult']) : (H.HARBOR_ECONOMY?.buildCostMult ?? 1);
+const BCM = Econ.harborCostMult(args['cost-mult'] != null ? { ...H.HARBOR_ECONOMY, buildCostMult: Number(args['cost-mult']) } : H.HARBOR_ECONOMY);
 const bcost = (id, lv = 0) => Econ.harborBuildCost(BY_ID[id], lv, BCM);
 const GRID_CELLS = 68;                               // home island SPRAWL/4242 (data/islandShapes)
 const cellsOf = id => { const f = BY_ID[id]?.footprint || { w: 1, h: 1 }; return f.w * f.h; };
@@ -548,7 +548,7 @@ for (const model of MODELS) {
   if (VERBOSE) console.log(players[0].log.join('\n'));
   reports.push(report(players, model));
 }
-const md = `# Economy sim — ${TAG}\n\nknobs: rateMult ${RATE_MULT} · buildCostMult ${BCM} · produce at sea ${AT_SEA} · live adjacency ×${ADJ_MULT} · payback ≤ ${PAYBACK_MAX / 60} min · battle overhead ${BATTLE_OVERHEAD}s · battles from ${BATTLES.replace(ROOT + '/', '')} (${POLICY})\n\n${reports.map(mdReport).join('\n\n')}\n`;
+const md = `# Economy sim — ${TAG}\n\nknobs: rateMult ${RATE_MULT} · buildCostMult ${JSON.stringify(BCM)} · produce at sea ${AT_SEA} · live adjacency ×${ADJ_MULT} · payback ≤ ${PAYBACK_MAX / 60} min · battle overhead ${BATTLE_OVERHEAD}s · battles from ${BATTLES.replace(ROOT + '/', '')} (${POLICY})\n\n${reports.map(mdReport).join('\n\n')}\n`;
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, `economy_${TAG}.json`), JSON.stringify({ knobs: { RATE_MULT, AT_SEA, ADJ_MULT, PAYBACK_MAX }, reports }, null, 1));
 writeFileSync(join(OUT, `economy_${TAG}.md`), md);

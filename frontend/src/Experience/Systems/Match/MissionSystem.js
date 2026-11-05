@@ -89,6 +89,16 @@ export class MissionSystem {
   /** Prize ships (ship.ai.prize) that have appeared so far. */
   prizes() { return this.state.enemyShips.filter(s => s.ai?.prize); }
 
+  /** Sea miles (world units) a ship still has to sail along the escape route. */
+  routeLeft(s) {
+    const e = this.escape;
+    if (!e) return Infinity;
+    const r = e.route, k = s.ai?._route === r ? Math.min(s.ai._wp || 0, r.length - 1) : 0;
+    let d = Math.hypot(r[k].x - s.x, r[k].z - s.z);
+    for (let i = k + 1; i < r.length; i++) d += Math.hypot(r[i].x - r[i - 1].x, r[i].z - r[i - 1].z);
+    return d;
+  }
+
   /** Enemies inside the escape zone leave the battle (alive=false, no 'ship:destroyed'). */
   _tickEscape() {
     const e = this.escape;
@@ -160,7 +170,7 @@ export class MissionSystem {
           const hp = live.reduce((a, s) => a + s.hp, 0) / live.reduce((a, s) => a + s.maxHp, 0);
           out.push({ key: 'prizeHp', label: OBJ_TEXT.labels.prizeHp, value: `${Math.round(hp * 100)}%`, done: false });
           if (this.escape) {
-            const d = Math.min(...live.map(s => Math.hypot(s.x - this.escape.x, s.z - this.escape.z)));
+            const d = Math.min(...live.map(s => this.routeLeft(s)));
             out.push({ key: 'escape', label: OBJ_TEXT.labels.escape, value: `${Math.max(0, Math.round(d - this.escape.r))} u`, done: false });
           }
         }

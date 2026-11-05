@@ -27,7 +27,13 @@ export const START_RES = { wood: 260, gold: 160 };
 // HarborSession sets st.harborBuildCostMult; BuildSystem reads it (?? 1, so
 // Open War pays the authored data/buildings.js costs). Rationale: without it
 // the island filled up in ~35 min of a ~3.5 h campaign (report.md §Harbor).
-export const HARBOR_ECONOMY = { rateMult: 0.25, buildTimeMult: 1, buildCostMult: 2.5 };
+// buildCostMultById exempts the progression buildings: their upgrade price is
+// cost × level, so ×4 on a Lv 4 Shipyard would exceed the storage cap and
+// soft-lock tier V (economy sim, report.md §Harbor costs).
+export const HARBOR_ECONOMY = {
+  rateMult: 0.25, buildTimeMult: 1, buildCostMult: 4,
+  buildCostMultById: { shipyard: 1, warehouse: 1, research_lab: 1, barracks: 1.5 },
+};
 /** The harbor keeps producing while the fleet is at sea (offline rules, capped). */
 export const PRODUCE_AT_SEA = true;
 

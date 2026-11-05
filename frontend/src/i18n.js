@@ -11,6 +11,7 @@ export const LANGS = {
 
 const STRINGS = {
   en: {
+    wfYou: 'Your Flag', wfFoe: 'The Enemy',
     // ── AW: Harbor / Sea Battle ───────────────────────────────
     shipReady:       (nm) => `⚓ ${nm} is ready to sail`,
     yourFleet:       'Your Fleet',
@@ -116,6 +117,7 @@ const STRINGS = {
   },
 
   vi: {
+    wfYou: 'Cờ của bạn', wfFoe: 'Quân địch',
     // ── AW: Đảo nhà / Hải chiến ───────────────────────────────
     shipReady:       (nm) => `⚓ ${nm} đã sẵn sàng ra khơi`,
     yourFleet:       'Hạm đội của bạn',
@@ -221,6 +223,20 @@ const STRINGS = {
   },
 
   fr: {
+    // ── AW: Port / Bataille navale ────────────────────────────
+    shipReady:       (nm) => `⚓ ${nm} est prêt à appareiller`,
+    yourFleet:       'Votre flotte',
+    battleAbandoned: 'Votre dernière bataille a été abandonnée — la flotte est rentrée au port.',
+    useShipyard:     'Les navires se construisent au chantier naval (Y)',
+    retreat:         '⚑ Retraite',
+    retreatHint:     'Quitter la bataille (compte comme une défaite, garde la moitié du butin)',
+    retreatConfirm:  'Rentrer au port ? La bataille sera perdue et vous gardez la moitié du butin.',
+    noShipsToRetry:  'Plus aucun navire à flot — réparez-les au chantier naval.',
+    noShipsSelected: 'Aucun navire sélectionné',
+    objLabels:       { sink: 'Navires ennemis coulés', forts: 'Forts détruits', survive: 'Tenir', capture: 'Îles prises' },
+    objTypes:        { sink_all: 'Coulez tous les navires ennemis', destroy_forts: 'Détruisez les forts ennemis', survive: 'Gardez un navire à flot jusqu’à la fin du temps', capture: 'Prenez l’île désignée' },
+    campaignWon:     'La Citadelle des Tempêtes est tombée — vous êtes Amiral des Îles !',
+    wfYou: 'Votre pavillon', wfFoe: 'L’ennemi',
     welcomeMsg:        '⚓ Glissez pour sélectionner · Clic droit pour ordonner · 1–9 flottes · ? pour aide',
     fleetSailing:      (nm) => `${nm} en route...`,
     fleetArrived:      (nm) => `${nm} est arrivé`,
@@ -302,6 +318,20 @@ const STRINGS = {
   },
 
   ja: {
+    // ── AW: 港 / 海戦 ─────────────────────────────────────────
+    shipReady:       (nm) => `⚓ ${nm} 出航準備完了`,
+    yourFleet:       'あなたの艦隊',
+    battleAbandoned: '前回の戦闘は放棄されました — 艦隊は港へ戻りました。',
+    useShipyard:     '船は造船所（Y）で建造します',
+    retreat:         '⚑ 撤退',
+    retreatHint:     '戦闘を離脱（敗北扱い、略奪品の半分を保持）',
+    retreatConfirm:  '港へ撤退しますか？この戦闘は敗北となり、略奪品の半分を保持します。',
+    noShipsToRetry:  '浮かんでいる船がありません — 造船所で修理してください。',
+    noShipsSelected: '船が選択されていません',
+    objLabels:       { sink: '撃沈した敵船', forts: '破壊した砦', survive: '持久', capture: '占領した島' },
+    objTypes:        { sink_all: '敵船をすべて撃沈せよ', destroy_forts: '敵の砦を破壊せよ', survive: '時間切れまで1隻を浮かべ続けよ', capture: '指定の島を占領せよ' },
+    campaignWon:     '嵐の城塞が陥落 — あなたは諸島提督だ！',
+    wfYou: 'あなたの旗', wfFoe: '敵軍',
     welcomeMsg:        '⚓ ドラッグで艦船を選択 · 右クリックで命令 · 1〜9で艦隊 · ?でヘルプ',
     fleetSailing:      (nm) => `${nm} 航行中...`,
     fleetArrived:      (nm) => `${nm} 到着`,
