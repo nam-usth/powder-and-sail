@@ -100,10 +100,9 @@ export const MISSIONS = [
     ai: { tactic: 'guard', leash: 40 },          // guard-costas never stray far from their battery
     enemies: [
       { hull: 'sloop', nm: 'Santa Catalina', x: 40, z: 18, loadout: { L: 'carronade', R: 'swivel' } },
-      { hull: 'sloop', nm: 'San Pedro',      x: 44, z: -20, loadout: FIT.falcL },
     ],
     islands: [
-      { id: 'lantern', x: 60, z: 0, r: 10, hp: 150, nm: 'Batería de San Telmo', own: 'enemy', tdmg: 7, trof: 8, shape: 'FORTRESS', seed: 3131 },
+      { id: 'lantern', x: 60, z: 0, r: 10, hp: 150, nm: 'Batería de San Telmo', own: 'enemy', tdmg: 6, trof: 8, shape: 'FORTRESS', seed: 3131 },
       rock('r3', -10, 46, 7, 303),
     ],
     spawn: { x: -70, z: 10 }, parTime: 200,
@@ -119,7 +118,7 @@ export const MISSIONS = [
       waves: [
         { at: 4,   ships: [{ hull: 'sloop', nm: 'Le Faucon', x: 90, z: -30, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'La Railleuse', x: 92, z: 30, loadout: FIT.pirateL }] },
         { at: 55,  ships: [{ hull: 'schooner', nm: 'La Licorne', x: 95, z: 0, loadout: FIT.falcL }, { hull: 'sloop', nm: 'Le Hardi', x: 90, z: -45, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'La Mouette', x: 92, z: 45, loadout: FIT.falcL }] },
-        { at: 100, ships: [{ hull: 'brigantine', nm: 'La Belle Étoile', x: 95, z: 10, loadout: { L: 'carronade', R: 'carronade', B: 'swivel' } }, { hull: 'sloop', nm: 'Le Saint-Malo', x: 90, z: 45, loadout: FIT.pirateL }] },
+        { at: 90,  ships: [{ hull: 'brigantine', nm: 'La Belle Étoile', x: 95, z: 10, loadout: { L: 'carronade', R: 'carronade', B: 'swivel' } }, { hull: 'sloop', nm: 'Le Saint-Malo', x: 90, z: 45, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'Le Corbeau', x: 90, z: -45, loadout: FIT.falcL }] },
       ],
     },
     enemies: [],
@@ -156,7 +155,7 @@ export const MISSIONS = [
       { hull: 'sloop',      nm: 'Le Furet',   x: 62, z: 26,  loadout: FIT.pirateL },
     ],
     islands: [
-      { id: 'gullhaven', x: 55, z: 0, r: 10, hp: 175, nm: 'Gullhaven', own: 'enemy', tdmg: 11, trof: 9, shape: 'ATOLL', seed: 8181, trait: 'haven' },
+      { id: 'gullhaven', x: 55, z: 0, r: 10, hp: 160, nm: 'Gullhaven', own: 'enemy', tdmg: 9, trof: 9, shape: 'ATOLL', seed: 8181, trait: 'haven' },
       rock('s3', -20, -50, 8, 808),
     ],
     spawn: { x: -70, z: 0 }, parTime: 240,
@@ -231,7 +230,7 @@ export const MISSIONS = [
     ],
     ai: { tactic: 'guard', leash: 55 },
     islands: [
-      { id: 'pepper_fort', x: 62, z: 0, r: 11, hp: 400, nm: 'Fortaleza de Kannur', own: 'enemy', tdmg: 18, trof: 7, shape: 'FORTRESS', seed: 1313 },
+      { id: 'pepper_fort', x: 62, z: 0, r: 11, hp: 380, nm: 'Fortaleza de Kannur', own: 'enemy', tdmg: 16, trof: 7, shape: 'FORTRESS', seed: 1313 },
       rock('i5', 10, 40, 8, 1305), rock('i6', 20, -45, 7, 1306, 'CRESCENT'),
     ],
     spawn: { x: -70, z: 0 }, parTime: 330,
@@ -263,7 +262,7 @@ export const MISSIONS = [
     objective: { type: 'sink_target' },
     escape: { route: [{ x: 110, z: -30 }, { x: 132, z: -100 }, { x: 60, z: -136 }, { x: -30, z: -138 }, { x: -110, z: -132 }] },
     enemies: [
-      { hull: 'war_galleon',   nm: 'Gouden Leeuw', x: 100, z: 0,  loadout: FIT.lineH4, prize: true, spdMult: 0.6, hp: 480 },   // laden treasure ship
+      { hull: 'war_galleon',   nm: 'Gouden Leeuw', x: 100, z: 0,  loadout: FIT.lineH4, prize: true, spdMult: 0.56, hp: 480 },   // laden treasure ship
       { hull: 'heavy_frigate', nm: 'Witte Valk',   x: 62, z: -22, loadout: FIT.heavyS4, ai: { tactic: 'kite' } },
       { hull: 'frigate',       nm: 'Zeerob',       x: 62, z: 22,  loadout: FIT.frigS3, ai: { tactic: 'kite' } },
       { hull: 'frigate',       nm: 'De Hoop',      x: 80, z: -30, loadout: FIT.canS },
@@ -306,7 +305,7 @@ export const MISSIONS = [
       waves: [
         { at: 4,   ships: [{ hull: 'junk', nm: 'Sóng Bạc', x: 90, z: 0, loadout: FIT.junkS }, { hull: 'ghe_bau', nm: 'Phong Ba', x: 0, z: -95, loadout: FIT.chainL }, { hull: 'junk', nm: 'Hắc Phong', x: 90, z: 30, loadout: FIT.junkS }] },
         { at: 55,  ships: [{ hull: 'war_junk', nm: 'Hải Long', x: 95, z: -30, loadout: FIT.junkH4 }, { hull: 'junk', nm: 'Cá Kình', x: 0, z: 95, loadout: FIT.junkS }, { hull: 'war_junk', nm: 'Thủy Tiên', x: 95, z: 30, loadout: FIT.junkH4 }, { hull: 'ghe_bau', nm: 'Sấm Sét', x: 0, z: -95, loadout: FIT.chainL }] },
-        { at: 115, ships: [{ hull: 'war_junk', nm: 'Bạch Đằng Gió', x: 95, z: 25, loadout: FIT.junkH4 }, { hull: 'junk', nm: 'Jade Tide', faction: 'chinese', x: -20, z: -95, loadout: FIT.junkS }, { hull: 'ghe_bau', x: -20, z: 95, loadout: FIT.chainL }, { hull: 'war_junk', nm: 'Long Vương', x: 100, z: -25, loadout: FIT.junkH4 }, { hull: 'war_junk', nm: 'Hổ Biển', x: 100, z: 45, loadout: FIT.junkH4 }] },
+        { at: 105, ships: [{ hull: 'war_junk', nm: 'Bạch Đằng Gió', x: 95, z: 25, loadout: FIT.junkH4 }, { hull: 'junk', nm: 'Jade Tide', faction: 'chinese', x: -20, z: -95, loadout: FIT.junkS }, { hull: 'ghe_bau', x: -20, z: 95, loadout: FIT.chainL }, { hull: 'war_junk', nm: 'Long Vương', x: 100, z: -25, loadout: FIT.junkH4 }, { hull: 'war_junk', nm: 'Hổ Biển', x: 100, z: 45, loadout: FIT.junkH4 }] },
       ],
     },
     enemies: [],
@@ -349,7 +348,7 @@ export const MISSIONS = [
       { hull: 'war_junk',  nm: 'Iron Turtle',     x: 92, z: -22, loadout: FIT.junkH4, ai: { tactic: 'hold' } },
     ],
     islands: [
-      { id: 'citadel', x: 80, z: 0, r: 14, hp: 640, nm: 'Citadel of Storms', own: 'enemy', tdmg: 25, trof: 5, shape: 'FORTRESS', seed: 1616, trait: 'bastion' },
+      { id: 'citadel', x: 80, z: 0, r: 14, hp: 700, nm: 'Citadel of Storms', own: 'enemy', tdmg: 27, trof: 5, shape: 'FORTRESS', seed: 1616, trait: 'bastion' },
       rock('t5', 10, -50, 9, 1717), rock('t6', 10, 50, 9, 1818, 'CRESCENT'),
     ],
     spawn: { x: -75, z: 0 }, parTime: 420,
