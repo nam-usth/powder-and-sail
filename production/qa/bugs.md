@@ -12,16 +12,16 @@ No console errors (`console.error` / `pageerror`) were logged in any of these mo
 |---|---|---|---|
 | QA-001 | S1 | Battle / orders | Bombard (siege) order barely damages forts: fort missions take 2–3× par even with an invulnerable fleet, and normal fleets are wiped. The final mission is not winnable this way. |
 | QA-002 | S2 | Balance / survive | reef_3 "Hold the Windward Channel": starter fleet is sunk at 2:05 of 2:30 |
-| QA-003 | S3 | UI / Shipyard | Build catalog lists enemy-only hulls (Dhow, Ghurab, Ghe Bầu, Lanong, War Junk…) |
-| QA-004 | S3 | i18n | VI: harbor action bar (Build/Research/Loadout) and the whole Loadout panel stay in English |
+| QA-003 | S3 | UI / Shipyard | Build catalog lists enemy-only hulls (Dhow, Ghurab, Ghe Bầu, Lanong, War Junk…) — **FIXED** |
+| QA-004 | S3 | i18n | VI: harbor action bar (Build/Research/Loadout) and the whole Loadout panel stay in English — **FIXED** |
 | QA-005 | S3 | Perf | With the Shipyard modal open, headless frame rate drops to ~7 fps and screenshots hang for more than 90 s unless animations are disabled |
-| QA-006 | S4 | Battle HUD | Objective panel and versus bar are not refreshed on the final event: the victory screen sits over "Enemy ships sunk 1 / 2" |
-| QA-007 | S4 | UI | Fleet card shows capacity "3/5" in harbor/battle while fleet cap is 3 |
-| QA-008 | S4 | UI | Floating "+N wood/gold" production popups draw on top of the World Chart briefing |
-| QA-009 | S4 | Battle HUD | Ability buttons Z/X/C are clipped by the bottom edge at 1440×810; long faction names are truncated in the versus bar |
+| QA-006 | S4 | Battle HUD | Objective panel and versus bar are not refreshed on the final event: the victory screen sits over "Enemy ships sunk 1 / 2" — **FIXED** |
+| QA-007 | S4 | UI | Fleet card shows capacity "3/5" in harbor/battle while fleet cap is 3 — **FIXED** |
+| QA-008 | S4 | UI | Floating "+N wood/gold" production popups draw on top of the World Chart briefing — **FIXED** |
+| QA-009 | S4 | Battle HUD | Ability buttons Z/X/C are clipped by the bottom edge at 1440×810; long faction names are truncated in the versus bar — **FIXED** |
 | QA-010 | S4 | Save robustness | `migrate()` keeps wrongly typed fields: string `renown` makes `renown += n` concatenate strings |
 | QA-011 | S4 | Docs | Spec §12 numbers are stale (T03 rates, T04 amounts, T29 capture time, storm_3 citadel HP) |
-| QA-012 | S4 | UX | Offline card says "8 h 0 min" after a 10 h absence without saying that the catch-up is capped |
+| QA-012 | S4 | UX | Offline card says "8 h 0 min" after a 10 h absence without saying that the catch-up is capped — **FIXED** |
 
 ---
 
@@ -49,6 +49,7 @@ No console errors (`console.error` / `pageerror`) were logged in any of these mo
 - **Suspected:** `data/campaign.js` reef_3 waves combined with `battleAlwaysEngage` (BattleSession). Needs a balance pass and a manual "kite" playtest.
 
 ### QA-003 — Shipyard Build catalog lists enemy-only hulls (S3)
+- **Status:** **FIXED (ui3)** — ShipyardPanel filters `enemyOnly` hulls (list + stat-bar scales); locked cards list every `canBuild().blockers`. Evidence `ui3_shipyard.png`.
 - **Repro:** Harbor → Y → Build tab (any language).
 - **Expected:** only `PLAYER_HULLS` appear. Enemy flavour hulls are "never offered by the Shipyard" (`data/harbor.js`).
 - **Actual:** Tier I shows **Dhow** next to Sloop/Cutter/Schooner, and higher tiers include Ghurab, Ghe Bầu, Lanong, War Junk and Great War Junk, each with a Build button. `canBuild` rejects them (`unknown_hull`), so the button is disabled, but the cards and stats are shown.
@@ -56,6 +57,7 @@ No console errors (`console.error` / `pageerror`) were logged in any of these mo
 - **Suspected:** `frontend/src/Meta/UI/ShipyardPanel.js:241`, `Object.values(HULLS).filter(h => h.tier === t.tier)`. It is missing `&& !h.enemyOnly` (or should use `PLAYER_HULLS`). The `MAX_HP`/`MAX_SPD` stat-bar scales on lines 25–26 also include enemy hulls.
 
 ### QA-004 — Vietnamese: action bar and Loadout panel not translated (S3)
+- **Status:** **FIXED (ui3)** — action bar labels/tooltips and the whole Loadout panel (tabs, DPS, hints, tier-lock text, presets, upgrade names, Upgrade/MAX/SUNK, title) bound to `T` with VI strings. Evidence `ui3_vi_loadout.png`.
 - **Repro:** Settings → Tiếng Việt (or `setLang('vi')`) in the harbor, then look at the top action bar and press L.
 - **Expected (T34):** harbor UI fully in Vietnamese.
 - **Actual:** Harbor Bar, Shipyard and World Chart are translated. The top action bar still reads **Build / Research / Loadout**. The Loadout panel strings are hard-coded English: "⚓ Cannons", "⬆ Upgrades", "DPS", the hint bar ("Click a cannon below → …"), "needs a tier V hull or better", "Needs a tier III hull (this ship: II)", the preset names, the "Upgrade" button and "SUNK".
@@ -70,6 +72,7 @@ No console errors (`console.error` / `pageerror`) were logged in any of these mo
 - **Suspected:** a continuous CSS animation or `backdrop-filter` on the Shipyard veil/cards while the 3D scene keeps rendering underneath. This needs checking on a low-end laptop or phone. Pausing the 3D render while a full-screen modal is open would help.
 
 ### QA-006 — Battle HUD stale at victory (S4)
+- **Status:** **FIXED (ui3)** — `BattleSession.finish()` renders the HUD once more before the result card. Battle log now ends `vs:"0"`. Evidence `ui3_reef1_result.png`.
 - **Repro:** win reef_1 by sinking the second sloop.
 - **Expected:** the objective panel reads "Enemy ships sunk: 2 / 2 ✔" and the versus bar enemy count reads 0.
 - **Actual:** behind the Victory card the panel still says **1 / 2** and the versus bar badge shows **1**.
@@ -77,6 +80,7 @@ No console errors (`console.error` / `pageerror`) were logged in any of these mo
 - **Suspected:** `BattleSession.update()` renders the HUD on a 0.25 s throttle. `finish()` sets `done=true` on the same frame, so the HUD is never re-rendered. Calling `_renderHud()` inside `finish()` fixes it.
 
 ### QA-007 — Fleet card capacity "3/5" contradicts the fleet cap of 3 (S4)
+- **Status:** **FIXED (ui3)** — in harbor/battle the fleet tab shows `n/min(5, fleetCap(profile))` (reads 3/3 on a fresh profile). Evidence `ui3_battle_hud_keys.png`.
 - **Repro:** fresh harbor, or any battle: look at the "Fleet 1" tab in the bottom panel.
 - **Expected:** a capacity that matches the World Chart fleet cap (3), or no capacity at all.
 - **Actual:** it shows **3/5**.
@@ -84,12 +88,14 @@ No console errors (`console.error` / `pageerror`) were logged in any of these mo
 - **Suspected:** Open War fleet-group size constant (FleetSystem / ShipCapacity) used in harbor and battle modes.
 
 ### QA-008 — Production popups draw over the World Chart briefing (S4)
+- **Status:** **FIXED (ui3)** — `pushModal/popModal` toggle `body.meta-modal-open`; `#float-text-layer` is hidden while a meta modal is open. Evidence `ui3_phone_briefing.png`.
 - **Repro:** phone 390×844, Harbor → W → open the reef_1 briefing while the mill and mine tick.
 - **Actual:** "+2" wood and gold floaters appear over the briefing header ("The Caribbean").
 - **Evidence:** `qa_phone_briefing.png`
 - **Suspected:** EconomySystem / VFX floating text z-index sits above the meta modals. It should be hidden while a meta modal is open.
 
 ### QA-009 — Battle HUD clipping (S4)
+- **Status:** **FIXED (ui3)** — orders card compacted so the Z/X/C plaques fit the 188 px console; `.vs-name` max-width raised to min(320px, 22vw). Evidence `ui3_battle_hud_keys.png` (reef_2, "Armada of the Spanish Crown" in full).
 - **Repro:** any battle at 1440×810.
 - **Actual:** the Z/X/C ability buttons at the bottom right are cut off by the viewport edge. The faction name in the versus bar is truncated ("Armada of the Spanish Cro…").
 - **Evidence:** `qa_gfx_high_reef_2_keys.png`, `qa_reef_1_win_result.png`
@@ -110,6 +116,7 @@ No console errors (`console.error` / `pageerror`) were logged in any of these mo
 - **Fix:** `docs/SPECIFICATION.md` §12 (regenerate with `tools/spec_tables.mjs`).
 
 ### QA-012 — Offline card hides the 8 h cap (S4, UX)
+- **Status:** **FIXED (ui3)** — the offline card adds "Catch-up is capped at 8 h 0 min…" when the 8 h cap applied.
 - **Repro:** set `lastSeen` 10 h in the past and reload.
 - **Actual:** the card reads "Your harbor kept working for 8 h 0 min". The player was away 10 h and is not told that the catch-up is capped. The arithmetic is correct (clamped to 28 800 s).
 - **Evidence:** `tools/qa/offline.mjs` output (T06)

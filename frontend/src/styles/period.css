@@ -1653,3 +1653,14 @@ body:has(#warfront) #hud-top { top: 108px !important; }      /* clear the war-fr
 
 /* QA-008: world float text ("+2" production ticks) never draws over meta modals */
 body.meta-modal-open #float-text-layer { display: none !important; }
+
+/* QA-009: the orders card fits the console height (Z/X/C plaques were clipped at 1440×810) */
+#cmd-card { gap: 3px !important; min-height: 0; }
+#cmd-card .cc-row { flex: none; }
+#cmd-card .cc-head { padding-bottom: 3px !important; }
+#cmd-card .cc-btn { width: 31px !important; height: 31px !important; }
+#cmd-card .cc-btn .cc-ic { font-size: 15px !important; }
+#cmd-card .cc-abil { padding-top: 5px !important; margin-top: 1px !important; }
+#cmd-card .cmd-btn { height: 30px !important; }
+/* QA-009: long faction names ("Armada of the Spanish Crown") are shown whole on desktop */
+.vs-bar .vs-name { max-width: min(320px, 22vw) !important; }
