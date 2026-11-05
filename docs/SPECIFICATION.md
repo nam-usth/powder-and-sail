@@ -356,20 +356,20 @@ Trục vớt tốn `50%` giá đóng tàu. Hạm đội tối đa: base 3, trầ
 | mission id | Tên | Biển | Phe | Mục tiêu | Địch | Pháo đài | Par ★★★ | Giới hạn | Thưởng | Lần đầu | Danh vọng | Cần thắng trước |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | reef_1 | Smugglers' Cove | caribbean | buccaneers | sink_all | 2× sloop | — | 2:30 | — | 120🪵 80🪙 | 100🪵 80🪙 | 10 | — |
-| reef_2 | The San Telmo Battery | caribbean | spain | destroy_forts | 1× sloop | Batería de San Telmo (150HP, 6dmg/8s) | 3:20 | — | 160🪵 120🪙 | 140🪵 100🪙 | 14 | reef_1 |
-| reef_3 | Hold the Windward Channel | caribbean | france | survive 2:30 | W1@0:04: 2× sloop; W2@0:55: 1× schooner, 2× sloop; W3@1:45: 1× brigantine, 1× sloop | — | 2:30 | — | 180🪵 110🪙 | 120🪵 100🪙 | 14 | reef_1 |
+| reef_2 | The San Telmo Battery | caribbean | spain | destroy_forts | 1× sloop | Batería de San Telmo (170HP, 8dmg/8s) | 3:20 | — | 160🪵 120🪙 | 140🪵 100🪙 | 14 | reef_1 |
+| reef_3 | Hold the Windward Channel | caribbean | france | survive 2:30 | W1@0:04: 2× sloop; W2@0:55: 1× schooner, 2× sloop; W3@1:55: 1× brigantine, 1× sloop | — | 2:30 | — | 180🪵 110🪙 | 120🪵 100🪙 | 14 | reef_1 |
 | straits_1 | The Saltwind Convoy | atlantic | england | sink_target | 1× brigantine, 3× sloop | — | 3:40 | — | 240🪵 180🪙 | 200🪵 160🪙 | 18 | reef_2 |
-| straits_2 | Seize Gullhaven | atlantic | france | capture gullhaven | 1× brigantine, 1× schooner, 1× sloop | Gullhaven (160HP, 9dmg/9s, haven) | 4:00 | — | 260🪵 200🪙 | 220🪵 180🪙 | 18 | reef_3 |
-| straits_3 | The Twin Batteries | atlantic | england | destroy_forts | 1× frigate, 1× brigantine | North Battery (240HP, 13dmg/7s); South Battery (240HP, 13dmg/7s) | 5:00 | — | 320🪵 260🪙 | 260🪵 220🪙 | 24 | straits_1, straits_2 |
+| straits_2 | Seize Gullhaven | atlantic | france | capture gullhaven | 1× brigantine, 1× schooner, 1× sloop | Gullhaven (370HP, 25dmg/7s, haven) | 4:00 | — | 260🪵 200🪙 | 220🪵 180🪙 | 18 | reef_3 |
+| straits_3 | The Twin Batteries | atlantic | england | destroy_forts | 1× frigate, 1× brigantine | North Battery (340HP, 21dmg/7s); South Battery (340HP, 21dmg/7s) | 5:00 | — | 320🪵 260🪙 | 260🪵 220🪙 | 24 | straits_1, straits_2 |
 | indian_1 | Monsoon Raiders | indian | malabar | survive 3:00 | W1@0:04: 1× ghurab, 1× dhow; W2@0:50: 2× ghurab, 2× dhow; W3@1:45: 2× ghurab, 2× frigate(portugal), 1× dhow | — | 3:00 | — | 360🪵 280🪙 | 300🪵 240🪙 | 26 | straits_3 |
 | indian_2 | The Carracks of Goa | indian | portugal | sink_all | 1× galleon, 2× frigate, 1× brigantine, 1× ghurab(malabar) | — | 5:00 | — | 400🪵 320🪙 | 340🪵 280🪙 | 28 | indian_1 |
-| indian_3 | The Pepper Fort | indian | portugal | capture pepper_fort | 2× frigate, 1× ghurab(malabar), 1× brigantine, 1× galleon | Fortaleza de Kannur (380HP, 16dmg/7s) | 5:30 | — | 440🪵 360🪙 | 380🪵 320🪙 | 32 | indian_2 |
+| indian_3 | The Pepper Fort | indian | portugal | capture pepper_fort | 2× frigate, 1× ghurab(malabar), 1× brigantine, 1× galleon | Fortaleza de Kannur (450HP, 21dmg/7s) | 5:30 | — | 440🪵 360🪙 | 380🪵 320🪙 | 32 | indian_2 |
 | spice_1 | Lanong Ambush | spice | malay | survive 3:20 | W1@0:04: 2× lanong; W2@0:50: 3× lanong, 1× ghurab; W3@1:50: 2× heavy_frigate(netherlands), 3× lanong | — | 3:20 | — | 480🪵 380🪙 | 400🪵 340🪙 | 32 | indian_3 |
 | spice_2 | The Homeward Fleet | spice | netherlands | sink_target | 1× war_galleon, 1× heavy_frigate, 2× frigate, 1× lanong(malay) | — | 5:30 | — | 540🪵 420🪙 | 460🪵 380🪙 | 36 | spice_1 |
-| spice_3 | Kasteel Amboina | spice | netherlands | destroy_forts | 2× heavy_frigate, 1× frigate, 1× lanong(malay), 1× war_galleon | Bastion Zeeland (360HP, 20dmg/6s); Bastion Holland (360HP, 20dmg/6s) | 6:00 | — | 600🪵 480🪙 | 500🪵 420🪙 | 40 | spice_2 |
-| storm_1 | Typhoon Season | southchina | vietnamese | survive 3:30 | W1@0:04: 2× junk, 1× ghe_bau; W2@0:55: 2× war_junk, 1× junk, 1× ghe_bau; W3@1:45: 3× war_junk, 1× junk(chinese), 1× ghe_bau | — | 3:30 | — | 640🪵 520🪙 | 540🪵 460🪙 | 40 | spice_3 |
+| spice_3 | Kasteel Amboina | spice | netherlands | destroy_forts | 2× heavy_frigate, 1× frigate, 1× lanong(malay), 1× war_galleon | Bastion Zeeland (650HP, 48dmg/5s); Bastion Holland (650HP, 48dmg/5s) | 6:00 | — | 600🪵 480🪙 | 500🪵 420🪙 | 40 | spice_2 |
+| storm_1 | Typhoon Season | southchina | vietnamese | survive 3:30 | W1@0:04: 2× junk, 1× ghe_bau; W2@0:45: 3× war_junk, 1× junk, 1× ghe_bau; W3@1:30: 3× war_junk, 1× junk(chinese), 1× ghe_bau | — | 3:30 | — | 640🪵 520🪙 | 540🪵 460🪙 | 40 | spice_3 |
 | storm_2 | The Red Banner Fleet | southchina | chinese | sink_all | 5× war_junk, 2× junk, 1× ghe_bau(vietnamese) | — | 4:00 | 5:30 | 700🪵 580🪙 | 600🪵 500🪙 | 45 | storm_1 |
-| storm_3 | Citadel of Storms | southchina | chinese | destroy_forts | 3× war_junk, 1× man_o_war(portugal), 2× junk | Citadel of Storms (700HP, 27dmg/5s, bastion) | 7:00 | — | 900🪵 760🪙 | 800🪵 700🪙 | 60 | storm_2 |
+| storm_3 | Citadel of Storms | southchina | chinese | destroy_forts | 3× war_junk, 1× man_o_war(portugal), 2× junk | Citadel of Storms (1000HP, 42dmg/5s, bastion) | 7:00 | — | 900🪵 760🪙 | 800🪵 700🪙 | 60 | storm_2 |
 
 Nhiệm vụ cuối (thắng = hoàn thành chiến dịch): `storm_3`.
 <!-- /SPEC:missions -->

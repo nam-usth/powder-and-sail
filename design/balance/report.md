@@ -1,6 +1,32 @@
 # Balance report — campaign, Sea Battle, harbor economy (milestone AW)
 
-## 0. Gameplay pass, round 2 — "a smooth first two hours" (latest)
+## 0b. Fort/capture re-tune after the QA-001 siege fix (latest)
+
+Data only (`data/campaign.js`; `BATTLE` knobs unchanged, `fortRegen` stays 0.006). Raw runs:
+`tools/balance/out/battle_h_it*` (`--set` probes), `battle_h_confirm` (8 seeds, both policies).
+"Before" = `battle_g_final` (4 seeds) / `battle_h_it1` (5 seeds, for storm_1 + spice_2 as shipped).
+Novice win % pools every run at the final values (n = seeds); one seed ≈ ±10 points.
+
+| Mission | Change | Novice before | **Novice after** (n) | HP left | Skilled | Novice time |
+|---|---|---:|---:|---:|---:|---:|
+| reef_2 | battery 150/6 → 170 HP / dmg 8 | 100 % | **100 %** (8; 170/7: 18/19) | 64 % | 100 % | 176 s |
+| reef_3 | wave 3 105 → 115 s (was *under* band: 50–60 % on 13 fresh seeds) | 100 % (4) / 55 % | **80 %** (20) | 13–26 % | 100 % | 146 s |
+| straits_2 | Gullhaven 160/9/trof 9 → 370/25/7; Le Hardi `hold` under the walls | 100 % | **72 %** (18) | 29–33 % | 100 % | 242–262 s |
+| straits_3 | batteries 240/13 → 340/21 | 100 % | **88 %** (8; 340/22 → 63 %) | 33 % | 100 % | 235 s |
+| indian_3 | fort 380/16 → 450/21 | 100 % | **75 %** (8; 440–460 pooled 18/25) | 30 % | 100 % | 251 s |
+| spice_2 | prize 0.56× / 480 → 0.5× / 520 HP | 20 % (escaped) | **90 %** (20) | 71 % | 100 % | 92 s |
+| spice_3 | bastions 360/20/6 → 650/48/5 | 100 % | **85 %** (20) | 25 % | 100 % | 171–202 s |
+| storm_1 | waves 55/105 → 45/90 s, + war junk *Mãnh Hổ* in wave 2 | 100 % (29 % HP) | **90 %** (20) | 10–16 % | 100 % | 205 s |
+| storm_3 | citadel 700/27 → 1000/42 | 100 % | **75 %** (8; 1000/44: 7/10) | 32 % | 100 % | 229 s |
+| GATE storm_3 7×T3 | – | 0 % | **0 %** (8) · skilled 50 % | 0 % | – | 180 s |
+
+Notes. The prize chase (spice_2) is a cliff on prize HP at 0.5×: 520 → ~90 %, 540 → 50 %,
+560 → 60 %, 620 → 40 %; speed 0.52–0.56 is just as steep and seed-dependent. 520 is the
+safe side. Fort missions are bimodal (fast win or fleet lost); straits_3 jumps from ~90 %
+(dmg 21) to ~63 % (dmg 22–23). Still slightly easy: reef_2 (first region, allowed ~90 %).
+Battle lengths 2.5–4.5 min except the chases (~1.5 min, by design).
+
+## 0. Gameplay pass, round 2 — "a smooth first two hours"
 
 Raw runs: `tools/balance/out/battle_g_base` (before), `battle_g_iter1` (reworked missions,
 6 seeds), `battle_g_v*` (chase probes, `--set`), `battle_g_final` (after the QA-001 siege fix),

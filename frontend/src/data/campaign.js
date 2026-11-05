@@ -102,7 +102,7 @@ export const MISSIONS = [
       { hull: 'sloop', nm: 'Santa Catalina', x: 40, z: 18, loadout: { L: 'carronade', R: 'swivel' } },
     ],
     islands: [
-      { id: 'lantern', x: 60, z: 0, r: 10, hp: 170, nm: 'Batería de San Telmo', own: 'enemy', tdmg: 7, trof: 8, shape: 'FORTRESS', seed: 3131 },
+      { id: 'lantern', x: 60, z: 0, r: 10, hp: 170, nm: 'Batería de San Telmo', own: 'enemy', tdmg: 8, trof: 8, shape: 'FORTRESS', seed: 3131 },
       rock('r3', -10, 46, 7, 303),
     ],
     spawn: { x: -70, z: 10 }, parTime: 200,
@@ -155,7 +155,7 @@ export const MISSIONS = [
       { hull: 'sloop',      nm: 'Le Furet',   x: 62, z: 26,  loadout: FIT.pirateL },
     ],
     islands: [
-      { id: 'gullhaven', x: 55, z: 0, r: 10, hp: 300, nm: 'Gullhaven', own: 'enemy', tdmg: 18, trof: 8, shape: 'ATOLL', seed: 8181, trait: 'haven' },
+      { id: 'gullhaven', x: 55, z: 0, r: 10, hp: 370, nm: 'Gullhaven', own: 'enemy', tdmg: 25, trof: 7, shape: 'ATOLL', seed: 8181, trait: 'haven' },
       rock('s3', -20, -50, 8, 808),
     ],
     spawn: { x: -70, z: 0 }, parTime: 240,
@@ -172,8 +172,8 @@ export const MISSIONS = [
       { hull: 'brigantine', nm: 'Sparrowhawk', x: 58, z: -14, loadout: FIT.culvS, ai: { tactic: 'guard', leash: 50 } },
     ],
     islands: [
-      { id: 'tw_n', x: 65, z: -32, r: 10, hp: 320, nm: 'North Battery', own: 'enemy', tdmg: 20, trof: 7, shape: 'FORTRESS', seed: 9191 },
-      { id: 'tw_s', x: 65, z: 32,  r: 10, hp: 320, nm: 'South Battery', own: 'enemy', tdmg: 20, trof: 7, shape: 'FORTRESS', seed: 9292 },
+      { id: 'tw_n', x: 65, z: -32, r: 10, hp: 340, nm: 'North Battery', own: 'enemy', tdmg: 21, trof: 7, shape: 'FORTRESS', seed: 9191 },
+      { id: 'tw_s', x: 65, z: 32,  r: 10, hp: 340, nm: 'South Battery', own: 'enemy', tdmg: 21, trof: 7, shape: 'FORTRESS', seed: 9292 },
     ],
     spawn: { x: -70, z: 0 }, parTime: 300,
     reward: { wood: 320, gold: 260 }, firstClear: { wood: 260, gold: 220 }, renown: 24, requires: ['straits_1', 'straits_2'],
@@ -348,7 +348,7 @@ export const MISSIONS = [
       { hull: 'war_junk',  nm: 'Iron Turtle',     x: 92, z: -22, loadout: FIT.junkH4, ai: { tactic: 'hold' } },
     ],
     islands: [
-      { id: 'citadel', x: 80, z: 0, r: 14, hp: 1050, nm: 'Citadel of Storms', own: 'enemy', tdmg: 50, trof: 5, shape: 'FORTRESS', seed: 1616, trait: 'bastion' },
+      { id: 'citadel', x: 80, z: 0, r: 14, hp: 1000, nm: 'Citadel of Storms', own: 'enemy', tdmg: 42, trof: 5, shape: 'FORTRESS', seed: 1616, trait: 'bastion' },
       rock('t5', 10, -50, 9, 1717), rock('t6', 10, 50, 9, 1818, 'CRESCENT'),
     ],
     spawn: { x: -75, z: 0 }, parTime: 420,
