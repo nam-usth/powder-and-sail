@@ -4,6 +4,7 @@ import { BUILDINGS, createBuildingInstance, getBuildingProduction } from '../../
 import { ISLAND_TRAITS } from '../../../data/traits.js';
 import { DEFENSES, getDefenseStats } from '../../../data/defenses.js';
 import { makeBuildingMesh, makeBuildingGhost, modelYaw } from '../../World/BuildingModels.js';
+import { harborBuildCost } from '../../../Meta/HarborEconomy.js';   // AW: harbor-only cost multiplier
 
 // ── Grid cell ShaderMaterial ──────────────────────────────────────
 // Always drawn above ocean (depthTest:false, renderOrder:15).
@@ -488,9 +489,9 @@ export class BuildSystem {
       if(Math.abs(dx)<BUILD_CELL_WORLD/2 && Math.abs(dz)<BUILD_CELL_WORLD/2){ hoveredKey=m.userData.key; hoveredCell=m.userData; }
     });
     const curIsl=this._curHoverIsl||this._islands[0];
+    const hc = bldOrDef ? harborBuildCost(bldOrDef, 0, st.harborBuildCostMult ?? 1) : null;   // harbor: × HARBOR_ECONOMY.buildCostMult
     const canAffordOrMove = !bldOrDef || st._moveMode
-      || (st.resWood>=((bldOrDef.cost&&bldOrDef.cost.wood)||0)
-        && st.resGold>=((bldOrDef.cost&&bldOrDef.cost.gold)||0));
+      || (st.resWood>=hc.wood && st.resGold>=hc.gold);
     const footprintValid=hoveredKey&&bldOrDef
       &&canAffordOrMove
       &&this.canPlaceFootprint(curIsl,hoveredKey,fp);
@@ -565,7 +566,7 @@ export class BuildSystem {
       return;
     }
 
-    const cost=bldOrDef.cost||{};
+    const cost=harborBuildCost(bldOrDef, 0, st.harborBuildCostMult ?? 1);   // Open War: mult 1 = authored cost
     // _moveMode: player is relocating an existing building — no resource cost
     if(!st._moveMode){
       if(st.resWood<(cost.wood||0)||st.resGold<(cost.gold||0)){
@@ -796,7 +797,7 @@ export class BuildSystem {
     if(inst.upgradeTimer > 0)   return false;     // already upgrading
     const bldDef=[...BUILDINGS,...DEFENSES].find(b=>b.id===inst.buildingId);
     if(!bldDef) return false;
-    const upgCost={wood:(bldDef.cost.wood||0)*(inst.level), gold:(bldDef.cost.gold||0)*(inst.level)};
+    const upgCost=harborBuildCost(bldDef, inst.level, st.harborBuildCostMult ?? 1);   // cost × level (× harbor mult)
     if(st.resWood<upgCost.wood||st.resGold<upgCost.gold) return false;
     st.resWood-=upgCost.wood; st.resGold-=upgCost.gold;
     // Start timer — building keeps current level until done

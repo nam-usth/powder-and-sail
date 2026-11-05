@@ -152,7 +152,6 @@ export class CombatSystem {
           this._vfx.fireBall(ship.x,1.8,ship.z,tx,tz,ship.team==='player'?0xffdd44:0xff4444,.024+(cn.rt-.5)*.004,()=>{
             // Always spawnHit: miss still lands on island ground, not water
             this._vfx.spawnHit(tx,1.2,tz,ship.team,hit?'fort':'ground');
-            if(!hit)this._vfx.playSound('impact');
             if(hit&&!isl.down){
               let dmg=cn.dmg*((cn.ctr&&cn.ctr.t==='tower')?1+cn.ctr.b:1)*(7+Math.random()*5)/10;
               if(ship.team==='player'){dmg*=st.combatDmgMult*st.mortarAoeMult*(st.cmdDmgMult||1);st.stats.dmgDealt+=dmg;}

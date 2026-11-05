@@ -88,11 +88,19 @@ export function makePatrol(profile, seed = 1, shipUids = null) {
       .sort((a, b) => hullStrength(b.hullId) - hullStrength(a.hullId))
       .slice(0, PATROL.previewShips || 5);
   }
-  const budget = PATROL.strengthRatio * fleet.reduce((a, s) => a + hullStrength(s.hullId), 0);
+  // Size-aware (report.md §Patrol): a small fleet meets a smaller share of
+  // its own strength and never more ships than it brings (+ maxExtraShips
+  // from 3 ships up), so a lone salvaged hull is never focus-fired or kited
+  // into a loss — the patrol is the way back from a wipe, not a death spiral.
+  const n = Math.max(1, fleet.length);
+  const ratio = PATROL.ratioBySize?.[n] ?? PATROL.strengthRatio;
+  const fleetStrength = fleet.reduce((a, s) => a + hullStrength(s.hullId), 0);
+  const budget = ratio * fleetStrength;
+  const maxShips = Math.min(PATROL.maxShips, n < 3 ? n : n + (PATROL.maxExtraShips ?? 2));
   const picks = [];
   let used = 0;
   for (const h of pool) {
-    if (picks.length >= PATROL.maxShips) break;
+    if (picks.length >= maxShips) break;
     const st = hullStrength(h);
     if (used + st <= budget) { picks.push({ h }); used += st; }
   }
@@ -100,11 +108,11 @@ export function makePatrol(profile, seed = 1, shipUids = null) {
     const h = resolveHull(PATROL.minFoe || 'cutter');
     const slots = (HULL_SLOTS[h.hull] || []).length || 2;
     const hp = Math.max(25, Math.min(h.hp, Math.floor(budget / slots)));
-    picks.push({ h, hp });
+    picks.push({ h, hp, lone: true });
     used = hp * slots;
   }
   const names = new Map();
-  const enemies = picks.map(({ h, hp }, i) => {
+  const enemies = picks.map(({ h, hp, lone }, i) => {
     const faction = factionFor(sea, h);
     const pool2 = FACTIONS[faction]?.shipNames || [];
     const taken = names.get(faction) || new Set();
@@ -113,7 +121,7 @@ export function makePatrol(profile, seed = 1, shipUids = null) {
     if (nm) { taken.add(nm); names.set(faction, taken); }
     const e = {
       hull: h.id, faction, x: 55 + rnd() * 25, z: (i - (picks.length - 1) / 2) * 18 + (rnd() - .5) * 8,
-      loadout: { ...(PATROL.loadoutsByTier?.[h.hull]?.[h.tier] || PATROL.loadouts[h.hull]) },   // tier-legal fit (data/campaign.js)
+      loadout: { ...((lone && PATROL.loneLoadout) || PATROL.loadoutsByTier?.[h.hull]?.[h.tier] || PATROL.loadouts[h.hull]) },   // tier-legal fit (data/campaign.js)
     };
     if (nm) e.nm = nm;
     if (hp) e.hp = hp;
@@ -133,7 +141,7 @@ export function makePatrol(profile, seed = 1, shipUids = null) {
       wood: Math.round(R.base.wood + R.perStrength.wood * used),
       gold: Math.round(R.base.gold + R.perStrength.gold * used),
     },
-    strength: { fleet: Math.round(budget / PATROL.strengthRatio), enemy: Math.round(used) },
+    strength: { fleet: Math.round(fleetStrength), enemy: Math.round(used) },
     firstClear: { wood: 0, gold: 0 }, renown: PATROL.renown, requires: [], repeatable: true, seed,
   };
 }

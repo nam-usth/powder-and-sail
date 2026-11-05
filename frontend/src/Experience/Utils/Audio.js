@@ -27,7 +27,7 @@
 // Music + ambience: MusicDirector.js (`music.play('harbor')`).
 // Sound direction: design/audio-direction.md
 
-import * as THREE from 'three';
+import { CANNON_SOUNDS, IMPACT_PROFILES, GUNFIRE_MIX } from '../../data/cannonSounds.js';
 
 // ── Shared DSP resources (one set per AudioContext) ──────────────────
 const _dsp = new WeakMap();
@@ -442,6 +442,289 @@ const SYNTH = {
     wire(n, bp, am, fg);
     return 2.6;
   },
+  /**
+   * Parametric gun (data/cannonSounds.js): report, calibre boom, bark, powder
+   * blast, chest thud, rolling tail, shore slaps, ball whistle, tackle rattle,
+   * mortar tube resonance, grapeshot scatter. `o.p` is the gun's profile.
+   */
+  gun(ctx, out, t, o) {
+    const p = o.p || CANNON_SOUNDS.default, r = o.rate, J = () => 0.85 + Math.random() * 0.3;
+    let dur = 0.6;
+    const [nPops, gap] = p.pops || [1, 0];
+    for (let k = 0; k < nPops; k++) {
+      const tk = t + k * gap * (0.9 + Math.random() * 0.2), kv = k ? 0.8 : 1;
+      if (p.crack) {
+        const [hp, lv, dc] = p.crack;
+        const c = noise(ctx, tk, dc + 0.1), f = filt(ctx, 'highpass', hp * r * J(), 0.8, tk), g = vca(ctx, out);
+        hit(g.gain, tk, lv * kv * J(), 0.001, dc); wire(c, f, g);
+      }
+      if (p.boom) {
+        const [f0, f1, lv, dc] = p.boom;
+        const b = tone(ctx, 'sine', f0 * r, tk, tk + dc + 0.1);
+        b.frequency.exponentialRampToValueAtTime(f1 * r, tk + dc * 0.6);
+        const g = vca(ctx, out); hit(g.gain, tk, lv * kv, 0.003, dc); b.connect(g);
+      }
+      if (p.grit) {
+        const [f0, lv] = p.grit;
+        const s = tone(ctx, 'sawtooth', f0 * r, tk, tk + 0.18);
+        s.frequency.exponentialRampToValueAtTime(f0 * 0.25 * r, tk + 0.14);
+        const ws = ctx.createWaveShaper(); ws.curve = driveCurve();
+        const g = vca(ctx, out); hit(g.gain, tk, lv * kv * J(), 0.002, 0.13); wire(s, ws, g);
+      }
+      if (p.body) {
+        const [l0, l1, lv, dc] = p.body;
+        const n = noise(ctx, tk, dc + 0.15), lp = filt(ctx, 'lowpass', l0 * r * J(), 0.9, tk);
+        lp.frequency.exponentialRampToValueAtTime(l1 * r, tk + dc * 0.85);
+        const g = vca(ctx, out); hit(g.gain, tk, lv * kv, 0.003, dc); wire(n, lp, g);
+      }
+    }
+    if (p.thud) {
+      const [f, lv] = p.thud;
+      const s = tone(ctx, 'sine', f * 1.6 * r, t, t + 0.5);
+      s.frequency.exponentialRampToValueAtTime(f * r, t + 0.06);
+      const g = vca(ctx, out); hit(g.gain, t, lv, 0.002, 0.42); s.connect(g);
+    }
+    if (p.hollow) {   // mortar: the tube rings — a resonant, pitch-sagging "thoomp"
+      const [f, lv] = p.hollow;
+      const s = tone(ctx, 'sine', f * 1.25 * r, t, t + 0.5);
+      s.frequency.exponentialRampToValueAtTime(f * 0.72 * r, t + 0.32);
+      const g = vca(ctx, out); hit(g.gain, t, lv, 0.012, 0.36); s.connect(g);
+      const n = noise(ctx, t, 0.5), bp = filt(ctx, 'bandpass', f * 2 * r, 7, t), ng = vca(ctx, out);
+      bp.frequency.exponentialRampToValueAtTime(f * 1.3 * r, t + 0.3);
+      hit(ng.gain, t, lv * 1.4, 0.01, 0.32); wire(n, bp, ng);
+    }
+    if (p.tail) {
+      const [len, lv, lpf] = p.tail;
+      const n = noise(ctx, t + 0.03, len, brownBuffer(ctx)), lp = filt(ctx, 'lowpass', lpf * r, 0.7, t);
+      lp.frequency.exponentialRampToValueAtTime(70 * r, t + len * 0.9);
+      const g = vca(ctx, out);
+      g.gain.setValueAtTime(0, t + 0.03);
+      g.gain.linearRampToValueAtTime(lv * J(), t + 0.17);
+      g.gain.setTargetAtTime(0, t + 0.22, len / 5);
+      wire(n, lp, g);
+      dur = Math.max(dur, len + 0.1);
+    }
+    for (let i = 0; i < (p.echo || 0); i++) {   // slaps back off shore / hulls
+      const d = 0.2 + i * 0.27 + Math.random() * 0.12, v = 0.09 / (1 + i * 0.7), f = (700 - i * 120) * r;
+      const e = noise(ctx, t + d, 0.32), bp = filt(ctx, 'bandpass', f, 0.8, t + d), g = vca(ctx, out);
+      hit(g.gain, t + d, v, 0.01, 0.26); wire(e, bp, g);
+      dur = Math.max(dur, d + 0.4);
+    }
+    if (p.whistle) {   // roundshot tearing away from the muzzle (Doppler fall)
+      const [f0, f1, lv, len] = p.whistle, t0 = t + 0.05;
+      const s = tone(ctx, 'sine', f0 * r, t0, t0 + len + 0.05);
+      s.frequency.exponentialRampToValueAtTime(f1 * r, t0 + len);
+      const g = vca(ctx, out);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(lv, t0 + 0.06); g.gain.setTargetAtTime(0, t0 + len * 0.45, len / 4);
+      s.connect(g);
+      const n = noise(ctx, t0, len), bp = filt(ctx, 'bandpass', f0 * r, 9, t0), ng = vca(ctx, out);
+      bp.frequency.exponentialRampToValueAtTime(f1 * r, t0 + len);
+      ng.gain.setValueAtTime(0, t0); ng.gain.linearRampToValueAtTime(lv * 2.2, t0 + 0.06); ng.gain.setTargetAtTime(0, t0 + len * 0.45, len / 4);
+      wire(n, bp, ng);
+    }
+    if (p.rattle) {   // carriage slams back on its breeching, tackle and loose gear rattle
+      const n = noise(ctx, t + 0.09, 0.6), bp = filt(ctx, 'bandpass', 1700 * r, 1.6, t), g = vca(ctx, out);
+      burst(g.gain, t + 0.1, 12 + ((Math.random() * 6) | 0), p.rattle * 2, 0.018, 0.05, 0.012); wire(n, bp, g);
+      const k = tone(ctx, 'triangle', 150 * r, t + 0.14, t + 0.3);
+      k.frequency.exponentialRampToValueAtTime(70 * r, t + 0.26);
+      const kg = vca(ctx, out); hit(kg.gain, t + 0.14, p.rattle * 2.5, 0.002, 0.12); k.connect(kg);
+    }
+    if (p.scatter) {   // grapeshot: the charge spreads — a hiss and a spray of balls
+      const n = noise(ctx, t + 0.02, 0.5), hp = filt(ctx, 'highpass', 3000 * r, 0.7, t), g = vca(ctx, out);
+      g.gain.setValueAtTime(0, t + 0.02); g.gain.linearRampToValueAtTime(p.scatter, t + 0.05); g.gain.setTargetAtTime(0, t + 0.08, 0.11);
+      wire(n, hp, g);
+      for (let i = 0; i < 9; i++) {
+        const d = 0.06 + Math.random() * 0.3, f = (2400 + Math.random() * 2600) * r;
+        const s = tone(ctx, 'sine', f, t + d, t + d + 0.08);
+        s.frequency.exponentialRampToValueAtTime(f * 0.7, t + d + 0.07);
+        const sg = vca(ctx, out); hit(sg.gain, t + d, p.scatter * 0.12, 0.004, 0.06); s.connect(sg);
+      }
+    }
+    return dur;
+  },
+  /** Chain shot in flight: two balls and a chain whirling — a pulsing whirr. `o.len` = time of flight. */
+  chain_flight(ctx, out, t, o) {
+    const len = Math.max(0.3, Math.min(3, o.len || 1)), r = o.rate, rot = (11 + Math.random() * 5) * r;
+    const n = noise(ctx, t, len + 0.1), bp = filt(ctx, 'bandpass', 520 * r, 3, t), am = ctx.createGain(), g = vca(ctx, out);
+    bp.frequency.linearRampToValueAtTime(380 * r, t + len);
+    am.gain.value = 0.5;
+    const lfo = tone(ctx, 'sine', rot, t, t + len + 0.1), lg = ctx.createGain(); lg.gain.value = 0.5;
+    lfo.connect(lg); lg.connect(am.gain);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.32, t + len * 0.7); g.gain.linearRampToValueAtTime(0.0, t + len);
+    wire(n, bp, am, g);
+    const s = tone(ctx, 'triangle', 210 * r, t, t + len + 0.05), sa = ctx.createGain(), sg = vca(ctx, out);
+    sa.gain.value = 0.5; lg.connect(sa.gain);
+    s.frequency.linearRampToValueAtTime(170 * r, t + len);
+    sg.gain.setValueAtTime(0, t); sg.gain.linearRampToValueAtTime(0.05, t + len * 0.7); sg.gain.linearRampToValueAtTime(0, t + len);
+    wire(s, sa, sg);
+    return len + 0.1;
+  },
+  /** Mortar shell coming down: a falling whistle over the last ~1.2 s of flight. */
+  shell_whistle(ctx, out, t, o) {
+    const len = Math.max(0.4, Math.min(1.4, o.len || 1)), r = o.rate;
+    const s = tone(ctx, 'sine', 1900 * r, t, t + len);
+    s.frequency.exponentialRampToValueAtTime(620 * r, t + len);
+    const g = vca(ctx, out);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + len * 0.8); g.gain.linearRampToValueAtTime(0, t + len);
+    s.connect(g);
+    const n = noise(ctx, t, len), bp = filt(ctx, 'bandpass', 1900 * r, 6, t), ng = vca(ctx, out);
+    bp.frequency.exponentialRampToValueAtTime(620 * r, t + len);
+    ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.16, t + len * 0.8); ng.gain.linearRampToValueAtTime(0, t + len);
+    wire(n, bp, ng);
+    return len;
+  },
+  /** Small shot on planking: a knock and a few splinters. */
+  wood_knock(ctx, out, t, o) {
+    const r = o.rate;
+    const k = tone(ctx, 'triangle', 330 * r, t, t + 0.1);
+    k.frequency.exponentialRampToValueAtTime(150 * r, t + 0.07);
+    const kg = vca(ctx, out); hit(kg.gain, t, 0.36, 0.001, 0.07); k.connect(kg);
+    const sp = noise(ctx, t, 0.22), sb = filt(ctx, 'bandpass', 3600 * r, 2.2, t), sg = vca(ctx, out);
+    burst(sg.gain, t + 0.004, 5 + ((Math.random() * 3) | 0), 0.22, 0.01, 0.03, 0.006); wire(sp, sb, sg);
+    return 0.3;
+  },
+  /** Shot on masonry: a hard crack and falling chips. */
+  stone_chip(ctx, out, t, o) {
+    const r = o.rate;
+    const c = noise(ctx, t, 0.08), bp = filt(ctx, 'bandpass', 2200 * r, 1.4, t), cg = vca(ctx, out);
+    hit(cg.gain, t, 0.4, 0.001, 0.05); wire(c, bp, cg);
+    const s = tone(ctx, 'sine', 160 * r, t, t + 0.25);
+    s.frequency.exponentialRampToValueAtTime(60 * r, t + 0.18);
+    const sg = vca(ctx, out); hit(sg.gain, t, 0.3, 0.002, 0.2); s.connect(sg);
+    const gr = noise(ctx, t + 0.05, 0.7), gb = filt(ctx, 'bandpass', 3000 * r, 1.4, t), gg = vca(ctx, out);
+    burst(gg.gain, t + 0.08, 12, 0.12, 0.02, 0.06, 0.008); wire(gr, gb, gg);
+    return 0.8;
+  },
+  /** Sub-bass chest thud under heavy impacts. */
+  heavy_thud(ctx, out, t, o) {
+    const r = o.rate;
+    const s = tone(ctx, 'sine', 70 * r, t, t + 0.6);
+    s.frequency.exponentialRampToValueAtTime(34 * r, t + 0.25);
+    const g = vca(ctx, out); hit(g.gain, t, 0.6, 0.003, 0.5); s.connect(g);
+    return 0.6;
+  },
+  /** Chain shot through the rigging: ropes parting, canvas ripping, a spar cracking. */
+  rig_tear(ctx, out, t, o) {
+    const r = o.rate;
+    for (let i = 0; i < 3; i++) {   // ropes snapping
+      const d = i * (0.03 + Math.random() * 0.05), c = noise(ctx, t + d, 0.04), hp = filt(ctx, 'highpass', 2800 * r, 1, t + d), g = vca(ctx, out);
+      hit(g.gain, t + d, 0.3, 0.001, 0.025); wire(c, hp, g);
+    }
+    const n = noise(ctx, t + 0.02, 0.5), bp = filt(ctx, 'bandpass', 1400 * r, 1.4, t), am = ctx.createGain(), g = vca(ctx, out);
+    bp.frequency.exponentialRampToValueAtTime(3600 * r, t + 0.4);   // canvas rip: rising, gritty
+    am.gain.value = 0.5;
+    const lfo = tone(ctx, 'square', 55 * r, t, t + 0.55), lg = ctx.createGain(); lg.gain.value = 0.5; lfo.connect(lg); lg.connect(am.gain);
+    g.gain.setValueAtTime(0, t + 0.02); g.gain.linearRampToValueAtTime(0.32, t + 0.08); g.gain.setTargetAtTime(0, t + 0.3, 0.06);
+    wire(n, bp, am, g);
+    const k = tone(ctx, 'triangle', 180 * r, t + 0.05, t + 0.25);   // spar crack
+    k.frequency.exponentialRampToValueAtTime(70 * r, t + 0.2);
+    const kg = vca(ctx, out); hit(kg.gain, t + 0.05, 0.3, 0.002, 0.14); k.connect(kg);
+    return 0.7;
+  },
+  /** Chain links rattling on stone. */
+  chain_clank(ctx, out, t, o) {
+    const r = o.rate;
+    for (let i = 0; i < 5; i++) clink(ctx, out, t + i * (0.03 + Math.random() * 0.04), (900 + Math.random() * 500) * r, 0.08 * (1 - i / 6));
+    return 0.6;
+  },
+  /** Grapeshot peppering wood: a scatter of small knocks. */
+  pepper(ctx, out, t, o) {
+    const r = o.rate, n = 10 + ((Math.random() * 7) | 0);
+    for (let i = 0; i < n; i++) {
+      const d = Math.random() * 0.22, f = (420 + Math.random() * 380) * r;
+      const k = tone(ctx, 'triangle', f, t + d, t + d + 0.05);
+      k.frequency.exponentialRampToValueAtTime(f * 0.5, t + d + 0.04);
+      const kg = vca(ctx, out); hit(kg.gain, t + d, 0.16 * (0.5 + Math.random() * 0.5), 0.001, 0.035); k.connect(kg);
+    }
+    const sp = noise(ctx, t, 0.35), sb = filt(ctx, 'bandpass', 3300 * r, 2, t), sg = vca(ctx, out);
+    burst(sg.gain, t + 0.01, 10, 0.18, 0.012, 0.03, 0.006); wire(sp, sb, sg);
+    return 0.45;
+  },
+  /** Grapeshot into the sea: a fizz of small plops across the water. */
+  pepper_splash(ctx, out, t, o) {
+    const r = o.rate, n = 9 + ((Math.random() * 6) | 0);
+    for (let i = 0; i < n; i++) {
+      const d = Math.random() * 0.25, f = (600 + Math.random() * 700) * r;
+      const s = tone(ctx, 'sine', f, t + d, t + d + 0.06);
+      s.frequency.exponentialRampToValueAtTime(f * 1.8, t + d + 0.05);
+      const g = vca(ctx, out); hit(g.gain, t + d, 0.06, 0.002, 0.045); s.connect(g);
+    }
+    const nn = noise(ctx, t, 0.6), bp = filt(ctx, 'highpass', 2500 * r, 0.7, t), g = vca(ctx, out);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.16, t + 0.05); g.gain.setTargetAtTime(0, t + 0.15, 0.12);
+    wire(nn, bp, g);
+    return 0.7;
+  },
+  /** Mortar shell bursting in the sea: underwater thump, a tall plume, water raining back. */
+  mortar_splash(ctx, out, t, o) {
+    const r = o.rate;
+    SYNTH.heavy_thud(ctx, out, t, { rate: 0.8 * r });
+    const n = noise(ctx, t, 0.9), lp = filt(ctx, 'lowpass', 300 * r, 0.8, t), g = vca(ctx, out);
+    lp.frequency.exponentialRampToValueAtTime(2400 * r, t + 0.15);
+    lp.frequency.exponentialRampToValueAtTime(500 * r, t + 0.8);
+    hit(g.gain, t, 0.5, 0.01, 0.75); wire(n, lp, g);
+    SYNTH.splash(ctx, out, t + 0.03, { rate: 0.65 * r });
+    const rain = noise(ctx, t + 0.5, 1.4), hp = filt(ctx, 'highpass', 2000 * r, 0.7, t), rg = vca(ctx, out);
+    rg.gain.setValueAtTime(0, t + 0.5); rg.gain.linearRampToValueAtTime(0.12, t + 0.8); rg.gain.setTargetAtTime(0, t + 1.1, 0.25);
+    wire(rain, hp, rg);
+    return 2.0;
+  },
+  /** Shipyard launch: three strikes of the yard bell and a cheer of the hull going down the ways (wood rumble + splash). */
+  launch(ctx, out, t) {
+    [0, 0.42, 0.84].forEach((d) => bell(ctx, out, t + d, 560, 0.1));
+    const n = noise(ctx, t + 1.1, 1.4, brownBuffer(ctx)), lp = filt(ctx, 'lowpass', 260, 0.7, t), g = vca(ctx, out);
+    g.gain.setValueAtTime(0, t + 1.1); g.gain.linearRampToValueAtTime(0.35, t + 2.0); g.gain.setTargetAtTime(0, t + 2.2, 0.15);
+    wire(n, lp, g);
+    SYNTH.splash(ctx, out, t + 2.3, { rate: 0.6 });
+    return 3.6;
+  },
+  /** Building placed: a timber laid down and a mallet tap. */
+  place(ctx, out, t, o) {
+    const r = o.rate;
+    const k = tone(ctx, 'triangle', 140 * r, t, t + 0.18);
+    k.frequency.exponentialRampToValueAtTime(70 * r, t + 0.12);
+    const kg = vca(ctx, out); hit(kg.gain, t, 0.34, 0.002, 0.14); k.connect(kg);
+    const n = noise(ctx, t, 0.12), bp = filt(ctx, 'bandpass', 700 * r, 1.2, t), ng = vca(ctx, out);
+    hit(ng.gain, t, 0.22, 0.002, 0.09); wire(n, bp, ng);
+    const m = tone(ctx, 'sine', 900 * r, t + 0.16, t + 0.24), mg = vca(ctx, out);
+    hit(mg.gain, t + 0.16, 0.09, 0.001, 0.05); m.connect(mg);
+    return 0.35;
+  },
+  /** Fort / battery destroyed: powder magazine blast + masonry collapsing. */
+  fort_down(ctx, out, t, o) {
+    SYNTH.explosion(ctx, out, t, o);
+    const n = noise(ctx, t + 0.35, 1.8, brownBuffer(ctx)), lp = filt(ctx, 'lowpass', 500, 0.7, t), g = vca(ctx, out);
+    g.gain.setValueAtTime(0, t + 0.35); g.gain.linearRampToValueAtTime(0.4, t + 0.6); g.gain.setTargetAtTime(0, t + 0.9, 0.4);
+    wire(n, lp, g);
+    const gr = noise(ctx, t + 0.4, 1.4), gb = filt(ctx, 'bandpass', 1800, 1.2, t), gg = vca(ctx, out);
+    burst(gg.gain, t + 0.45, 22, 0.16, 0.02, 0.07, 0.01); wire(gr, gb, gg);
+    return 2.6;
+  },
+  /** UI: confirm (two rising wood tocks). */
+  ui_confirm(ctx, out, t, o) { SYNTH.ui_click(ctx, out, t, o); SYNTH.ui_click(ctx, out, t + 0.07, { rate: o.rate * 1.25 }); return 0.16; },
+  /** UI: back / cancel (a lower single tock). */
+  ui_back(ctx, out, t, o) { return SYNTH.ui_click(ctx, out, t, { rate: o.rate * 0.72 }); },
+  /** UI: denied / can't afford — a dull double knock. */
+  ui_error(ctx, out, t, o) {
+    for (const d of [0, 0.09]) {
+      const s = tone(ctx, 'triangle', 190 * o.rate, t + d, t + d + 0.08), g = vca(ctx, out);
+      hit(g.gain, t + d, 0.22, 0.002, 0.06); s.connect(g);
+    }
+    return 0.2;
+  },
+  /** UI: open a panel / page — a soft parchment rustle. */
+  ui_open(ctx, out, t, o) {
+    const n = noise(ctx, t, 0.22), bp = filt(ctx, 'bandpass', 2600 * o.rate, 0.9, t), g = vca(ctx, out);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.07, t + 0.05); g.gain.setTargetAtTime(0, t + 0.09, 0.05);
+    wire(n, bp, g);
+    return 0.25;
+  },
+  /** Reinforcements / wave incoming: a distant signal gun and a horn call. */
+  reinforce(ctx, out, t) {
+    SYNTH.gun(ctx, out, t, { rate: 0.95, p: { crack: [1600, 0.12, 0.06], boom: [90, 32, 0.35, 0.6], body: [700, 100, 0.2, 0.6], tail: [2, 0.2, 200] } });
+    horn(ctx, out, t + 0.5, 50, 0.35, 0.08);
+    horn(ctx, out, t + 0.9, 57, 0.7, 0.085);
+    return 2.2;
+  },
   /** A single strike of the ship's bell. */
   bell(ctx, out, t, o) { bell(ctx, out, t, 620 * o.rate, 0.12); return 3.4; },
   /** Ship ready: "two bells" + a handbell answer. */
@@ -467,11 +750,19 @@ const LIMIT = {
   cannon: 3, fire: 3, explosion: 2, explosion_01: 2, explosion_02: 2, explosion_03: 2, water_splash: 3, splash: 3,
   wood_crunch: 3, impact: 2, sink: 2, ui_hover: 1, ui_click: 2, coin: 2, build: 1, build_complete: 1,
   build_hammer: 1, bell: 1, ship_ready: 1, set_sail: 1, warning: 1, research: 1, victory: 1, defeat: 1,
+  wood_knock: 3, stone_chip: 2, heavy_thud: 2, rig_tear: 2, chain_clank: 2, pepper: 2, pepper_splash: 2,
+  mortar_splash: 2, chain_flight: 2, shell_whistle: 2, launch: 1, place: 1, fort_down: 1,
+  ui_confirm: 1, ui_back: 1, ui_error: 1, ui_open: 1, reinforce: 1,
 };
+// sink is triggered from several places for the same ship (GameApp + VFX.startSink) — one voice only.
+LIMIT.sink = 1;
 // Random pitch variation (± fraction / 2) for non-musical sounds.
-const VARY = { cannon: 0.06, fire: 0.08, explosion: 0.08, wood_crunch: 0.14, splash: 0.12, impact: 0.12, sink: 0.05, build_hammer: 0.05, coin: 0.06, ui_click: 0.03 };
+const VARY = { place: 0.06, wood_knock: 0.14, stone_chip: 0.12, pepper: 0.1, rig_tear: 0.1, cannon: 0.06, fire: 0.08, explosion: 0.08, wood_crunch: 0.14, splash: 0.12, impact: 0.12, sink: 0.05, build_hammer: 0.05, coin: 0.06, ui_click: 0.03 };
 // Music ducking [dB, hold s, release s] under big events.
-const DUCK = { explosion: [4, 0.5, 1.4], sink: [5, 1.2, 2.0], warning: [3, 0.6, 1.0] };
+const DUCK = { explosion: [4, 0.5, 1.4], sink: [5, 1.2, 2.0], warning: [3, 0.6, 1.0], fort_down: [5, 0.8, 1.6], reinforce: [3, 0.6, 1.0], launch: [3, 1.0, 1.4] };
+const STORAGE_KEY = 'pas_audio';
+function safeStorage() { try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch (e) { return null; } }
+const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(+v) ? +v : 0));
 const MAX_SYNTH_VOICES = 48;
 
 // ── Audio class ──────────────────────────────────────────────────────
@@ -480,6 +771,8 @@ export class Audio {
    * @param {object} [opts]
    * @param {BaseAudioContext} [opts.context]     use this context (e.g. an OfflineAudioContext in tests)
    * @param {AudioNode}        [opts.destination] master output (default: context.destination)
+   * @param {Storage|null}     [opts.storage]     settings persistence (default localStorage; null = none —
+   *                                              custom-context instances never persist)
    */
   constructor(opts = {}) {
     this._ctxIn        = opts.context || null;
@@ -495,10 +788,14 @@ export class Audio {
     this._masterVol    = 0.75;
     this._musicVol     = 0.40;
     this._sfxVol       = 1.00;
+    this._muted        = false;
+    this._storage      = opts.storage !== undefined ? opts.storage : (opts.context ? null : safeStorage());
+    this._loadSettings();
 
-    // Camera position — set each frame from outside (audio.setCameraPos)
-    this._camPos       = new THREE.Vector3();
-    this._tmpPos       = new THREE.Vector3();
+    // Listener: the point on the sea the camera looks at (see setCameraPos) + zoom distance.
+    this._camPos       = { x: 0, y: 0, z: 0 };
+    this._ear          = { x: 0, z: 0, zoom: 0 };
+    this._gunRecent    = [];
 
     // Spatial attenuation parameters
     this._maxDist      = 80;   // beyond this distance sound is inaudible
@@ -531,14 +828,20 @@ export class Audio {
       this._musicDuck  = ctx.createGain();
       this._clip       = ctx.createWaveShaper();
       this._clip.curve = softClipCurve();   // transparent below 0.8, never reaches full scale
+      // SFX bus safety compressor: fleet broadsides + blasts stack up; this keeps
+      // the bus under the soft clip's knee without pumping single shots.
+      this._sfxComp    = ctx.createDynamicsCompressor();
+      this._sfxComp.threshold.value = -9; this._sfxComp.knee.value = 6; this._sfxComp.ratio.value = 6;
+      this._sfxComp.attack.value = 0.003; this._sfxComp.release.value = 0.22;
 
-      this._sfxGain.connect(this._masterGain);
+      this._sfxGain.connect(this._sfxComp);
+      this._sfxComp.connect(this._masterGain);
       this._musicGain.connect(this._musicDuck);
       this._musicDuck.connect(this._masterGain);
       this._masterGain.connect(this._clip);
       this._clip.connect(this._destIn || ctx.destination);
 
-      this._masterGain.gain.value = this._masterVol;
+      this._masterGain.gain.value = this._muted ? 0 : this._masterVol;
       this._sfxGain.gain.value    = this._sfxVol;
       this._musicGain.gain.value  = this._musicVol;
     }
@@ -573,13 +876,13 @@ export class Audio {
     node.gain.setTargetAtTime(v, this._ctx.currentTime, 0.03);
   }
   set masterVolume(v) {
-    this._masterVol = Math.max(0, Math.min(1, v));
-    this._setVol(this._masterGain, this._masterVol);
+    this._masterVol = clamp01(v);
+    this._setVol(this._masterGain, this._muted ? 0 : this._masterVol);
   }
   get masterVolume() { return this._masterVol; }
 
   set sfxVolume(v) {
-    this._sfxVol = Math.max(0, Math.min(1, v));
+    this._sfxVol = clamp01(v);
     this._setVol(this._sfxGain, this._sfxVol);
   }
   get sfxVolume() { return this._sfxVol; }
@@ -589,6 +892,44 @@ export class Audio {
     this._setVol(this._musicGain, this._musicVol);
   }
   get musicVolume() { return this._musicVol; }
+
+  // ── Settings API (Settings UI) — persisted in localStorage 'pas_audio' ──
+  // Safe before the first user gesture: no AudioContext is created here.
+  /** SFX volume 0..1 (gunfire, impacts, UI, ambience beds). Persisted. */
+  setSfxVolume(v) { this.sfxVolume = v; this._saveSettings(); }
+  /** @returns {number} SFX volume 0..1 */
+  getSfxVolume() { return this._sfxVol; }
+  /** Master volume 0..1 (music + SFX). Persisted. */
+  setMasterVolume(v) { this.masterVolume = v; this._saveSettings(); }
+  /** @returns {number} master volume 0..1 */
+  getMasterVolume() { return this._masterVol; }
+  /** Silence everything (music + SFX) without losing the volumes. Persisted. */
+  setMasterMute(on) {
+    this._muted = !!on;
+    this._setVol(this._masterGain, this._muted ? 0 : this._masterVol);
+    this._saveSettings();
+  }
+  /** @returns {boolean} master mute state */
+  isMasterMuted() { return this._muted; }
+  /** @returns {{master:number, sfx:number, muted:boolean}} snapshot for the settings UI */
+  getSettings() { return { master: this._masterVol, sfx: this._sfxVol, muted: this._muted }; }
+  _loadSettings() {
+    try {
+      const raw = this._storage?.getItem(STORAGE_KEY);
+      if (!raw) return;
+      const j = JSON.parse(raw);
+      if (j && Number.isFinite(+j.master)) this._masterVol = clamp01(j.master);
+      if (j && Number.isFinite(+j.sfx)) this._sfxVol = clamp01(j.sfx);
+      if (j) this._muted = !!j.muted;
+    } catch (e) { /* corrupt / blocked storage → defaults */ }
+  }
+  _saveSettings() {
+    try {
+      this._storage?.setItem(STORAGE_KEY, JSON.stringify({
+        master: Math.round(this._masterVol * 1000) / 1000, sfx: Math.round(this._sfxVol * 1000) / 1000, muted: this._muted ? 1 : 0,
+      }));
+    } catch (e) { /* private mode */ }
+  }
 
   /** Briefly lower the music bus by `db` so a big event cuts through. */
   duckMusic(db = 4, hold = 0.5, release = 1.4) {
@@ -602,14 +943,25 @@ export class Audio {
   }
 
   // ── Called each frame from GameApp to keep camera position synced ─
+  // The battle/harbor camera rig sits at (focus.x, d·0.75, focus.z + d) looking at
+  // the focus (CameraController). Distances are measured from that focus on the
+  // sea plane, plus a quarter of the zoom distance — so what is on screen is
+  // audible, zooming in gets louder, and the camera's height doesn't silence
+  // everything (a raw 3-D distance from a camera 100 u away did).
   setCameraPos(x, y, z) {
-    this._camPos.set(x, y, z);
+    this._camPos.x = x; this._camPos.y = y; this._camPos.z = z;
+    const d = Math.max(0, y) / 0.75;
+    this.setListener(x, z - d, d);
+  }
+  /** Explicit listener: the ground point the player looks at + zoom distance (overrides setCameraPos' estimate until the next call). */
+  setListener(x, z, zoom = 0) {
+    this._ear.x = x; this._ear.z = z; this._ear.zoom = Math.max(0, zoom);
     this._updateSpatialLoops();
   }
 
   // ── Spatial attenuation: 1.0 at refDist, 0 at maxDist ────────────
   _spatialGain(wx, wy, wz, maxDist = this._maxDist) {
-    const dist = this._camPos.distanceTo(this._tmpPos.set(wx, wy, wz));
+    const dist = Math.hypot(wx - this._ear.x, wz - this._ear.z) + this._ear.zoom * 0.25;
     if (dist >= maxDist) return 0;
     if (dist <= this._refDist) return 1;
     // Inverse-square-like rolloff
@@ -617,11 +969,11 @@ export class Audio {
   }
 
   /** Voice limiting: per-type start budget inside a 90 ms window + a global synth cap. */
-  _admit(type, t) {
+  _admit(type, t, limit = LIMIT[type] ?? 4) {
     let arr = this._recent.get(type);
     if (!arr) this._recent.set(type, (arr = []));
     while (arr.length && t - arr[0] > 0.09) arr.shift();
-    if (arr.length >= (LIMIT[type] ?? 4)) return false;
+    if (arr.length >= limit) return false;
     if (!this._offline && this._voices >= MAX_SYNTH_VOICES && !this._buffers.has(type)) return false;
     arr.push(t);
     return true;
@@ -669,6 +1021,90 @@ export class Audio {
     } catch (e) { /* audio context may not exist in test env */ }
   }
 
+  /** Spatial gain node feeding the SFX bus (null when inaudible). */
+  _spatNode(pos, maxDist, life) {
+    if (!pos) return this._sfxGain;
+    const spat = this._spatialGain(pos.x ?? pos[0], pos.y ?? pos[1], pos.z ?? pos[2], maxDist);
+    if (spat <= 0.001) return null;
+    const g = this._ctx.createGain();
+    g.gain.value = spat;
+    g.connect(this._sfxGain);
+    this._later(life + 0.4, () => { try { g.disconnect(); } catch (e) {} });
+    return g;
+  }
+
+  /**
+   * A gun firing — each cannon id (data/cannons.js) has its own recipe in
+   * data/cannonSounds.js ('fort' / 'defense' for shore guns). Schedules the
+   * in-flight sound (chain whirr, mortar shell whistle) up to the impact.
+   * Voice-limited per gun and across all guns, with density compensation so
+   * an 8-ship broadside sounds big but doesn't clip.
+   * @param {string|{id:string}|null} cannon  cannon id or cannon object
+   * @param {number} x @param {number} y @param {number} z  muzzle position
+   * @param {number} [tx] @param {number} [tz]  aim point (flight sounds)
+   * @param {number} [tof]  time of flight in seconds
+   */
+  playCannon(cannon, x, y, z, tx = x, tz = z, tof = 1) {
+    try {
+      const id = (typeof cannon === 'string' ? cannon : cannon?.id) || 'default';
+      const p = CANNON_SOUNDS[id] || CANNON_SOUNDS.default;
+      const ctx = this._getCtx();
+      if (!ctx) return;
+      const t = ctx.currentTime, M = GUNFIRE_MIX;
+      const flightAt = p.flight === 'shell' ? t + Math.max(0.05, tof - Math.min(1.2, tof * 0.7)) : t + 0.08;
+      const flightLen = p.flight === 'shell' ? Math.min(1.2, tof * 0.7) : Math.max(0.2, tof - 0.1);
+      const flight = p.flight === 'chain' ? 'chain_flight' : p.flight === 'shell' ? 'shell_whistle' : null;
+      const fpos = p.flight === 'shell' ? { x: tx, y: 0, z: tz } : { x: (x + tx) / 2, y: 0, z: (z + tz) / 2 };
+      // per-gun + all-guns start budget
+      if (!this._admit('gun:' + id, t, M.perGun) || !this._admit('gun', t, M.allGuns)) {
+        // the report is dropped but the in-flight sound of a lone chain/mortar is still worth hearing
+        if (flight) this.play(flight, fpos, { delay: flightAt - t, len: flightLen, volume: 0.7, maxDistance: p.maxDist * 0.6 });
+        return;
+      }
+      const recent = this._gunRecent;
+      while (recent.length && t - recent[0] > M.densityWindowSec) recent.shift();
+      recent.push(t);
+      const density = Math.min(1, Math.sqrt(M.densityFree / Math.max(M.densityFree, recent.length)));
+      const target = this._spatNode({ x, y, z }, p.maxDist, 4);
+      if (!target) { if (flight) this.play(flight, fpos, { delay: flightAt - t, len: flightLen, maxDistance: p.maxDist * 0.6 }); return; }
+      const vary = 1 + (Math.random() - 0.5) * (p.vary ?? 0.05);
+      const vol = (p.vol ?? 0.7) * density * (0.9 + Math.random() * 0.2);
+      this._startSynth('gun', target, t, { p, volume: vol, playbackRate: vary });
+      const body = this._buffers.get('cannon');
+      if (p.mp3 && body) this._startBuffer(body, target, t, false, { volume: vol * p.mp3[0], playbackRate: p.mp3[1] * vary });
+      if (flight) this.play(flight, fpos, { delay: flightAt - t, len: flightLen, maxDistance: p.maxDist * 0.6 });
+      if (p.duck && density > 0.7) this.duckMusic(...p.duck);
+    } catch (e) { /* no audio in this environment */ }
+  }
+
+  /**
+   * Where a shot lands. `surface`: 'ship' | 'fort' | 'building' | 'ground' | 'water'.
+   * The sound depends on the gun (data/cannonSounds.js IMPACT_PROFILES):
+   * light shot knocks, heavy shot thuds, chain tears rigging, grape peppers,
+   * mortar shells burst.
+   */
+  playImpact(cannon, surface, x, y, z) {
+    try {
+      const id = (typeof cannon === 'string' ? cannon : cannon?.id) || 'default';
+      const gun = CANNON_SOUNDS[id] || CANNON_SOUNDS.default;
+      const prof = IMPACT_PROFILES[gun.impact] || IMPACT_PROFILES.medium;
+      const layers = prof[surface] || prof.ship;
+      const jitter = 0.95 + Math.random() * 0.1;
+      for (const [name0, gain, rate] of layers) {
+        const name = name0 === 'explosion_*' ? 'explosion_0' + (1 + ((Math.random() * 3) | 0)) : name0;
+        if (name.startsWith('explosion_0') && !this._buffers.has(name)) {   // recordings not loaded → procedural crunch
+          this.play('wood_crunch', { x, y, z }, { volume: gain, playbackRate: rate * jitter, maxDistance: prof.maxDist });
+          continue;
+        }
+        if (name === 'water_splash' && !this._buffers.has(name)) {
+          this.play('splash', { x, y, z }, { volume: gain, playbackRate: rate * jitter, maxDistance: prof.maxDist });
+          continue;
+        }
+        this.play(name, { x, y, z }, { volume: gain, playbackRate: rate * jitter, maxDistance: prof.maxDist, sfxOnly: true });
+      }
+    } catch (e) { /* no audio */ }
+  }
+
   _startSynth(name, target, t, opts) {
     const fn = SYNTH[name];
     if (!fn) return 0;
@@ -677,7 +1113,7 @@ export class Audio {
     g.gain.value = opts.volume ?? 1;
     g.connect(target);
     const vary = VARY[name] ? 1 + (Math.random() - 0.5) * VARY[name] : 1;
-    const dur = fn(ctx, g, t, { rate: (opts.playbackRate ?? 1) * vary }) || 2;
+    const dur = fn(ctx, g, t, { rate: (opts.playbackRate ?? 1) * vary, p: opts.p, len: opts.len }) || 2;
     this._voices++;
     this._later(Math.max(dur + (t - ctx.currentTime) + 0.25, (opts.cleanupDelayMs ?? 0) / 1000), () => { this._voices--; try { g.disconnect(); } catch (e) {} });
     return dur;

@@ -19,41 +19,7 @@ import { vfxBudget, onVfxQualityChange, setVfxQuality, getVfxQuality } from './q
 // Re-export so existing import paths keep working + the quality API.
 export { CameraShake, setVfxQuality, getVfxQuality };
 
-const CANNON_SOUND = {
-  default:   { pitch: 1.00, body: 0.68, maxDistance: 300 },
-  swivel:    { pitch: 1.16, body: 0.46, maxDistance: 240 },
-  falconet:  { pitch: 1.18, body: 0.50, maxDistance: 260 },
-  long9:     { pitch: 1.10, body: 0.58, maxDistance: 300 },
-  demi_culv: { pitch: 1.08, body: 0.60, maxDistance: 300 },
-  carronade: { pitch: 0.92, body: 0.72, maxDistance: 280 },
-  demi_can:  { pitch: 1.00, body: 0.74, maxDistance: 300 },
-  mortar1:   { pitch: 0.78, body: 0.86, maxDistance: 340 },
-  fort:      { pitch: 0.88, body: 0.72, maxDistance: 320 },
-  defense:   { pitch: 1.04, body: 0.56, maxDistance: 280 },
-  chain_shot: { pitch: 0.86, body: 0.62, maxDistance: 260 },
-  grapeshot:  { pitch: 1.22, body: 0.58, maxDistance: 220 },
-};
-
-function cannonAudioOpts(cannon) {
-  const id = typeof cannon === 'string' ? cannon : cannon?.id;
-  const p = CANNON_SOUND[id] || CANNON_SOUND.default;
-  return {
-    volume: p.body,
-    playbackRate: p.pitch * (0.95 + Math.random() * 0.10),
-    maxDistance: p.maxDistance,
-  };
-}
-
-const HIT_EXPLOSIONS = {
-  ship: ['explosion_01', 'explosion_02', 'explosion_03'],
-  fort: ['explosion_01', 'explosion_02', 'explosion_01', 'explosion_02', 'explosion_03'],
-  building: ['explosion_01', 'explosion_02', 'explosion_01', 'explosion_02', 'explosion_03'],
-};
-
-function pickHitExplosion(type) {
-  const list = HIT_EXPLOSIONS[type] || HIT_EXPLOSIONS.ship;
-  return list[Math.floor(Math.random() * list.length)];
-}
+// Gun + impact sounds: per-cannon recipes in data/cannonSounds.js (audio.playCannon / playImpact).
 
 const BALL_POOL  = 32;
 const GRAVITY    = 18;
@@ -166,24 +132,13 @@ export class VFX {
   spawnHit(x, y, z, _team, type = 'ship') {
     if (type === 'ship') FX.hitShip(this._fx, x, y, z);
     else FX.hitStone(this._fx, x, y, z, type === 'fort' || type === 'building');
-    if (type !== 'ground') {
-      const isStructure = type === 'fort' || type === 'building';
-      this.play3D(pickHitExplosion(type), x, y, z, {
-        volume: isStructure ? 0.74 : 0.66,
-        playbackRate: 0.95 + Math.random() * 0.10,
-        maxDistance: isStructure ? 150 : 130,
-      });
-    }
+    audio.playImpact(this._shotCannon, type, x, y, z);   // per-gun impact sound (data/cannonSounds.js)
   }
 
   /** Cannonball into the sea: water column, droplets, mist, rings + foam. */
   spawnSplash(x, y, z) {
     FX.splash(this._fx, x, this._waterY(x, z), z, 1);
-    this.play3D('water_splash', x, y, z, {
-      volume: 0.62,
-      playbackRate: 0.94 + Math.random() * 0.12,
-      maxDistance: 120,
-    });
+    audio.playImpact(this._shotCannon, 'water', x, y, z);
   }
 
   /** Generic blast (mines, Deadman's Lure). */
@@ -259,7 +214,8 @@ export class VFX {
       this._muzzle.discharge(sx, sy, sz, dirX, dirZ, 1.3);
       this._lights.flash(sx, sy, sz, 8, 0.09);
     }
-    this.play3D('cannon', sx, sy, sz, cannonAudioOpts(cannon));
+    audio.playCannon(cannon, sx, sy, sz, tx, tz, dist / HORIZ_SPD);   // per-gun recipe (data/cannonSounds.js)
+    if (onImpact) { const cb = onImpact; onImpact = () => { this._shotCannon = cannon; try { cb(); } finally { this._shotCannon = null; } }; }
 
     const dx = tx - ox, dz = tz - oz;
     const d2 = Math.sqrt(dx * dx + dz * dz) || 0.01;

@@ -8,7 +8,7 @@
   Audio Lab: audition the procedural music, ambience and SFX, and render them
   offline for level checks / WAV export.
     node tools/serve.mjs 8080   →   http://localhost:8080/tools/audio-lab.html
-  Automation: ?auto=music | regions | sfx  (sets window.__labDone; used by tools/audio_check.mjs)
+  Automation: ?auto=music | regions | sfx | cannons | impacts  (sets window.__labDone; used by tools/audio_check.mjs)
 -->
 <script type="importmap">{ "imports": { "three": "../frontend/vendor/three/build/three.module.js" } }</script>
 <style>
@@ -25,6 +25,11 @@
   label { color: var(--dim); margin-right: 10px; }
   input[type=range] { vertical-align: middle; width: 140px; }
   #status { font: 11px ui-monospace, monospace; color: var(--dim); white-space: pre-wrap; margin-top: 6px; }
+  #compare { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; margin: 8px 0; }
+  #compare .card { background: #0f1828; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+  #compare .card b { color: var(--gold); } #compare .card .k { color: var(--dim); font-size: 11px; }
+  #compare canvas.spec { height: 90px; margin-top: 4px; }
+  #compare .bar { height: 6px; background: #2a3f60; border-radius: 3px; margin-top: 4px; } #compare .bar i { display: block; height: 100%; background: var(--gold); border-radius: 3px; }
   .row { display: grid; grid-template-columns: 210px 1fr; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
   .row:first-child { border-top: 0; }
   .meta b { color: var(--gold); font-weight: 600; }
@@ -69,15 +74,20 @@
     <button data-set="music">Render music</button>
     <button data-set="regions">Render regions</button>
     <button data-set="sfx">Render SFX</button>
+    <button data-set="cannons">Render cannons</button>
+    <button data-set="impacts">Render impacts</button>
     <label style="margin-left:12px">Seconds <input id="secs" type="number" value="24" min="4" max="90" style="width:56px"></label>
   </div>
   <p class="legend">Waveform (min/max per column, red = |x| ≥ 0.99) with the 400 ms RMS envelope in gold · spectrogram 40 Hz–16 kHz, log frequency, 72 dB range.</p>
+  <div id="compare"></div>
   <div id="rows"></div>
   <table id="stats"></table>
 </section>
 
 <script type="module">
 import { audio, SFX_RECIPES, Audio } from '../frontend/src/Experience/Utils/Audio.js';
+import { CANNON_SOUNDS, IMPACT_PROFILES } from '../frontend/src/data/cannonSounds.js';
+import { CANNONS } from '../frontend/src/data/cannons.js';
 import { music, MUSIC_TRACKS, AMBIENCE_KINDS, MUSIC_REGIONS, renderMusicOffline } from '../frontend/src/Experience/Utils/MusicDirector.js';
 
 const $ = (s) => document.querySelector(s);
@@ -101,6 +111,13 @@ for (const k of [...AMBIENCE_KINDS, 'off']) {
   b.textContent = k;
   b.onclick = () => { music.unlock(); music.ambience(k === 'off' ? null : k); };
   $('#amb').append(b);
+}
+const GUN_IDS = [...CANNONS.map((c) => c.id), 'fort', 'defense'];
+for (const id of GUN_IDS) {
+  const b = document.createElement('button');
+  b.textContent = 'gun: ' + id;
+  b.onclick = () => { music.unlock(); audio.setListener(0, 0, 0); audio.playCannon(id, 0, 0, 0, 0, 30, 1.2); setTimeout(() => audio.playImpact(id, 'ship', 0, 0, 0), 1200); };
+  $('#sfx').append(b);
 }
 for (const n of SFX_RECIPES) {
   const b = document.createElement('button');
@@ -259,6 +276,8 @@ async function renderSet(set) {
   $('#rows').innerHTML = ''; results.length = 0;
   const secs = +$('#secs').value || 24;
   if (set === 'sfx') return renderSfx();
+  if (set === 'cannons') return renderCannons();
+  if (set === 'impacts') return renderImpacts();
   for (const { name, opt } of SETS[set]()) {
     const t0 = performance.now();
     const buf = await renderMusicOffline({ seconds: secs, seed: 4242, ...opt });
@@ -295,6 +314,83 @@ async function renderSfx() {
   buffers.set('sfx_reel', await ctx.startRendering());
   table();
 }
+// ── cannons: one shot per gun (with its flight sound), a fleet broadside, a reel ──
+const FILES = { cannon: 'cannon_body_sfx.mp3', water_splash: 'water_impact_splash_sfx.mp3', explosion_01: 'explosion_01_sfx.mp3', explosion_02: 'explosion_02_sfx.mp3', explosion_03: 'explosion_03_sfx.mp3' };
+const fileCache = new Map();
+async function loadFiles(a, ctx) {
+  for (const [k, f] of Object.entries(FILES)) {
+    if (!fileCache.has(f)) fileCache.set(f, await (await fetch('../frontend/Assets/Sounds/' + f)).arrayBuffer());
+    a._buffers.set(k, await ctx.decodeAudioData(fileCache.get(f).slice(0)));
+  }
+}
+/** Render `len` s; `events` = [[time, (a) => void]] run at those context times (suspend/resume). */
+async function renderEvents(len, events) {
+  const sr = 44100, ctx = new OfflineAudioContext(2, Math.ceil(sr * len), sr);
+  const a = new Audio({ context: ctx });
+  a._getCtx(); await loadFiles(a, ctx);
+  a.setListener(0, 0, 0);
+  const byT = new Map();
+  for (const [t, fn] of events) { const q = Math.round(t * 1000) / 1000; if (!byT.has(q)) byT.set(q, []); byT.get(q).push(fn); }
+  for (const [t, fns] of byT) {
+    if (t <= 0) { fns.forEach((f) => f(a)); continue; }
+    ctx.suspend(t).then(() => { fns.forEach((f) => f(a)); ctx.resume(); });
+  }
+  return ctx.startRendering();
+}
+function addResult(name, buf, okFn) {
+  const st = stats(buf, 0);
+  const ok = st.nan === 0 && st.peak < 1 && st.peak > 0.01 && (okFn ? okFn(st) : true);
+  results.push({ name, ...st, env: undefined, ok });
+  buffers.set(name, buf);
+  addRow(name, buf, st, ok);
+}
+async function renderCannons() {
+  const ids = [...CANNONS.map((c) => c.id), 'fort', 'defense'];
+  for (const id of ids) {
+    const p = CANNON_SOUNDS[id], tof = 1.4;
+    // gun fires at the listener; aim 40 u away; the flight sound plays at the aim point → shoot along x=0
+    const buf = await renderEvents(4.2, [[0.05, (a) => { Math.random = seeded(id); a.playCannon(id, 0, 0, 0, 0, 20, tof); }]]);
+    addResult('gun · ' + id, buf);
+  }
+  Math.random = _rand;
+  drawCompare(ids);
+  // 8 ships × 4 rippled shots of mixed heavy guns within 0.6 s — must not clip
+  const mix = ['cannon_royal', 'demi_can', 'long24', 'carronade32', 'culverin', 'long12', 'demi_culv', 'carronade'];
+  const ev = [];
+  mix.forEach((id, s) => { for (let k = 0; k < 4; k++) ev.push([0.1 + s * 0.06 + k * 0.08 + Math.random() * 0.03, (a) => a.playCannon(id, (s - 4) * 3, 0, 0, (s - 4) * 3, 30, 1.2)]); });
+  addResult('broadside · 8 ships × 4 guns', await renderEvents(4.5, ev));
+  // reel to listen to: every gun, 2.2 s apart
+  const reel = ids.map((id, i) => [0.1 + i * 2.2, (a) => a.playCannon(id, 0, 0, 0, 0, 20, 1.4)]);
+  buffers.set('cannon_reel', await renderEvents(0.1 + ids.length * 2.2 + 2.5, reel));
+  table();
+}
+/** One card per gun: 2.5 s spectrogram, loudest-400 ms bar (−40…−10 dBFS), character note. */
+function drawCompare(ids) {
+  const host = $('#compare'); host.innerHTML = '';
+  const NOTE = (p) => [p.pops && 'double pop', p.thud && 'chest thud', p.hollow && 'hollow tube', p.whistle && 'ball whistle', p.rattle && 'tackle rattle', p.scatter && 'grape hiss', p.flight && p.flight + ' in flight', p.tail && `tail ${p.tail[0]} s`, p.mp3 && 'recorded body'].filter(Boolean).join(' · ');
+  for (const id of ids) {
+    const buf = buffers.get('gun · ' + id), r = results.find((x) => x.name === 'gun · ' + id);
+    const loud = 20 * Math.log10(r.maxWinRms || 1e-6), w = Math.max(0, Math.min(1, (loud + 40) / 30));
+    const c = document.createElement('div'); c.className = 'card';
+    c.innerHTML = `<b>${id}</b> <span class="k">boom ${CANNON_SOUNDS[id].boom?.[0] ?? '-'}→${CANNON_SOUNDS[id].boom?.[1] ?? '-'} Hz · loud ${loud.toFixed(1)} dB · peak ${(20 * Math.log10(r.peak)).toFixed(1)} dB</span><br><span class="k">${NOTE(CANNON_SOUNDS[id])}</span><div class="bar"><i style="width:${(w * 100).toFixed(0)}%"></i></div><canvas class="spec"></canvas>`;
+    host.append(c);
+    const n = Math.min(buf.length, Math.ceil(buf.sampleRate * 2.6)), part = new AudioBuffer({ length: n, numberOfChannels: buf.numberOfChannels, sampleRate: buf.sampleRate });
+    for (let ch = 0; ch < buf.numberOfChannels; ch++) part.copyToChannel(buf.getChannelData(ch).subarray(0, n), ch);
+    drawSpec(c.querySelector('canvas'), part);
+  }
+}
+async function renderImpacts() {
+  const profs = Object.keys(IMPACT_PROFILES), gunOf = {};
+  for (const [id, p] of Object.entries(CANNON_SOUNDS)) if (!gunOf[p.impact]) gunOf[p.impact] = id;
+  for (const prof of profs) for (const surf of ['ship', 'fort', 'ground', 'water']) {
+    const buf = await renderEvents(2.6, [[0.05, (a) => a.playImpact(gunOf[prof], surf, 0, 0, 0)]]);
+    addResult(`impact · ${prof} · ${surf}`, buf);
+  }
+  table();
+}
+const _rand = Math.random;
+function seeded(str) { let s = [...str].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261); return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
+
 for (const b of document.querySelectorAll('[data-set]')) b.onclick = () => renderSet(b.dataset.set);
 
 window.__lab = {

@@ -271,9 +271,14 @@ async function runPolicy({ policy, capSec }) {
 
   const captureTarget = () => (obj.islands || []).map(id => g._islands.find(i => i.def.id === id)).find(i => i && i.own !== 'player');
 
+  // sink_target: a player reads the objective and goes for the prize (ship.ai.prize) first.
+  const prizeShips = () => obj.type === 'sink_target' ? alive(st.enemyShips).filter(s => s.ai?.prize) : [];
+
   function decideNovice() {
     const P = alive(st.playerShips); if (!P.length) return;
     const c = centroid(P), E = alive(st.enemyShips), F = forts();
+    const PZ = prizeShips();
+    if (PZ.length) { const t = nearest(PZ, c); if (!busyWith(t, 'attack')) order(t, 'ship'); return; }
     if (E.length) { const t = nearest(E, c); if (!busyWith(t, 'attack')) order(t, 'ship'); return; }
     if (F.length) { const t = nearest(F, c); if (!busyWith(t, 'siege')) order(t, 'island'); return; }
     const cap = obj.type === 'capture' ? captureTarget() : null;
@@ -293,7 +298,9 @@ async function runPolicy({ policy, capSec }) {
     if (closeShip || closeFort) ab('barrage');
     const nearE = E.length ? nearest(E, c) : (F.length ? nearest(F, c) : null);
     if (nearE && d(nearE, c) > 60) ab('winds');
-    // Targets: weakest ship in reach, else nearest ship; forts once the escorts are gone
+    // Targets: the prize first (sink_target), then weakest ship in reach, else nearest ship; forts once the escorts are gone
+    const PZ = prizeShips();
+    if (PZ.length) { const t = nearest(PZ, c); if (!busyWith(t, 'attack')) order(t, 'ship'); return; }
     if (E.length) {
       const inReach = E.filter(e => P.some(p => d(p, e) < reach + 6));
       const t = inReach.length ? inReach.reduce((b, x) => (x.hp < b.hp ? x : b)) : nearest(E, c);
@@ -330,7 +337,7 @@ async function runPolicy({ policy, capSec }) {
     plunder: sum?.plunder || { wood: 0, gold: 0 },
     reward: sum?.reward || { wood: 0, gold: 0 },
     renown: sum?.renown || 0,
-    sunk: ms.sunk.length,
+    sunk: ms.sunk.length, escaped: ms.escaped?.length || 0,
     enemies: st.enemyShips.length,
     forts: ms.fortsDestroyed(), fortsTotal: ms.enemyFortIds.length,
     dmgDealt: Math.round(st.stats.dmgDealt), dmgTaken: Math.round(st.stats.dmgTaken),

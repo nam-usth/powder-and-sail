@@ -13,6 +13,11 @@ import { MISSIONS } from '../frontend/src/data/campaign.js';
 import { CANNON_BY_ID, canMountCannon } from '../frontend/src/data/cannons.js';
 import { resolveHull } from '../frontend/src/Meta/Campaign.js';
 import { WOOD_RATE, GOLD_RATE, WOOD_CAP } from '../frontend/src/data/constants.js';
+import { harborBuildCost } from '../frontend/src/Meta/HarborEconomy.js';
+import { fleetCapBreakdown, buildingRequirements, labLevel, buildBlockers } from '../frontend/src/Meta/Shipyard.js';
+import { BUILDINGS } from '../frontend/src/data/buildings.js';
+import { comebackRate } from '../frontend/src/Experience/Systems/Naval/CommanderSystem.js';
+import { MissionSystem, enemyAi } from '../frontend/src/Experience/Systems/Match/MissionSystem.js';
 
 const T0 = 1_700_000_000_000;
 const memBackend = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), m }; };
@@ -206,6 +211,102 @@ suite('Meta · Cannon tiers', () => {
       }
     }
     assertEqual(bad.join(','), '');
+  });
+});
+
+suite('Meta · Gameplay pass (first two hours)', () => {
+  test('harbor building cost: ×1 is the authored price, harbor mult rounds up to 5', () => {
+    const mill = BUILDINGS.find(b => b.id === 'lumber_mill'), lab = BUILDINGS.find(b => b.id === 'research_lab');
+    assertEqual(JSON.stringify(harborBuildCost(mill, 0, 1)), JSON.stringify({ wood: mill.cost.wood, gold: mill.cost.gold }));
+    assertEqual(harborBuildCost(lab, 3, 1).wood, lab.cost.wood * 3, 'Open War upgrade = cost × level');
+    const h = harborBuildCost(mill, 2, 2.5);
+    assertEqual(h.wood, Math.ceil(mill.cost.wood * 2 * 2.5 / 5) * 5);
+    assert(h.wood % 5 === 0 && h.wood >= mill.cost.wood * 2 * 2.5, 'rounded up to 5');
+    assert(HARBOR_ECONOMY.buildCostMult >= 1, 'harbor knob present');
+  });
+  test('fleet cap breakdown names the hidden Barracks → Research Lab Lv 2 requirement', () => {
+    const p = newProfile(T0);
+    const fb = fleetCapBreakdown(p);
+    assertEqual(fb.total, fleetCap(p));
+    assertEqual(fb.base + fb.shipyard.bonus + fb.barracks.bonus, fb.total);
+    const bar = fb.next.find(n => n.kind === 'build_barracks');
+    assert(bar && !bar.ok, 'barracks blocked on a fresh harbor');
+    assertEqual(bar.missing[0].kind, 'lab_level'); assertEqual(bar.missing[0].need, 2); assertEqual(bar.missing[0].have, 0);
+    assert(fb.next.some(n => n.kind === 'upgrade_shipyard' && n.to === 2), 'shipyard upgrade listed');
+    p.harbor.buildings.push({ buildingId: 'research_lab', level: 2, state: 'active' });
+    assertEqual(labLevel(p), 2);
+    assert(buildingRequirements(p, 'barracks').ok, 'lab 2 unlocks barracks');
+    p.harbor.buildings.push({ buildingId: 'barracks', level: 1, state: 'active' });
+    const fb2 = fleetCapBreakdown(p);
+    assertEqual(fb2.total, fb.total + 1);
+    assert(fb2.next.some(n => n.kind === 'upgrade_barracks' && n.to === 3), 'next barracks step is Lv 3');
+  });
+  test('buildBlockers lists every reason; canBuild keeps the first', () => {
+    const p = newProfile(T0); p.res = { wood: 0, gold: 0 };
+    const bl = buildBlockers(p, 'frigate').map(b => b.reason);
+    assert(bl.includes('shipyard_level') && bl.includes('resources'), bl.join());
+    const cb = canBuild(p, 'frigate');
+    assertEqual(cb.reason, 'shipyard_level'); assertEqual(cb.have, 1);
+    assert(cb.blockers.find(b => b.reason === 'resources').short.wood === HULLS.frigate.cost.wood, 'short amount');
+  });
+  test('patrol is size-aware: a lone ship meets one foe, never more than it can take', () => {
+    const p = newProfile(T0); p.renown = 400;
+    for (const hid of ['sloop', 'frigate', 'man_o_war']) {
+      p.fleet = [{ ...p.fleet[0], uid: 'solo_' + hid, hullId: hid, status: 'ready' }];
+      const m = makePatrol(p, 7, ['solo_' + hid]);
+      assertEqual(m.enemies.length, 1, hid);
+      assert(m.strength.enemy <= 0.31 * m.strength.fleet + 1, hid + ' budget');
+    }
+    p.fleet = ['sloop', 'brigantine'].map((h, i) => ({ ...p.fleet[0], uid: 'd' + i, hullId: h }));
+    assert(makePatrol(p, 3, ['d0', 'd1']).enemies.length <= 2, 'pair meets ≤ 2');
+  });
+  test('Sea Battle comeback: faster cooldowns only while losing the exchange', () => {
+    const sh = (hp, maxHp = 100, alive = true) => ({ hp, maxHp, alive });
+    const st = { mode: 'battle', playerShips: [sh(100), sh(100)], enemyShips: [sh(100), sh(100)] };
+    assertEqual(comebackRate(st), 1, 'even fight');
+    st.playerShips = [sh(40), sh(0, 100, false)];
+    assert(comebackRate(st) > 1, 'behind → rally');
+    st.playerShips = [sh(80), sh(0, 100, false)];
+    st.enemyShips = [sh(10), sh(0, 100, false)];
+    assertEqual(comebackRate(st), 1, 'ahead again');
+    st.enemyShips = [sh(100), sh(100)];
+    assert(comebackRate(st) > 1, 'down a ship vs a fresh enemy');
+    assertEqual(comebackRate({ warFront: 30, playerShips: [], enemyShips: [] }), 1.25, 'Open War rule unchanged');
+    assertEqual(comebackRate({ warFront: 60 }), 1);
+  });
+  test('MissionSystem sink_target: win on the prize, lose when it escapes; time limit', () => {
+    const bus = { on: () => () => {}, emit() {} };
+    const mk = () => ({ playerShips: [{ alive: true, x: 0, z: 0 }], enemyShips: [] });
+    const m = { objective: { type: 'sink_target' }, escape: { x: 100, z: 0 }, enemies: [{ hull: 'brigantine', x: 50, z: 0, prize: true, spdMult: 0.5 }] };
+    const ai = enemyAi(m.enemies[0], m);
+    assert(ai.prize && ai.spdMult === 0.5 && ai.post.x === 50, 'prize ai');
+    let st = mk(); st.enemyShips = [{ alive: true, x: 50, z: 0, hp: 10, maxHp: 10, ai }];
+    let ms = new MissionSystem(st, [], m, bus, () => null);
+    assertEqual(ms.update(1), null);
+    st.enemyShips[0].alive = false;
+    assertEqual(ms.update(1).won, true);
+    st = mk(); st.enemyShips = [{ alive: true, x: 99, z: 0, hp: 10, maxHp: 10, ai: { ...ai, escaping: true } }];
+    ms = new MissionSystem(st, [], m, bus, () => null);
+    const out = ms.update(1);
+    assertEqual(out.won, false); assertEqual(out.reason, 'escaped'); assertEqual(ms.escaped.length, 1);
+    st = mk(); st.enemyShips = [{ alive: true, x: 0, z: 0, hp: 1, maxHp: 1 }];
+    ms = new MissionSystem(st, [], { objective: { type: 'sink_all' }, timeLimit: 5 }, bus, () => null);
+    assert(ms.progress().some(l => l.key === 'time'), 'time line');
+    assertEqual(ms.update(6).reason, 'time');
+    assertEqual(enemyAi({ hull: 'sloop', x: 1, z: 2 }, {}), undefined, 'plain ships keep the wolfpack');
+  });
+  test('every mission objective is complete (prizes, escape zones, time limits)', () => {
+    const types = new Set(['sink_all', 'destroy_forts', 'survive', 'capture', 'sink_target']);
+    for (const m of MISSIONS) {
+      assert(types.has(m.objective.type), m.id + ' objective type');
+      const all = [...m.enemies, ...((m.objective.waves || []).flatMap(w => w.ships))];
+      if (m.objective.type === 'sink_target') {
+        assert(all.some(e => e.prize), m.id + ' has a prize');
+        assert(m.escape, m.id + ' has an escape zone');
+      }
+      if (m.timeLimit) assert(m.timeLimit > (m.parTime || 0), m.id + ' time limit above par');
+      for (const e of all) if (e.ai?.tactic) assert(['engage', 'kite', 'guard', 'hold', 'patrol'].includes(e.ai.tactic), m.id + ' tactic');
+    }
   });
 });
 

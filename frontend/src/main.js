@@ -364,6 +364,8 @@ window.addEventListener('DOMContentLoaded', () => {
       // Re-apply GFX settings now that renderer + overlay exist
       Object.entries(loadGfx()).forEach(([k, v]) => applyGfx(k, v));
       if (screen) { screen.style.opacity = '0'; setTimeout(() => screen.style.display = 'none', 520); }
+      // audio-director: per-mode music (Open War) + bus-driven cues (fort down, building placed)
+      import('./Experience/Utils/ModeAudio.js').then(m => m.startModeAudio(window._game)).catch(e => console.warn('[audio]', e));
     });
   });
 

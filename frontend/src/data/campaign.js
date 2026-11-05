@@ -348,7 +348,14 @@ export const PATROL = {
     southchina: ['war_junk', 'war_junk', 'junk', 'junk', 'ghe_bau', 'ghe_bau'],
   },
   strengthRatio: 0.45,
+  /** Size-aware budget: fleet size → ratio (a lone wiped hull meets a lone, trimmed foe). Larger fleets use strengthRatio. */
+  ratioBySize: { 1: 0.3, 2: 0.38 },
   maxShips: 5,
+  /** Enemy ships ≤ ships that sail (fleets of 1–2); from 3 ships up, + this many. */
+  maxExtraShips: 2,
+  /** Hull of the lone trimmed foe when even the smallest pool hull is over budget, and its (tier-I) guns. */
+  minFoe: 'cutter',
+  loneLoadout: { L: 'carronade', R: 'swivel' },
   reward: { base: { wood: 40, gold: 30 }, perStrength: { wood: 0.10, gold: 0.075 } },
   renown: 4,
   loadouts: {
