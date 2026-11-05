@@ -107,6 +107,15 @@ const TABLES = {
       + '\n\nNâng cấp tàu (tab Upgrades của Loadout): ' + U.UPGRADE_DEFS.map((u) => `${u.nm} (+${Math.round(u.perLv * 100)}%/cấp, tối đa ${u.max}, giá base × (cấp+1): ${cost(u.base)})`).join(' · ');
   },
 
+  gunnery() {
+    const rows = U.TECH_TREE.filter((t) => t.br === 'Gunnery').map((t) => {
+      const c = CN.CANNON_BY_ID.get(t.cannon);
+      return [t.id, t.nm, `${c?.nm || t.cannon} (${R[t.tier]})`, cost(t.cost), t.req.join(', ') || '—', `Lab ${t.requiredLabLevel}`, CN.CANNON_DOWNGRADE[t.cannon] || '—'];
+    });
+    return `Biết sẵn từ đầu: ${CN.STARTER_CANNONS.join(', ')}.\n\n`
+      + md(['id', 'Tên nghiên cứu', 'Mở khoá pháo (bậc)', 'Giá', 'Cần', 'Lab', 'Pháo thay thế khi chưa có'], rows);
+  },
+
   hulls() {
     const rows = Object.values(H.HULLS).filter((h) => !h.enemyOnly).map((h) => [
       h.id, h.nm, h.hull, R[h.tier], h.hp, `${h.spd} (${knots(h.spd)} kn)`, (SH.HULL_SLOTS[h.hull] || []).join(''),
@@ -126,7 +135,10 @@ const TABLES = {
       `${H.PLUNDER_BY_HULL[c].wood}🪵 ${H.PLUNDER_BY_HULL[c].gold}🪙`]);
     return md(['Class', 'Slot', 'Sửa 0→100% (vàng / giây)', 'Trục vớt (thời gian)', 'Điều khiển', 'Chiến lợi phẩm khi bị chìm'], rows)
       + `\n\nTrục vớt tốn \`${H.SALVAGE_COST_FRAC * 100}%\` giá đóng tàu. Hạm đội tối đa: base ${H.FLEET_CAP_BASE}, trần ${H.FLEET_CAP_MAX}. `
-      + `Neo ở cảng hồi ${H.MOORING_REGEN_FRAC * 100}% HP/s. Tàu về cảng không dưới ${H.MIN_AFLOAT_FRAC * 100}% HP.`;
+      + `Neo ở cảng hồi ${H.MOORING_REGEN_FRAC * 100}% HP/s. Tàu về cảng không dưới ${H.MIN_AFLOAT_FRAC * 100}% HP.`
+      + '\n\nPhí sửa/trục vớt theo bậc pháo đang lắp (`REPAIR_GOLD_PER_GUN_TIER` / `SALVAGE_WOOD_PER_GUN_TIER`, cộng thêm vào phần thân tàu):\n\n'
+      + md(['Bậc pháo', 'Sửa 0→100% (+🪙 mỗi khẩu)', 'Trục vớt (+🪙 / +🪵 mỗi khẩu)'],
+        [1, 2, 3, 4, 5].map((t) => [R[t], H.REPAIR_GOLD_PER_GUN_TIER[t], `${H.REPAIR_GOLD_PER_GUN_TIER[t]}🪙 ${H.SALVAGE_WOOD_PER_GUN_TIER[t]}🪵`]));
   },
 
   fleetCap() {

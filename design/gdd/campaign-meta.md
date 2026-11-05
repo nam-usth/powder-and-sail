@@ -17,7 +17,20 @@ with histories, ranks earned through renown.
 3. Repair (afloat but damaged): cost scales with missing HP; time
    `REPAIR_SEC_PER_HP × missingHp`. Ships moored in the harbor also regen
    slowly through the existing repair aura.
-4. Salvage (wreck): `SALVAGE_COST_FRAC` of build cost, `SALVAGE_SEC` → ready at full HP.
+4. Salvage (wreck): `SALVAGE_COST_FRAC` of build cost plus the guns re-cast
+   (Σ `REPAIR_GOLD_PER_GUN_TIER` gold + Σ `SALVAGE_WOOD_PER_GUN_TIER` wood by
+   cannon tier), `SALVAGE_SEC` → ready at full HP.
+4b. **Cannon research (Gunnery).** The tier-I swivel, carronade and falconet
+   are known from the start; every other cannon is unlocked by a Gunnery tech
+   (`data/upgrades.js`, id `gun_<cannon>`, Research Lab level = cannon tier − 1, cost by
+   tier `GUN_RESEARCH_COST`). A gun can be mounted when hull tier ≥ cannon tier
+   AND it is researched (`data/cannons.js canMountCannon(cn, ship, known)`) —
+   in the harbor and Sea Battles only; Open War and enemies are unrestricted.
+   **Equipping is free; repairing is not**: the repair price carries a
+   per-mounted-gun term that grows with cannon tier. New hulls, presets and
+   legalised saves fall back along the gun's research line
+   (`CANNON_DOWNGRADE`) to the best known gun. v1 saves are granted the techs
+   of every tier-legal gun already mounted (no one loses equipment).
 5. Fleet cap for battle = `FLEET_CAP_BASE + (shipyard level − 1) + Σ barracks bonus`
    (barracks Lv 1/3/5/7 → +1 each), max `FLEET_CAP_MAX`. A Barracks needs a
    Research Lab at Lv 2 — the UI must say so: `Shipyard.fleetCapBreakdown(profile)`
@@ -36,7 +49,8 @@ with histories, ranks earned through renown.
 8. Admiral rank from renown thresholds `RANKS`.
 
 ## Formulas
-- `repairCost_gold = ceil(missingFrac × REPAIR_GOLD_PER_FRAC[hull])`
+- `repairCost_gold = ceil(missingFrac × (REPAIR_GOLD_FULL[hull] + Σ_mounted REPAIR_GOLD_PER_GUN_TIER[cannon.tier]))`
+- `salvage = ceil(SALVAGE_COST_FRAC × cost) + {gold: Σ REPAIR_GOLD_PER_GUN_TIER[t], wood: Σ SALVAGE_WOOD_PER_GUN_TIER[t]}`
 - `repairSec = ceil(missingFrac × REPAIR_SEC_FULL[hull])`
 - `rank = max i : renown ≥ RANKS[i].renown`
 

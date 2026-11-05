@@ -74,9 +74,21 @@ body.mode-battle #hud-top { top: 96px; }
 
 /* AW: cannons above the ship's hull tier */
 .lp2-cn-card.locked { opacity: .38; filter: grayscale(.8); cursor: not-allowed; }
+/* Cannon research: unresearched guns (harbor / Sea Battle) carry a "Research" seal */
+.lp2-cn-card.research-locked { opacity: .62; filter: grayscale(.55) sepia(.25); }
+.lp2-cn-req:empty { display: none; }
+.lp2-cn-req { font: italic 600 8px/1.1 var(--display, serif); letter-spacing: .06em; color: #8a2a1a;
+  border: 1px solid rgba(138,42,26,.55); border-radius: 2px; padding: 1px 4px; margin-top: 2px;
+  background: rgba(255,235,200,.55); text-transform: uppercase; white-space: nowrap; }
 
 /* Harbor bar steps aside while a top-anchored panel (Loadout / Research / Build) is open */
 body.lp-open .hb-bar, body.rp-open .hb-bar, body.bp-open .hb-bar,
 body:has(#lp.pm-open) .hb-bar, body:has(#rp.pm-open) .hb-bar, body:has(#bp.pm-open) .hb-bar {
   opacity: 0 !important; visibility: hidden !important; pointer-events: none !important;
 }
+
+/* Cannon research — Gunnery branch of the Research panel (period style) */
+#rp .tbr-note { font: italic 400 12px/1.25 var(--pd-f-fell, serif); color: var(--pd-ink-2, #5a4630); margin: -2px 0 6px; text-align: center; }
+#rp .ttier { display: inline-block; margin-left: 6px; padding: 0 5px; font: 600 10px/15px var(--pd-f-num, serif);
+  color: #f4e6c4; background: #6a4a22; border: 1px solid rgba(58,37,15,.6); border-radius: 2px; vertical-align: 1px; }
+#rp .tnode.tgun.done .ttier { background: #3e6b47; }

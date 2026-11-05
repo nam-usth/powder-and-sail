@@ -117,7 +117,7 @@ class Player {
     this.active = 0;                 // seconds of active play
     this.cells = H.STARTER_BUILDINGS.reduce((a, b) => a + cellsOf(b.buildingId), 0);
     this.ev = {};                    // milestone → { active, wall }
-    this.stats = { battles: 0, wins: 0, losses: 0, patrols: 0, wipes: 0, shipsLost: 0, repairsGold: 0, salvage: { wood: 0, gold: 0 },
+    this.stats = { battles: 0, wins: 0, losses: 0, patrols: 0, wipes: 0, shipsLost: 0, repairsGold: 0, repairsGunGold: 0, salvageGuns: 0, salvage: { wood: 0, gold: 0 },
       income: { harbor: 0, offline: 0, battle: 0, atSea: 0 }, wasted: 0, atCapSec: 0, built: {}, spent: { buildings: 0, ships: 0, research: 0 } };
     this.log = [];
     this.goalWaitT = 0;
@@ -238,11 +238,11 @@ class Player {
       // pay the yard only when badly hurt and it is cheap; otherwise the moorings mend it
       if (s.status === 'ready' && s.hpFrac < 0.7) {
         const q = Yard.repairQuote(s);
-        if (q.gold <= 0.1 * p.res.gold && Yard.startRepair(p, s.uid, this.now)) { this.stats.repairsGold += q.gold; this.note(`repair ${s.hullId} ${q.gold}g ${q.sec}s`); }
+        if (q.gold <= 0.1 * p.res.gold && Yard.startRepair(p, s.uid, this.now)) { this.stats.repairsGold += q.gold; this.stats.repairsGunGold += q.gunGold || 0; this.note(`repair ${s.hullId} ${q.gold}g (guns ${q.gunGold}g) ${q.sec}s`); }
       }
       if (s.status === 'wreck') {
         const q = Yard.salvageQuote(s);
-        if (Yard.startSalvage(p, s.uid, this.now)) { this.stats.salvage.wood += q.wood; this.stats.salvage.gold += q.gold; this.note(`salvage ${s.hullId} ${q.wood}w/${q.gold}g`); }
+        if (Yard.startSalvage(p, s.uid, this.now)) { this.stats.salvage.wood += q.wood; this.stats.salvage.gold += q.gold; this.stats.salvageGuns += (q.guns?.wood || 0) + (q.guns?.gold || 0); this.note(`salvage ${s.hullId} ${q.wood}w/${q.gold}g`); }
       }
     }
     const blocked = this.blockedByRenown();
@@ -255,10 +255,15 @@ class Player {
         if (p.harbor.researched.includes(id)) continue;
         const t = TECH_TREE.find(x => x.id === id);
         if (!t || !(t.req || []).every(r => p.harbor.researched.includes(r))) continue;
-        if (t.requiredLabLevel && this.labLevel() < t.requiredLabLevel) { want = want || { kind: 'lab' }; continue; }
-        if (this.afford(t.cost)) { this.pay(t.cost, 'research'); p.harbor.researched.push(id); this.note(`research ${id}`); }
+        if (t.requiredLabLevel && this.labLevel() < t.requiredLabLevel) { want = want || { kind: 'lab', level: t.requiredLabLevel }; continue; }
+        if (this.afford(t.cost)) {
+          this.pay(t.cost, 'research'); p.harbor.researched.push(id); this.note(`research ${id}`);
+          if (t.cannon) { this.mark('research:first_gun'); this.mark(`research:gun_T${t.tier}`); }
+        }
         else want = want || { kind: 'research', cost: t.cost };
       }
+      // cannon research: equipping is free — refit every ship with its best known default fit
+      this.refit();
       // shipyard level + fleet cap for the roster
       const { missing } = this.match(scn);
       const needTier = Math.max(0, ...missing.map(h => H.HULLS[h].shipyardLevel));
@@ -297,6 +302,14 @@ class Player {
       if (eta > 240 && this.goalWaitT > 60) return { action: 'patrol', why: `saving ${want.kind} eta ${Math.round(eta)}s` };
     } else this.goalWaitT = 0;
     return null;
+  }
+
+  /** Free refit (cannon research): each ship gets its class/tier default fit from the researched guns. */
+  refit() {
+    for (const s of this.p.fleet) {
+      const h = H.HULLS[s.hullId]; if (!h) continue;
+      s.loadout = Profile.defaultLoadout(h.hull, h.tier, this.p.harbor.researched);
+    }
   }
 
   eta(cost) {
@@ -352,6 +365,10 @@ class Player {
         act: () => { const ok = act(); if (ok) this._lastWh = this.active; return ok; } });
     }
     if (want?.kind === 'lab' && !blds.some(b => b.buildingId === 'research_lab')) cands.push({ kind: 'lab', cost: bcost('research_lab'), dW: 0, dG: 0, payback: 0, storage: true, bt: 0, act: () => this.place('research_lab') });
+    // cannon research: lab level = gun tier → upgrade the lab when the goal needs it
+    const lab = blds.find(b => b.buildingId === 'research_lab');
+    if (want?.kind === 'lab' && lab && lab.state === 'active' && !(lab.upgradeTimer > 0) && lab.level < (want.level || 1))
+      cands.push({ kind: 'lab+', cost: this.upgradeCost(lab), dW: 0, dG: 0, payback: 0, storage: true, bt: 0, act: () => this.upgrade(lab) });
     cands.sort((a, b) => a.payback - b.payback);
     // attention budget: a player clicks one harbor purchase per ACTION_GAP seconds of play
     if (this.active - (this._lastBuy || -1e9) < ACTION_GAP) return false;
@@ -500,10 +517,11 @@ function report(players, model) {
   players.forEach(pl => Object.keys(pl.ev).forEach(k => keys.add(k)));
   const order = k => {
     const [t, id] = k.split(':');
-    const base = { afford: 0, buildable: 1, own: 2, region: 3, win: 4, campaign: 9 }[t] ?? 8;
+    const base = { afford: 0, buildable: 1, own: 2, research: 2.5, region: 3, win: 4, campaign: 9 }[t] ?? 8;
     if (t === 'win') return 100 + MISSION_ORDER.indexOf(id);
     if (t === 'region') return 50 + C.REGIONS.findIndex(r => r.id === id);
     if (t === 'campaign') return 999;
+    if (t === 'research') return 25 + (Number(String(id).replace('gun_T', '')) || 0);
     return base * 10 + Number(String(id).replace('T', ''));
   };
   const rows = [...keys].sort((a, b) => order(a) - order(b)).map(k => {
@@ -517,7 +535,7 @@ function report(players, model) {
     shipsLost: S(pl => pl.stats.shipsLost), atCapPct: S(pl => pl.stats.atCapSec / Math.max(1, pl.active)) ,
     wastedPct: S(pl => pl.stats.wasted / Math.max(1, pl.stats.income.harbor + pl.stats.wasted)),
     incomeHarbor: S(pl => pl.stats.income.harbor), incomeOffline: S(pl => pl.stats.income.offline), incomeAtSea: S(pl => pl.stats.income.atSea), incomeBattle: S(pl => pl.stats.income.battle),
-    repairsGold: S(pl => pl.stats.repairsGold), salvage: S(pl => pl.stats.salvage.wood + pl.stats.salvage.gold),
+    repairsGold: S(pl => pl.stats.repairsGold), repairsGunGold: S(pl => pl.stats.repairsGunGold), salvage: S(pl => pl.stats.salvage.wood + pl.stats.salvage.gold), salvageGuns: S(pl => pl.stats.salvageGuns),
     spentBuildings: S(pl => pl.stats.spent.buildings), spentShips: S(pl => pl.stats.spent.ships), spentResearch: S(pl => pl.stats.spent.research),
     mills: S(pl => pl.p.harbor.buildings.filter(b => b.buildingId === 'lumber_mill').length), mines: S(pl => pl.p.harbor.buildings.filter(b => b.buildingId === 'gold_mine').length),
     warehouses: S(pl => pl.p.harbor.buildings.filter(b => b.buildingId === 'warehouse').length),
@@ -536,7 +554,7 @@ function mdReport(rep) {
   for (const r of rep.rows) L.push(`| ${r.k} | ${Math.round(r.reached * 100)}% | ${f(r.activeMin[0])} / **${f(r.activeMin[1])}** / ${f(r.activeMin[2])} | ${f(r.wallH[0])} / **${f(r.wallH[1])}** / ${f(r.wallH[2])} |`);
   const t = rep.totals;
   L.push('', `Campaign completed: ${Math.round(t.completed * 100)}% · median active ${f(t.activeH)} h · wall ${f(t.wallD)} days · battles ${t.battles} (patrols ${t.patrols}, losses ${t.losses}, wipes ${t.wipes}, ships lost ${t.shipsLost})`);
-  L.push(`Income (median totals): harbor live ${Math.round(t.incomeHarbor)} · offline ${Math.round(t.incomeOffline)} · at sea ${Math.round(t.incomeAtSea)} · battles ${Math.round(t.incomeBattle)} — spent: buildings ${Math.round(t.spentBuildings)}, ships ${Math.round(t.spentShips)}, research ${Math.round(t.spentResearch)}, repairs ${Math.round(t.repairsGold)}g, salvage ${Math.round(t.salvage)}`);
+  L.push(`Income (median totals): harbor live ${Math.round(t.incomeHarbor)} · offline ${Math.round(t.incomeOffline)} · at sea ${Math.round(t.incomeAtSea)} · battles ${Math.round(t.incomeBattle)} — spent: buildings ${Math.round(t.spentBuildings)}, ships ${Math.round(t.spentShips)}, research ${Math.round(t.spentResearch)}, repairs ${Math.round(t.repairsGold)}g (guns ${Math.round(t.repairsGunGold)}g), salvage ${Math.round(t.salvage)} (guns ${Math.round(t.salvageGuns)})`);
   L.push(`Cap pressure: at cap ${Math.round(t.atCapPct * 100)}% of active time · production spilled ${Math.round(t.wastedPct * 100)}% · final harbor: ${t.mills} mills, ${t.mines} mines, ${t.warehouses} warehouses, avg producer level ${f(t.avgProdLevel)} → ${f(t.finalRates.wood)} 🪵/s, ${f(t.finalRates.gold)} 🪙/s`);
   return L.join('\n');
 }

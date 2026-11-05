@@ -135,7 +135,7 @@ async function writeProfile({ scn, seed, now }) {
     if (!h) throw new Error(`unknown hull ${spec.hull}`);
     const loadout = spec.loadout === 'broadside' ? broadside(h.hull)
       : spec.loadout && typeof spec.loadout === 'object' ? { ...spec.loadout } : undefined;
-    const s = P.makeRosterShip(spec.hull, { loadout, upgrades: { spd: 0, hp: 0, rof: 0, ...(spec.upgrades || {}) }, hpFrac: spec.hpFrac ?? 1 }, now);
+    const s = P.makeRosterShip(spec.hull, { loadout, known: scn.research || [], upgrades: { spd: 0, hp: 0, rof: 0, ...(spec.upgrades || {}) }, hpFrac: spec.hpFrac ?? 1 }, now);
     s.nm = P.pickShipName(p, spec.hull);
     p.fleet.push(s);
   }

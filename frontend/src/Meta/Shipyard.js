@@ -3,8 +3,10 @@
 
 import {
   HULLS, FLEET_CAP_BASE, FLEET_CAP_MAX, REPAIR_GOLD_FULL, REPAIR_SEC_FULL,
-  SALVAGE_COST_FRAC, SALVAGE_SEC,
+  SALVAGE_COST_FRAC, SALVAGE_SEC, REPAIR_GOLD_PER_GUN_TIER, SALVAGE_WOOD_PER_GUN_TIER,
 } from '../data/harbor.js';
+import { CANNON_BY_ID } from '../data/cannons.js';
+import { HULL_SLOTS } from '../data/ships.js';
 import { getBarracksShipCapBonus } from '../Experience/Utils/ShipCapacity.js';
 import { BUILDINGS } from '../data/buildings.js';
 import { DEFENSES } from '../data/defenses.js';
@@ -161,17 +163,37 @@ export function startBuild(profile, hullId, now = Date.now()) {
   if (!canBuild(profile, hullId).ok) return null;
   const h = HULLS[hullId];
   pay(profile.res, h.cost);
-  const s = makeRosterShip(hullId, { status: 'building', readyAt: now + h.buildSec * 1000 }, now);
+  // Default fit uses researched guns only (cannon research, data/cannons.js).
+  const s = makeRosterShip(hullId, { status: 'building', readyAt: now + h.buildSec * 1000, known: profile.harbor.researched || [] }, now);
   s.nm = pickShipName(profile, hullId);
   profile.fleet.push(s);
   return s;
 }
 
-/** Repair price for an afloat, damaged ship. */
+/** Guns mounted on a roster ship (only slots its hull has). */
+export function mountedGuns(ship) {
+  const h = hullOf(ship);
+  return (HULL_SLOTS[h.hull] || Object.keys(ship.loadout || {}))
+    .map(sl => CANNON_BY_ID.get(ship.loadout?.[sl])).filter(Boolean);
+}
+
+/** Gold to re-fit the mounted guns from 0 → full: Σ REPAIR_GOLD_PER_GUN_TIER[cannon tier]. */
+export function gunRepairGoldFull(ship) {
+  return mountedGuns(ship).reduce((a, cn) => a + (REPAIR_GOLD_PER_GUN_TIER[cn.tier || 1] || 0), 0);
+}
+
+/**
+ * Repair price for an afloat, damaged ship. Hull base + a per-gun term by
+ * cannon tier (equipping is free; repairing big guns is not), both scaled by
+ * the missing HP fraction. → {gold, sec, hullGold, gunGold}
+ */
 export function repairQuote(ship) {
   const h = hullOf(ship);
   const miss = Math.max(0, 1 - (ship.hpFrac ?? 1));
-  return { gold: Math.ceil(miss * REPAIR_GOLD_FULL[h.hull]), sec: Math.ceil(miss * REPAIR_SEC_FULL[h.hull]) };
+  const hullGold = miss * REPAIR_GOLD_FULL[h.hull], gunGold = miss * gunRepairGoldFull(ship);
+  const gold = Math.ceil(hullGold + gunGold);
+  const hg = Math.min(gold, Math.ceil(hullGold));
+  return { gold, sec: Math.ceil(miss * REPAIR_SEC_FULL[h.hull]), hullGold: hg, gunGold: gold - hg };
 }
 
 export function startRepair(profile, shipUid, now = Date.now()) {
@@ -184,14 +206,19 @@ export function startRepair(profile, shipUid, now = Date.now()) {
   return true;
 }
 
-/** Salvage price for a wreck. */
+/**
+ * Salvage price for a wreck: SALVAGE_COST_FRAC of the hull cost, plus the
+ * guns re-cast (full gun repair gold + SALVAGE_WOOD_PER_GUN_TIER wood).
+ * → {wood, gold, sec, hull:{wood,gold}, guns:{wood,gold}}
+ */
 export function salvageQuote(ship) {
   const h = hullOf(ship);
-  return {
-    wood: Math.ceil(h.cost.wood * SALVAGE_COST_FRAC),
-    gold: Math.ceil(h.cost.gold * SALVAGE_COST_FRAC),
-    sec: SALVAGE_SEC[h.hull],
+  const hull = { wood: Math.ceil(h.cost.wood * SALVAGE_COST_FRAC), gold: Math.ceil(h.cost.gold * SALVAGE_COST_FRAC) };
+  const guns = {
+    wood: mountedGuns(ship).reduce((a, cn) => a + (SALVAGE_WOOD_PER_GUN_TIER[cn.tier || 1] || 0), 0),
+    gold: gunRepairGoldFull(ship),
   };
+  return { wood: hull.wood + guns.wood, gold: hull.gold + guns.gold, sec: SALVAGE_SEC[h.hull], hull, guns };
 }
 
 export function startSalvage(profile, shipUid, now = Date.now()) {

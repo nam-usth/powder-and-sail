@@ -1,6 +1,62 @@
 # Balance report — campaign, Sea Battle, harbor economy (milestone AW)
 
-## 0b. Fort/capture re-tune after the QA-001 siege fix (latest)
+## 0c. Cannon research + gun-tier repair costs (latest)
+
+User design ("as in the original game"): cannons are **researched** to unlock, **equipping is
+free**, **repairing costs money and grows with the tier of the mounted guns**.
+
+**Rules as built** (harbor + Sea Battle only; Open War `?mode=skirmish` and enemies unrestricted)
+- Known from the start: swivel, carronade, falconet (tier I). Every other cannon has a Gunnery tech
+  `gun_<cannon>` in `data/upgrades.js` (12 techs). Lines: long 9 → long 12 → long 24 ·
+  demi-culverin → culverin · demi-culverin → demi-cannon → cannon royal · carronade(start) →
+  32-pdr · mortar I → mortar II · grape (root) / chain (after long 9) as tier-II specials.
+- Lab level = cannon tier − 1 (tier II needs any Research Lab). Cost by tier `GUN_RESEARCH_COST`:
+  II 60🪵 100🪙 (specials 80/120) · III 150/220 · IV 280/380 · V 450/600 — the whole branch 5 840.
+- Mount rule `canMountCannon(cn, ship, known)`: hull tier ≥ cannon tier **and** researched.
+  Unknown guns fall back along the research line (`CANNON_DOWNGRADE`, `fallbackCannon`) for new
+  hulls (`Shipyard.startBuild`), Loadout presets and save legalisation. Long 9 falls back to the
+  swivel (bow chaser), so the starter brigantine sails L/R falconet, B swivel.
+- Saves v1 → v2 (`PROFILE_VERSION` 2): `migrate` grants the tech (+ prerequisites) of every
+  tier-legal gun already mounted; nobody loses equipment. v2 saves drop unresearched guns.
+- Repair: `gold = ceil(miss × (REPAIR_GOLD_FULL[class] + Σ REPAIR_GOLD_PER_GUN_TIER[tier]))`,
+  per gun I..V = 3 / 8 / 16 / 28 / 45 🪙 (full repair). Salvage adds Σ that gold + `SALVAGE_WOOD_PER_GUN_TIER`
+  5 / 12 / 25 / 40 / 60 🪵. Time unchanged. Full repair: starter brigantine 80 → 89 🪙 (2 falconets + swivel),
+  T5 man-o-war (royal, long 24, mortar II, long 12) 140 → 276 🪙. Shipyard cards show "hull + guns".
+- `MOORING_REGEN_FRAC` unchanged (0.0008/s ≈ 21 min to full vs 30–80 s paid). Paid repair still
+  wins: battles run every ~5–8 min of play and gun repair is 530 🪙 over a whole campaign (sim).
+
+**Battle check** (`battle_cr_starter`, `cr_starter2`, `cr_check`; novice). Only the Caribbean
+starter fleet changes (no gun research yet; brigantine demi-culv/long 9 → falconet/falconet/swivel);
+every later scenario adds its fleet's gun techs to `research` (`scenarios.mjs gunResearch`) and
+`sim_battle` builds ships with `known = research`, so realistic fleets mount only researched guns
+(fits identical to before).
+
+| Scenario | Before | After (n) |
+|---|---:|---:|
+| reef_1 | 100 % | 100 % (4; + 6 with bow falconet) |
+| reef_2 | 100 % | 100 % (10), 127 s (was 150 s) |
+| reef_3 (survive) | 75–80 % | 90 % (10), HP 28 % (bow falconet probe: 100 % (6) → bow swivel) |
+| patrol_caribbean | 100 % | 100 % (4; + 6 with bow falconet) |
+| straits_1 | 75 % | 75 % (4) — same fleet |
+| spice_3 | 85 % (20) | 88 % (8, `cr_spice3`); a 4-seed probe gave 50 % — same fleet/guns, bimodal fort mission |
+
+**Economy sim** (`economy_cr_final` vs `economy_cr_before_m`, 60 runs, `battle_cr_merged`; agent
+researches the next mission's gun techs (+ lab upgrades) and refits for free):
+
+| p50 active min | Before | After |
+|---|---:|---:|
+| first tier-II gun researched | – | **15.6** (p10 12.3) |
+| own T2 hull | 17.3 | 18.4 |
+| tier-III / IV / V guns | – | 36 / 64 / **105** |
+| own T5 hull | 114 | 117 |
+| campaign (continuous / active / idle h) | 2.8 / 2.6 / 2.2 | 2.8 / 2.7 / 2.2 |
+| spent research · repairs (guns) · salvage (guns) | 330 · 1 063 · 12 455 | 5 840 · 1 625 (530) · 15 173 (2 218) |
+
+T5 guns land ~12 min before the first T5 hull; targets.md T1–T10 unchanged. The first gun waits
+on reef_3 (the agent researches for the *next* mission); a player who builds a lab early has it
+by ~10 min.
+
+## 0b. Fort/capture re-tune after the QA-001 siege fix
 
 Data only (`data/campaign.js`; `BATTLE` knobs unchanged, `fortRegen` stays 0.006). Raw runs:
 `tools/balance/out/battle_h_it*` (`--set` probes), `battle_h_confirm` (8 seeds, both policies).

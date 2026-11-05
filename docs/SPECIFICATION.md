@@ -126,7 +126,7 @@ Harbor có thêm **Harbor Bar** (giữa trên): huy hiệu quân hàm + thanh da
 <!-- SPEC:economy -->
 | Tham số | Giá trị |
 |---|---|
-| Khoá lưu profile (localStorage) | `iow_profile_v1` (v1); save hỏng → `iow_profile_v1_bad` |
+| Khoá lưu profile (localStorage) | `iow_profile_v1` (v2); save hỏng → `iow_profile_v1_bad` |
 | Tài nguyên khởi đầu (profile mới) | 260🪵 160🪙 |
 | Thu nhập nền (không cần công trình) | 2 🪵/s · 1.5 🪙/s |
 | Hệ số đồng hồ Harbor `HARBOR_ECONOMY.rateMult` | 0.25 |
@@ -184,6 +184,18 @@ Nghiên cứu (giữ vĩnh viễn trong profile, hiệu lực cả trong hải c
 | for1 | Garrison Drill | Fortification | +30% fort HP | 120🪵 | — | — |
 | for2 | Heated Shot | Fortification | Tower shots burn 3s | 120🪙 | for1 | — |
 | for3 | Chain Shot | Fortification | Side cannons slow -20% | 80🪵 180🪙 | for2 | Lab 4 |
+| gun_long9 | Long Nines | Gunnery | Unlocks the Long 9 (tier II) | 60🪵 100🪙 | — | Lab 1 |
+| gun_demi_culv | Demi-Culverin Casting | Gunnery | Unlocks the Demi-culverin (tier II) | 60🪵 100🪙 | — | Lab 1 |
+| gun_grapeshot | Grape & Canister | Gunnery | Unlocks the Grapeshot (tier II) | 80🪵 120🪙 | — | Lab 1 |
+| gun_chain_shot | Bar & Chain Shot | Gunnery | Unlocks the Chain Shot (tier II) | 80🪵 120🪙 | gun_long9 | Lab 1 |
+| gun_long12 | Long Twelves | Gunnery | Unlocks the Long 12 (tier III) | 150🪵 220🪙 | gun_long9 | Lab 2 |
+| gun_demi_can | Demi-Cannon Foundry | Gunnery | Unlocks the Demi-cannon (tier III) | 150🪵 220🪙 | gun_demi_culv | Lab 2 |
+| gun_mortar1 | Sea Mortar | Gunnery | Unlocks the Mortar Mk.I (tier III) | 150🪵 220🪙 | — | Lab 2 |
+| gun_culverin | Culverin Bore | Gunnery | Unlocks the Culverin (tier IV) | 280🪵 380🪙 | gun_demi_culv | Lab 3 |
+| gun_carronade32 | The Smasher | Gunnery | Unlocks the 32-pdr Carronade (tier IV) | 280🪵 380🪙 | — | Lab 3 |
+| gun_mortar2 | Bomb-Ketch Mortar | Gunnery | Unlocks the Mortar Mk.II (tier IV) | 280🪵 380🪙 | gun_mortar1 | Lab 3 |
+| gun_long24 | Long Twenty-Fours | Gunnery | Unlocks the Long 24 (tier V) | 450🪵 600🪙 | gun_long12 | Lab 4 |
+| gun_cannon_royal | Cannon Royal | Gunnery | Unlocks the Cannon Royal (tier V) | 450🪵 600🪙 | gun_demi_can | Lab 4 |
 
 Nâng cấp tàu (tab Upgrades của Loadout): Engine Sails (+10%/cấp, tối đa 3, giá base × (cấp+1): 60🪵 30🪙) · Armour Plate (+15%/cấp, tối đa 3, giá base × (cấp+1): 80🪵 40🪙) · Gun Drill (+12%/cấp, tối đa 3, giá base × (cấp+1): 50🪵 50🪙)
 <!-- /SPEC:research -->
@@ -253,14 +265,14 @@ Tốc độ hiển thị trong UI = `spd × 60` "kn". Thân tàu chỉ dành cho
 
 | Hành động | Điều kiện | Chi phí / thời gian | Kết quả |
 |---|---|---|---|
-| **Build** | Có ≥1 Shipyard xây xong; cấp Shipyard cao nhất ≥ `shipyardLevel` của hull; số tàu đang đóng < số Shipyard; số tàu < roster cap; đủ tài nguyên | `cost`, `buildSec` (thời gian thực) | Tàu mới trạng thái `building`, tên tự đặt từ `SHIP_NAMES`, pháo mặc định theo class + tier |
-| **Repair** | Tàu `ready` với HP < 100% | `ceil(thiếu% × REPAIR_GOLD_FULL[class])` vàng; `ceil(thiếu% × REPAIR_SEC_FULL[class])` s | `repairing` → `ready`, HP 100% |
-| **Salvage** | Tàu `wreck` | `ceil(50% × cost)` gỗ + vàng; `SALVAGE_SEC[class]` | Hiển thị "salvaging" → `ready`, HP 100% |
+| **Build** | Có ≥1 Shipyard xây xong; cấp Shipyard cao nhất ≥ `shipyardLevel` của hull; số tàu đang đóng < số Shipyard; số tàu < roster cap; đủ tài nguyên | `cost`, `buildSec` (thời gian thực) | Tàu mới trạng thái `building`, tên tự đặt từ `SHIP_NAMES`, pháo mặc định theo class + tier — **chỉ pháo đã nghiên cứu** (pháo chưa có lùi theo dòng nghiên cứu, `fallbackCannon`) |
+| **Repair** | Tàu `ready` với HP < 100% | `ceil(thiếu% × (REPAIR_GOLD_FULL[class] + Σ REPAIR_GOLD_PER_GUN_TIER[bậc pháo đang lắp]))` vàng; `ceil(thiếu% × REPAIR_SEC_FULL[class])` s. Tooltip nút Repair tách *thân tàu + pháo* | `repairing` → `ready`, HP 100% |
+| **Salvage** | Tàu `wreck` | `ceil(50% × cost)` gỗ + vàng, cộng phần pháo: `Σ REPAIR_GOLD_PER_GUN_TIER` vàng + `Σ SALVAGE_WOOD_PER_GUN_TIER` gỗ theo bậc pháo; `SALVAGE_SEC[class]`. Tooltip tách *thân tàu + pháo* | Hiển thị "salvaging" → `ready`, HP 100% |
 | **Rush** | Tàu `building`/`repairing` | `max(5, ceil(giây còn lại / 2))` vàng | Xong ngay |
 | **Scrap** | Không phải `building`; **không được scrap tàu cuối cùng** (≥1 tàu) | Cần xác nhận | Hoàn `floor(30% × cost)` gỗ + vàng, xoá tàu |
 
 - Trạng thái tàu: `ready` · `building` · `repairing` (UI tách `salvaging` khi HP = 0) · `wreck`. Chỉ tàu `ready` được neo ở cảng và được ra khơi.
-- Tàu neo ở cảng tự hồi `MOORING_REGEN_FRAC` HP/s (cộng aura sửa chữa); HP đó được ghi lại vào profile → sửa miễn phí nếu chờ.
+- Tàu neo ở cảng tự hồi `MOORING_REGEN_FRAC` HP/s (cộng aura sửa chữa); HP đó được ghi lại vào profile → sửa miễn phí nếu chờ (~21 phút cho 0→100%, so với 30–80 s khi trả tiền — giữ nguyên dù phí sửa nay tăng theo bậc pháo).
 - Khi timer xong (kiểm tra mỗi giây trong Harbor): toast "⚓ <tên> is ready to sail" + tiếng chuông, tàu xuất hiện ở bến.
 - Lý do nút Build bị khoá (UI): `Build a Shipyard in your harbor first` · `Requires Shipyard Lv N` · `All slipways are busy` · `All berths are full — scrap a ship first` · `Need …` (thiếu tài nguyên). Tier chưa mở hiển thị ổ khoá "Shipyard Lv N".
 
@@ -293,6 +305,16 @@ Chi phí theo class (sửa, trục vớt, chiến lợi phẩm khi bị đánh c
 | heavy | LRBS | 140🪙 / 80s | 120s | 0.9 rad/s · accel 0.05 | 90🪵 70🪙 |
 
 Trục vớt tốn `50%` giá đóng tàu. Hạm đội tối đa: base 3, trần 8. Neo ở cảng hồi 0.08% HP/s. Tàu về cảng không dưới 5% HP.
+
+Phí sửa/trục vớt theo bậc pháo đang lắp (`REPAIR_GOLD_PER_GUN_TIER` / `SALVAGE_WOOD_PER_GUN_TIER`, cộng thêm vào phần thân tàu):
+
+| Bậc pháo | Sửa 0→100% (+🪙 mỗi khẩu) | Trục vớt (+🪙 / +🪵 mỗi khẩu) |
+|---|---|---|
+| I | 3 | 3🪙 5🪵 |
+| II | 8 | 8🪙 12🪵 |
+| III | 16 | 16🪙 25🪵 |
+| IV | 28 | 28🪙 40🪵 |
+| V | 45 | 45🪙 60🪵 |
 <!-- /SPEC:shipyard -->
 
 ---
@@ -300,7 +322,28 @@ Trục vớt tốn `50%` giá đóng tàu. Hạm đội tối đa: base 3, trầ
 ## 6. Pháo
 
 - Slot theo class: light `L R` · standard `L R B` (B = mũi) · heavy `L R B S` (S = đuôi). Tầm: rt 1 = 8u, rt 2 = 20u, rt 3 = 40u. Pháo nặng (`wt`) làm tàu chậm hơn.
-- **Luật lắp pháo:** tàu có `hullTier` N chỉ lắp được pháo có `tier ≤ N` (`canMountCannon`). Tàu Open War cổ điển (không có tier) không bị giới hạn.
+- **Luật lắp pháo:** tàu có `hullTier` N chỉ lắp được pháo có `tier ≤ N` **và** pháo đó đã được nghiên cứu (`canMountCannon(cn, ship, known)`, `isCannonKnown`). Luật nghiên cứu chỉ áp dụng ở Harbor và Sea Battle; Open War (`?mode=skirmish`) và tàu địch không bị giới hạn.
+- **Nghiên cứu pháo (nhánh Gunnery của Research Lab, phím R):** 3 pháo bậc I (swivel, carronade, falconet) biết sẵn; mọi pháo khác cần một nghiên cứu `gun_<id>` (bảng dưới). **Lắp pháo miễn phí; sửa tàu thì tốn tiền, pháo bậc càng cao càng đắt** (§5.2). Nhánh Gunnery bị ẩn ở Open War.
+- Save cũ (profile v1): khi migrate, mọi pháo đang lắp hợp lệ theo tier được cấp luôn nghiên cứu tương ứng (kèm điều kiện tiên quyết) → không ai mất pháo. Save v2 trở đi: pháo chưa nghiên cứu bị thay bằng pháo tốt nhất đã biết trên cùng dòng.
+
+<!-- SPEC:gunnery -->
+Biết sẵn từ đầu: swivel, carronade, falconet.
+
+| id | Tên nghiên cứu | Mở khoá pháo (bậc) | Giá | Cần | Lab | Pháo thay thế khi chưa có |
+|---|---|---|---|---|---|---|
+| gun_long9 | Long Nines | Long 9 (II) | 60🪵 100🪙 | — | Lab 1 | swivel |
+| gun_demi_culv | Demi-Culverin Casting | Demi-culverin (II) | 60🪵 100🪙 | — | Lab 1 | falconet |
+| gun_grapeshot | Grape & Canister | Grapeshot (II) | 80🪵 120🪙 | — | Lab 1 | carronade |
+| gun_chain_shot | Bar & Chain Shot | Chain Shot (II) | 80🪵 120🪙 | gun_long9 | Lab 1 | falconet |
+| gun_long12 | Long Twelves | Long 12 (III) | 150🪵 220🪙 | gun_long9 | Lab 2 | long9 |
+| gun_demi_can | Demi-Cannon Foundry | Demi-cannon (III) | 150🪵 220🪙 | gun_demi_culv | Lab 2 | demi_culv |
+| gun_mortar1 | Sea Mortar | Mortar Mk.I (III) | 150🪵 220🪙 | — | Lab 2 | falconet |
+| gun_culverin | Culverin Bore | Culverin (IV) | 280🪵 380🪙 | gun_demi_culv | Lab 3 | demi_culv |
+| gun_carronade32 | The Smasher | 32-pdr Carronade (IV) | 280🪵 380🪙 | — | Lab 3 | carronade |
+| gun_mortar2 | Bomb-Ketch Mortar | Mortar Mk.II (IV) | 280🪵 380🪙 | gun_mortar1 | Lab 3 | mortar1 |
+| gun_long24 | Long Twenty-Fours | Long 24 (V) | 450🪵 600🪙 | gun_long12 | Lab 4 | long12 |
+| gun_cannon_royal | Cannon Royal | Cannon Royal (V) | 450🪵 600🪙 | gun_demi_can | Lab 4 | demi_can |
+<!-- /SPEC:gunnery -->
 
 <!-- SPEC:cannons -->
 | cannon id | Tên | Tier | Loại | Tầm (rt) | Dmg | ROF | Nặng | Cung bắn | Khắc chế | Đặc biệt |
@@ -334,8 +377,9 @@ Trục vớt tốn `50%` giá đóng tàu. Hạm đội tối đa: base 3, trầ
 
 **Loadout panel** (phím **L** / nút Loadout, có ở Harbor và Open War):
 - Thẻ pháo hiển thị số La Mã tier và DPS. Pháo vượt tier thân tàu: thẻ mờ xám (`locked`), tooltip "Needs a tier X hull (this ship: Y)"; click → thông báo "<pháo>: needs a tier X hull or better"; double-click không có tác dụng.
+- Harbor/Battle: pháo chưa nghiên cứu có dấu "RESEARCH" / "CHƯA NC", tooltip "Research: <tên nghiên cứu>" (VI "Nghiên cứu: …"); click → "<pháo>: research “…” first".
 - Chọn pháo rồi click slot để lắp; double-click thẻ = lấp mọi slot trống bằng pháo đó.
-- Preset "Broadside" (L/R demi_culv, B long9, S swivel); pháo vượt tier tự lùi về pháo tốt nhất được phép trong `demi_culv → long9 → carronade → swivel`.
+- Preset "Broadside" (L/R demi_culv, B long9, S swivel); pháo vượt tier hoặc chưa nghiên cứu tự lùi theo dòng nghiên cứu (`CANNON_DOWNGRADE`, vd. long24 → long12 → long9 → falconet) về pháo tốt nhất được phép.
 - Tab Upgrades: 3 nâng cấp tàu (bảng §4.2), trả bằng tài nguyên hiện có, lưu theo tàu.
 - Loadout/upgrades của tàu được ghi vào profile (Harbor: mỗi lần lưu; Battle: khi kết thúc trận).
 

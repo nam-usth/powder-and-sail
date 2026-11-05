@@ -3,7 +3,7 @@
 // design/gdd/campaign-meta.md, design/gdd/sea-battle.md).
 
 export const PROFILE_KEY      = 'iow_profile_v1';
-export const PROFILE_VERSION  = 1;
+export const PROFILE_VERSION  = 2;   // 2 = cannon research (Profile.migrate grants techs for guns already mounted)
 
 /** Offline production/timer catch-up is capped at 8 hours. */
 export const OFFLINE_MAX_SEC  = 8 * 3600;
@@ -141,10 +141,19 @@ export const FLEET_CAP_MAX  = 8;
 export const REPAIR_GOLD_FULL = { light: 40, standard: 80, heavy: 140 };
 /** Seconds to repair a hull from 0 → full (scaled by missing fraction). */
 export const REPAIR_SEC_FULL  = { light: 30, standard: 50, heavy: 80 };
+/**
+ * Cannon research rule (data/cannons.js): equipping is free, repairing is not.
+ * Extra repair gold per MOUNTED gun by cannon tier (index = tier I..V), for a
+ * full 0 → 100 % repair, scaled by the missing HP fraction like the hull base.
+ * T5 man-o-war (royal, long 24, mortar II, long 12): 140 + 136 = 276 🪙 full.
+ */
+export const REPAIR_GOLD_PER_GUN_TIER = [0, 3, 8, 16, 28, 45];
+/** Salvage re-casts a wreck's guns: Σ REPAIR_GOLD_PER_GUN_TIER (full) gold + this wood per gun. */
+export const SALVAGE_WOOD_PER_GUN_TIER = [0, 5, 12, 25, 40, 60];
 export const SALVAGE_COST_FRAC = 0.5;
 export const SALVAGE_SEC       = { light: 45, standard: 80, heavy: 120 };
 /** Harbor moorings slowly mend afloat ships (HP fraction per second). */
-export const MOORING_REGEN_FRAC = 0.0008;   // full heal ≈ 21 min (paid Repair: 30–80 s)
+export const MOORING_REGEN_FRAC = 0.0008;   // full heal ≈ 21 min (paid Repair: 30–80 s) — kept with gun-tier repair costs, report.md §0c
 /** Ships launched from a shipyard never reach the harbor below this HP fraction. */
 export const MIN_AFLOAT_FRAC = 0.05;
 

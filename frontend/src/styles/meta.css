@@ -509,6 +509,7 @@ body.lang-vi .sy-nm { font-weight: 700; }
 .sy-acts .mx-btn .mx-cost, .sy-acts .mx-btn .mx-time { margin-left: auto; }
 .sy-acts .mx-btn .mx-cost + .mx-cost, .sy-acts .mx-btn .mx-cost + .mx-time { margin-left: 4px; }
 .sy-ok { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; font-family: var(--mx-f-flav); font-style: italic; font-size: 15px; color: var(--mx-green); }
+.sy-qbd { font-size: 12px; font-style: italic; color: var(--mx-ink-2, #6a5434); text-align: center; line-height: 1.2; margin: 2px 0 0; }
 .sy-need { font-size: 13px; font-style: italic; color: var(--mx-red); text-align: center; line-height: 1.2; }
 .sy-confirm {
   position: relative; display: flex; flex-direction: column; gap: 8px; padding: 9px 10px 10px; max-width: 250px;

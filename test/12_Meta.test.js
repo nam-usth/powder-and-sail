@@ -10,7 +10,11 @@ import { OFFLINE_MAX_SEC, HULLS, PROFILE_KEY, HARBOR_ECONOMY } from '../frontend
 /** Harbor clock (balance pass): harbor income = Open War rates × rateMult. */
 const RM = HARBOR_ECONOMY.rateMult;
 import { MISSIONS } from '../frontend/src/data/campaign.js';
-import { CANNON_BY_ID, canMountCannon } from '../frontend/src/data/cannons.js';
+import { CANNON_BY_ID, CANNONS, canMountCannon, isCannonKnown, cannonTechId, fallbackCannon, STARTER_CANNONS } from '../frontend/src/data/cannons.js';
+import { TECH_TREE, techWithPrereqs } from '../frontend/src/data/upgrades.js';
+import { defaultLoadout } from '../frontend/src/Meta/Profile.js';
+import { salvageQuote, gunRepairGoldFull } from '../frontend/src/Meta/Shipyard.js';
+import { REPAIR_GOLD_FULL, REPAIR_GOLD_PER_GUN_TIER } from '../frontend/src/data/harbor.js';
 import { resolveHull } from '../frontend/src/Meta/Campaign.js';
 import { WOOD_RATE, GOLD_RATE, WOOD_CAP } from '../frontend/src/data/constants.js';
 import { harborBuildCost } from '../frontend/src/Meta/HarborEconomy.js';
@@ -211,6 +215,75 @@ suite('Meta · Cannon tiers', () => {
       }
     }
     assertEqual(bad.join(','), '');
+  });
+});
+
+suite('Meta · Cannon research', () => {
+  test('tier-I guns are known; every other cannon has a Gunnery tech at lab level = tier − 1', () => {
+    assertEqual(STARTER_CANNONS.join(','), 'swivel,carronade,falconet');
+    for (const cn of CANNONS) {
+      const t = cannonTechId(cn.id);
+      if (STARTER_CANNONS.includes(cn.id)) { assertEqual(t, null, cn.id); continue; }
+      const tech = TECH_TREE.find(x => x.id === t);
+      assert(tech && tech.br === 'Gunnery' && tech.cannon === cn.id, `tech for ${cn.id}`);
+      assertEqual(tech.requiredLabLevel, cn.tier - 1, `${cn.id} lab level`);
+      assert(tech.req.every(r => TECH_TREE.some(x => x.id === r)), `${cn.id} prereqs exist`);
+      assert(typeof tech.effect === 'function', `${cn.id} effect is a no-op function`);
+    }
+    assertEqual(techWithPrereqs('gun_long24').join(','), 'gun_long9,gun_long12,gun_long24');
+  });
+  test('mount rule: hull tier AND research (when a known set is given); null = unrestricted', () => {
+    const l9 = CANNON_BY_ID.get('long9');
+    assert(canMountCannon(l9, { hullTier: 2 }), 'no known set → tier rule only (Open War, enemies)');
+    assert(!canMountCannon(l9, { hullTier: 2 }, []), 'unresearched in harbor/battle');
+    assert(canMountCannon(l9, { hullTier: 2 }, ['gun_long9']), 'researched (array)');
+    assert(canMountCannon(l9, { hullTier: 2 }, new Set(['gun_long9'])), 'researched (Set)');
+    assert(!canMountCannon(l9, { hullTier: 1 }, ['gun_long9']), 'still bound by hull tier');
+    assert(isCannonKnown('falconet', []), 'starter gun always known');
+    assertEqual(fallbackCannon('long24', id => isCannonKnown(id, ['gun_long9'])), 'long9');
+    assertEqual(fallbackCannon('cannon_royal', id => isCannonKnown(id, [])), 'falconet');
+  });
+  test('fresh profile + new builds only carry known guns', () => {
+    const p = newProfile(T0);
+    const known = id => isCannonKnown(id, p.harbor.researched);
+    assert(p.fleet.every(s => Object.values(s.loadout).every(id => !id || known(id))), 'starter fleet uses tier-I guns');
+    p.res = { wood: 9999, gold: 9999 };
+    p.harbor.buildings.find(b => b.buildingId === 'shipyard').level = 2;
+    let s = startBuild(p, 'brig', T0);
+    assert(Object.values(s.loadout).every(id => STARTER_CANNONS.includes(id)), 'unresearched → tier-I fit ' + JSON.stringify(s.loadout));
+    p.harbor.researched.push('gun_demi_culv', 'gun_long9');
+    p.fleet = p.fleet.filter(x => x !== s);
+    s = startBuild(p, 'brig', T0);
+    assertEqual(JSON.stringify(s.loadout), JSON.stringify(defaultLoadout('standard', 2)), 'researched → full default fit');
+  });
+  test('migrate: v1 saves keep their guns (techs granted); v2 saves lose unresearched guns', () => {
+    const fleet = [{ hullId: 'man_o_war', loadout: { L: 'cannon_royal', R: 'long24', B: 'mortar2', S: 'swivel' } },
+      { hullId: 'sloop', loadout: { L: 'cannon_royal', R: 'falconet' } }];          // royal on a sloop: illegal by tier, no grant
+    const p = migrate({ v: 1, fleet: JSON.parse(JSON.stringify(fleet)), harbor: { researched: ['bal1'] } }, T0);
+    assertEqual(JSON.stringify(p.fleet[0].loadout), JSON.stringify(fleet[0].loadout), 'man-o-war keeps every gun');
+    for (const id of ['bal1', 'gun_cannon_royal', 'gun_demi_can', 'gun_demi_culv', 'gun_long24', 'gun_long12', 'gun_long9', 'gun_mortar2', 'gun_mortar1'])
+      assert(p.harbor.researched.includes(id), 'granted ' + id);
+    assertEqual(p.fleet[1].loadout.L, 'falconet', 'tier-illegal royal on a sloop falls back along its line to a tier-I gun');
+    const q = migrate({ v: 2, fleet: JSON.parse(JSON.stringify(fleet)), harbor: { researched: [] } }, T0);
+    assertEqual(q.harbor.researched.length, 0, 'no grants for v2 saves');
+    assert(Object.values(q.fleet[0].loadout).every(id => STARTER_CANNONS.includes(id)), 'v2: unresearched guns replaced ' + JSON.stringify(q.fleet[0].loadout));
+  });
+  test('repair and salvage cost grow with the tier of the mounted guns', () => {
+    const mk = loadout => ({ hullId: 'man_o_war', hpFrac: 0.5, status: 'ready', loadout });
+    const lo = mk({ L: 'swivel', R: 'swivel', B: 'swivel', S: 'swivel' });
+    const mid = mk({ L: 'demi_can', R: 'demi_can', B: 'mortar1', S: 'long12' });
+    const hi = mk({ L: 'cannon_royal', R: 'long24', B: 'mortar2', S: 'long12' });
+    const none = mk({ L: null, R: null, B: null, S: null });
+    const g = s => repairQuote(s).gold;
+    assert(g(none) < g(lo) && g(lo) < g(mid) && g(mid) < g(hi), `repair ${g(none)} < ${g(lo)} < ${g(mid)} < ${g(hi)}`);
+    assertEqual(g(none), Math.ceil(0.5 * REPAIR_GOLD_FULL.heavy), 'hull base kept');
+    assertEqual(gunRepairGoldFull(hi), 2 * REPAIR_GOLD_PER_GUN_TIER[5] + REPAIR_GOLD_PER_GUN_TIER[4] + REPAIR_GOLD_PER_GUN_TIER[3]);
+    const rq = repairQuote(hi);
+    assertEqual(rq.hullGold + rq.gunGold, rq.gold, 'breakdown adds up');
+    assertEqual(repairQuote(mk({ ...hi.loadout })).sec, repairQuote(none).sec, 'repair time unchanged');
+    const sq = s => salvageQuote({ ...s, status: 'wreck', hpFrac: 0 });
+    assert(sq(hi).gold > sq(lo).gold && sq(hi).wood > sq(lo).wood, 'salvage grows with gun tier');
+    assertEqual(sq(hi).hull.gold + sq(hi).guns.gold, sq(hi).gold, 'salvage breakdown adds up');
   });
 });
 

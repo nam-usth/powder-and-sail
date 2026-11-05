@@ -1,6 +1,6 @@
-import { CANNONS, CANNON_BY_ID, CANNON_FILL_COL, canMountCannon, ROMAN_TIER } from '../../data/cannons.js';
+import { CANNONS, CANNON_BY_ID, CANNON_FILL_COL, canMountCannon, isCannonKnown, cannonTechId, fallbackCannon, ROMAN_TIER } from '../../data/cannons.js';
 import { HULL_SLOTS } from '../../data/ships.js';
-import { UPGRADE_DEFS } from '../../data/upgrades.js';
+import { UPGRADE_DEFS, TECH_TREE } from '../../data/upgrades.js';
 import { applySpeed, calcSpeedMult } from '../World/ShipEntity.js';
 import { PanelManager } from './PanelManager.js';
 import { T } from '../../i18n.js';
@@ -57,6 +57,12 @@ function showCannonTip(cn, e) {
   tip.classList.add('show');
 }
 const hideCannonTip = () => document.getElementById('cannon-tip')?.classList.remove('show');
+
+/** Localised name of the research that unlocks a cannon. */
+export function cannonTechName(id) {
+  const t = cannonTechId(id); if (!t) return '';
+  return T.techNames?.[t] || TECH_TREE.find(x => x.id === t)?.nm || t;
+}
 
 // ── Presets ───────────────────────────────────────────────────────
 const PRESETS = [
@@ -120,6 +126,23 @@ export class LoadoutPanel {
     document.getElementById('lp-close')?.addEventListener('click', () => this.close());
     bus.on('ui:open_loadout', ({ ship }) => this.open(ship));
     bus.on('ship:spawned',    () => { if (this._ship) this._render(); });
+    bus.on('research:done',   () => { if (this._ship && PanelManager.isOpen('lp')) this._render(); });
+  }
+
+  /**
+   * Researched techs that gate cannons — harbor + Sea Battle only; Open War
+   * (mode 'skirmish') is unrestricted (null).
+   */
+  _known() {
+    const st = this._state;
+    return (st.mode === 'harbor' || st.mode === 'battle') ? (st.researched || new Set()) : null;
+  }
+  _canMount(cn, ship) { return canMountCannon(cn, ship, this._known()); }
+  /** Why a cannon is locked on this ship: 'tier' | 'research' | null. */
+  _lockReason(cn, ship) {
+    if (!canMountCannon(cn, ship)) return 'tier';
+    if (!isCannonKnown(cn.id, this._known())) return 'research';
+    return null;
   }
 
   toggle() {
@@ -311,18 +334,21 @@ export class LoadoutPanel {
         </div>
         <div class="lp2-cn-name">${cn.nm}</div>
         <div class="lp2-cn-dps">${dps}/s</div>
+        <div class="lp2-cn-req" id="lp2-req-${cn.id}"></div>
         <div class="lp2-cn-badge" id="lp2-badge-${cn.id}"></div>`;
 
       card.addEventListener('click', e => {
         e.stopPropagation();
-        if (!canMountCannon(cn, this._ship)) { this._flashHint(T.lpTierNeed(cn.nm, ROMAN_TIER[cn.tier])); return; }
+        const why = this._lockReason(cn, this._ship);
+        if (why === 'tier') { this._flashHint(T.lpTierNeed(cn.nm, ROMAN_TIER[cn.tier])); return; }
+        if (why === 'research') { this._flashHint(T.lpResearchNeed(cn.nm, cannonTechName(cn.id))); return; }
         this._picked = (this._picked === cn.id) ? null : cn.id;
         this._syncAll();
       });
       card.addEventListener('dblclick', e => {
         e.stopPropagation();
         const s = this._ship;
-        if (!canMountCannon(cn, s)) return;
+        if (!this._canMount(cn, s)) return;
         (HULL_SLOTS[s.hull]||[]).forEach(sl => {
           if (!s.loadout[sl]) { s.loadout[sl] = cn.id; s.slotTimers[sl] = cn.rof; }
         });
@@ -392,9 +418,13 @@ export class LoadoutPanel {
       const isPk  = picked === cn.id;
       const cnt   = eqCnt[cn.id] || 0;
       card.classList.toggle('picked', isPk);
-      const locked = !canMountCannon(cn, s);
-      card.classList.toggle('locked', locked);
-      card.title = locked ? T.lpTierTip(ROMAN_TIER[cn.tier], ROMAN_TIER[s.hullTier] || '?') : '';
+      const why = this._lockReason(cn, s);
+      card.classList.toggle('locked', !!why);
+      card.classList.toggle('research-locked', why === 'research');
+      card.title = why === 'tier' ? T.lpTierTip(ROMAN_TIER[cn.tier], ROMAN_TIER[s.hullTier] || '?')
+        : why === 'research' ? T.lpResearchTip(cannonTechName(cn.id)) : '';
+      const req = document.getElementById(`lp2-req-${cn.id}`);
+      if (req) req.textContent = why === 'research' ? T.lpResearchShort : '';
       card.classList.toggle('equipped', cnt > 0);
       const badge = document.getElementById(`lp2-badge-${cn.id}`);
       if (badge) badge.textContent = cnt > 0 ? `×${cnt}` : '';
@@ -419,7 +449,7 @@ export class LoadoutPanel {
     if (!s.alive) return; // S6: disable equip actions for dead/sunk ships
     if (this._picked) {
       const cn = CANNON_BY_ID.get(this._picked);
-      if (!canMountCannon(cn, s)) { this._picked = null; this._syncAll(); return; }
+      if (!this._canMount(cn, s)) { this._picked = null; this._syncAll(); return; }
       s.loadout[slotId] = this._picked;
       if (cn) s.slotTimers[slotId] = cn.rof;
       applySpeed(s); this._overlay.build(s);
@@ -473,11 +503,11 @@ export class LoadoutPanel {
     this._lastPreset = preset;
     ships.forEach(ship => {
       const lo = preset.loadout(ship.hull);
-      // AW: a preset gun above the hull's tier falls back to the best one allowed
-      const FALLBACK = ['demi_culv', 'long9', 'carronade', 'swivel'];
+      // AW: a preset gun above the hull's tier — or not yet researched (harbor/
+      // battle) — falls back along its research line to the best gun allowed
+      const ok = id => this._canMount(CANNON_BY_ID.get(id), ship);
       Object.keys(lo).forEach(sl => {
-        if (!canMountCannon(CANNON_BY_ID.get(lo[sl]), ship))
-          lo[sl] = FALLBACK.find(id => canMountCannon(CANNON_BY_ID.get(id), ship)) || 'swivel';
+        if (lo[sl] && !ok(lo[sl])) lo[sl] = fallbackCannon(lo[sl], ok) || 'swivel';
       });
       Object.assign(ship.loadout, lo);
       (HULL_SLOTS[ship.hull]||[]).forEach(sl => {

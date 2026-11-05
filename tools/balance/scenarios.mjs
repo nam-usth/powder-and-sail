@@ -12,6 +12,34 @@
 // Scenario: { mission, label, ships, research?, renown? (patrol sea), note? }
 
 import { HULL_SLOTS } from '../../frontend/src/data/ships.js';
+import { HULLS } from '../../frontend/src/data/harbor.js';
+import { cannonTechId } from '../../frontend/src/data/cannons.js';
+import { techWithPrereqs } from '../../frontend/src/data/upgrades.js';
+import { defaultLoadout } from '../../frontend/src/Meta/Profile.js';
+
+/**
+ * Cannon research (report.md §0c): the Gunnery techs a fleet's default fits
+ * need (plus prerequisites). A scenario's `research` = its listed techs + these,
+ * so every realistic fleet only mounts researched guns; the starter fleet
+ * (Caribbean) has none and sails with tier-I guns.
+ */
+export function gunResearch(ships) {
+  const out = [];
+  for (const sp of ships) {
+    const h = HULLS[sp.hull]; if (!h) continue;
+    const lo = sp.loadout === 'broadside' ? broadside(h.hull) : (sp.loadout && typeof sp.loadout === 'object') ? sp.loadout : defaultLoadout(h.hull, h.tier);
+    for (const id of Object.values(lo)) { const t = cannonTechId(id); if (t) techWithPrereqs(t, out); }
+  }
+  return out;
+}
+/** Add the fleet's gun research to every scenario of a table (in place) unless it is flagged `noGuns`. */
+function withGuns(table) {
+  for (const scn of Object.values(table)) {
+    if (scn.noGuns) continue;
+    scn.research = [...new Set([...(scn.research || []), ...gunResearch(scn.ships)])];
+  }
+  return table;
+}
 
 /** LoadoutPanel "Broadside" preset (Experience/UI/LoadoutPanel.js PRESETS[0]). */
 export function broadside(hullClass) {
@@ -37,10 +65,10 @@ export const STARTER = [S('brigantine'), S('sloop'), S('sloop')];
 
 export const SCENARIOS = {
   // ── The Caribbean ──
-  reef_1: { mission: 'reef_1', label: 'starter fleet (default guns)', ships: STARTER },
-  reef_2: { mission: 'reef_2', label: 'starter fleet (default guns)', ships: STARTER },
+  reef_1: { mission: 'reef_1', label: 'starter fleet (tier-I guns)', ships: STARTER, noGuns: true },
+  reef_2: { mission: 'reef_2', label: 'starter fleet (tier-I guns)', ships: STARTER, noGuns: true },
   // reef_3 needs only reef_1: many players sail it with the starter fleet (QA-002)
-  reef_3: { mission: 'reef_3', label: 'starter fleet (default guns)', ships: STARTER },
+  reef_3: { mission: 'reef_3', label: 'starter fleet (tier-I guns)', ships: STARTER, noGuns: true },
   // ── The Atlantic Lanes ──
   straits_1: { mission: 'straits_1', label: '3×T2 + sloop', ships: [B('brigantine'), B('brig'), B('corvette'), S('sloop')] },
   straits_2: { mission: 'straits_2', label: '4×T2', ships: [B('brigantine'), B('brig'), B('brig'), B('corvette')] },
@@ -82,7 +110,7 @@ export const GATE_SCENARIOS = {
 
 /** Patrol at each sea vs the fleet one has there, plus wipe-recovery fleets. */
 export const PATROL_SCENARIOS = {
-  patrol_caribbean:  { mission: 'patrol', renown: 0,   label: 'Caribbean · starter fleet', ships: STARTER },
+  patrol_caribbean:  { mission: 'patrol', renown: 0,   label: 'Caribbean · starter fleet', ships: STARTER, noGuns: true },
   patrol_atlantic:   { mission: 'patrol', renown: 30,  label: 'Atlantic · straits_1 fleet', ships: SCENARIOS.straits_1.ships },
   patrol_indian:     { mission: 'patrol', renown: 100, label: 'Indian · indian_1 fleet', ships: SCENARIOS.indian_1.ships, research: ['bal1'] },
   patrol_spice:      { mission: 'patrol', renown: 200, label: 'Spice · spice_1 fleet', ships: SCENARIOS.spice_1.ships, research: ['bal1', 'nav1'] },
@@ -114,4 +142,5 @@ export const BEFORE_SCENARIOS = {
   wipe_r4_1frig:  { mission: 'patrol', renown: 400, label: 'WIPE rank 4 · 1 salvaged frigate', ships: [B('frigate')], research: ['bal1', 'nav1'] },
 };
 
+withGuns(SCENARIOS); withGuns(GATE_SCENARIOS); withGuns(PATROL_SCENARIOS);
 export const ALL_SCENARIOS = { ...SCENARIOS, ...GATE_SCENARIOS, ...PATROL_SCENARIOS };

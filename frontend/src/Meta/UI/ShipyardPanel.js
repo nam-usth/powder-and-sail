@@ -13,7 +13,7 @@ import { HULL_SLOTS } from '../../data/ships.js';
 import { CANNON_BY_ID, getCannonLineCol } from '../../data/cannons.js';
 import {
   shipyardLevel, shipyardSlots, fleetCap, fleetCapBreakdown, rosterCap, tickRoster, hullOf, canBuild, startBuild,
-  repairQuote, startRepair, salvageQuote, startSalvage, rushQuote, rush, scrapShip,
+  repairQuote, startRepair, salvageQuote, startSalvage, rushQuote, rush, scrapShip, mountedGuns,
 } from '../Shipyard.js';
 import { ms, hullName, className, fmtNum, fmtClock, roman, capBreakdownText } from './strings.js';
 import { icon, resIcon, hullSvg, tierBadge, tierOf } from './icons.js';
@@ -278,7 +278,8 @@ export class ShipyardPanel {
         acts += `<button type="button" class="mx-btn sm rush" data-act="rush" data-uid="${uid}" data-fk="rush:${uid}" title="${esc(ms('sy_rushTip'))}">${icon('bolt')}<span>${esc(ms('sy_rush'))}</span><span class="mx-cost">${resIcon('gold')}<b data-q="rush"></b></span></button>`;
       } else if (st === 'wreck') {
         const q = salvageQuote(s);
-        acts += `<button type="button" class="mx-btn sm good" data-act="salvage" data-uid="${uid}" data-fk="salvage:${uid}">${icon('anchor')}<span>${esc(ms('sy_salvage'))}</span>`
+        const tip = ms('sy_salvageTip', costText(q.hull) || '0', costText(q.guns) || '0', mountedGuns(s).length);
+        acts += `<button type="button" class="mx-btn sm good" data-act="salvage" data-uid="${uid}" data-fk="salvage:${uid}" title="${esc(tip)}">${icon('anchor')}<span>${esc(ms('sy_salvage'))}</span>`
           + `<span class="mx-cost">${resIcon('wood')}<b>${fmtNum(q.wood)}</b></span><span class="mx-cost">${resIcon('gold')}<b>${fmtNum(q.gold)}</b></span><span class="mx-time">${icon('clock')}${fmtClock(q.sec)}</span></button>`;
       } else if (dmg) {
         acts += `<button type="button" class="mx-btn sm good" data-act="repair" data-uid="${uid}" data-fk="repair:${uid}">${icon('wrench')}<span>${esc(ms('sy_repair'))}</span>`
@@ -290,6 +291,10 @@ export class ShipyardPanel {
         const why = isLast ? ms('sy_lastShip') : '';
         acts += `<button type="button" class="mx-btn sm ghost danger sy-scrap" data-act="scrap" data-uid="${uid}" data-fk="scrap:${uid}" ${isLast ? 'disabled' : ''} title="${esc(why || ms('sy_scrap'))}" aria-label="${esc(ms('sy_scrap') + ' ' + s.nm)}">${icon('axe')}<span>${esc(ms('sy_scrap'))}</span></button>`;
       }
+      if (st === 'wreck') {
+        const q = salvageQuote(s);
+        acts += `<p class="sy-qbd">${esc(ms('sy_quoteBd', costText(q.hull) || '0', costText(q.guns) || '0'))}</p>`;
+      } else if (dmg) acts += '<p class="sy-qbd" data-q="qbd"></p>';
       acts += '<p class="sy-need" data-q="need" hidden></p>';
     }
 
@@ -355,6 +360,9 @@ export class ShipyardPanel {
       const rq = repairQuote(s);
       setText(q('repair-g'), fmtNum(rq.gold));
       setText(q('repair-t'), fmtClock(rq.sec));
+      const rt = ms('sy_repairTip', costText({ gold: rq.hullGold }) || '🪙0', costText({ gold: rq.gunGold }) || '🪙0', mountedGuns(s).length);
+      if (repB.title !== rt) repB.title = rt;
+      setText(q('qbd'), ms('sy_quoteBd', costText({ gold: rq.hullGold }) || '🪙0', costText({ gold: rq.gunGold }) || '🪙0'));
       repB.disabled = p.res.gold < rq.gold;
       if (repB.disabled) short = shortText(p.res, { gold: rq.gold });
     }

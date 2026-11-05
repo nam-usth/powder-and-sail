@@ -61,8 +61,44 @@ Object.assign(CANNON_LINE_COL, { long12: 0x60a0ff, carronade32: 0x40d080, culver
 
 /** Highest cannon tier a ship may mount (Infinity when it has no hull tier). */
 export const maxCannonTier = ship => (ship && ship.hullTier) ? ship.hullTier : Infinity;
-/** Can this cannon go on this ship? */
-export const canMountCannon = (cn, ship) => !!cn && (cn.tier || 1) <= maxCannonTier(ship);
+// ── Cannon research (design/gdd/campaign-meta.md §Gunnery) ───────
+// The three tier-I guns are known from the start; every other cannon is
+// unlocked by a Gunnery tech in data/upgrades.js TECH_TREE (id 'gun_<cannon>').
+// Equipping a known gun is free. The research rule applies in the harbor and
+// in Sea Battles only — Open War (and enemies) pass `known = null`.
+export const STARTER_CANNONS = ['swivel', 'carronade', 'falconet'];
+/** Research id that unlocks a cannon (null = known from the start). */
+export const cannonTechId = id => (!id || STARTER_CANNONS.includes(id)) ? null : `gun_${id}`;
+/**
+ * Is this cannon researched? `known` = Set or array of researched tech ids,
+ * or null/undefined for "unrestricted" (Open War, enemies, tools).
+ */
+export function isCannonKnown(id, known) {
+  if (known == null) return true;
+  const t = cannonTechId(id);
+  if (!t) return true;
+  return known instanceof Set ? known.has(t) : Array.isArray(known) && known.includes(t);
+}
+/** Can this cannon go on this ship? Hull tier rule, plus research when `known` is given. */
+export const canMountCannon = (cn, ship, known) =>
+  !!cn && (cn.tier || 1) <= maxCannonTier(ship) && isCannonKnown(cn.id, known);
+/**
+ * Next-best gun when a cannon may not be mounted (unresearched or above the
+ * hull tier): the research line walked backwards, ending on a tier-I gun.
+ * Used by default fits, presets and save legalisation.
+ */
+export const CANNON_DOWNGRADE = {
+  long9: 'swivel', demi_culv: 'falconet', chain_shot: 'falconet', grapeshot: 'carronade',
+  demi_can: 'demi_culv', mortar1: 'falconet', long12: 'long9',
+  culverin: 'demi_culv', carronade32: 'carronade', mortar2: 'mortar1',
+  long24: 'long12', cannon_royal: 'demi_can',
+};
+/** First gun on `id`'s downgrade line that passes `ok(id)`; else a tier-I gun that does; else null. */
+export function fallbackCannon(id, ok) {
+  const seen = new Set();
+  for (let c = id; c && !seen.has(c); c = CANNON_DOWNGRADE[c]) { seen.add(c); if (ok(c)) return c; }
+  return STARTER_CANNONS.slice().reverse().find(ok) || null;
+}
 export const ROMAN_TIER = ['', 'I', 'II', 'III', 'IV', 'V'];
 
 // B1: O(1) lookup map — use CANNON_BY_ID.get(id) instead of CANNONS.find(x=>x.id===id)

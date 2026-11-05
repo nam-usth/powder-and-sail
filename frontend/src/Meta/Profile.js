@@ -1,4 +1,5 @@
-import { CANNON_BY_ID, canMountCannon } from '../data/cannons.js';
+import { CANNON_BY_ID, canMountCannon, cannonTechId, fallbackCannon } from '../data/cannons.js';
+import { techWithPrereqs } from '../data/upgrades.js';
 // ── PROFILE — persistent player save (design/gdd/campaign-meta.md) ──
 // Pure JS: no DOM, no Three.js. Storage is injected so tests run in Node.
 
@@ -44,17 +45,27 @@ export function uid(prefix = 's', now = Date.now()) {
  * Rationale: design/balance/report.md §Default loadout.
  * @param {string} hullClass 'light'|'standard'|'heavy'
  * @param {number} [tier=1] hull tier I..V
+ * @param {Set|string[]|null} [known] researched tech ids (harbor/battle); null =
+ *   unrestricted (tools, Open War). Unresearched guns fall back along their
+ *   research line (data/cannons.js fallbackCannon) to a known gun.
  */
-export function defaultLoadout(hullClass, tier = 1) {
+export function defaultLoadout(hullClass, tier = 1, known = null) {
   const byTier = DEFAULT_LOADOUT[hullClass] || DEFAULT_LOADOUT.light;
-  for (let t = tier; t >= 1; t--) if (byTier[t]) return { ...byTier[t] };
-  return { ...byTier[Math.min(...Object.keys(byTier).map(Number))] };
+  let fit = null;
+  for (let t = tier; t >= 1 && !fit; t--) if (byTier[t]) fit = { ...byTier[t] };
+  if (!fit) fit = { ...byTier[Math.min(...Object.keys(byTier).map(Number))] };
+  if (known == null) return fit;
+  // Cannon research (harbor/battle): an unresearched gun falls back along its line.
+  const ok = id => canMountCannon(CANNON_BY_ID.get(id), { hullTier: tier }, known);
+  for (const sl of Object.keys(fit)) if (fit[sl] && !ok(fit[sl])) fit[sl] = fallbackCannon(fit[sl], ok);
+  return fit;
 }
 
 /**
  * Create a roster ship record.
  * @param {string} hullId key of HULLS
- * @param {object} [o] overrides (nm, status, readyAt, hpFrac, loadout)
+ * @param {object} [o] overrides (nm, status, readyAt, hpFrac, loadout,
+ *   known = researched tech ids for the default fit; omitted = unrestricted)
  */
 export function makeRosterShip(hullId, o = {}, now = Date.now()) {
   const h = HULLS[hullId] || HULLS.sloop;
@@ -65,7 +76,7 @@ export function makeRosterShip(hullId, o = {}, now = Date.now()) {
     hpFrac: o.hpFrac ?? 1,
     status: o.status || 'ready',       // ready | building | repairing | wreck
     readyAt: o.readyAt || 0,           // epoch ms when building/repairing finishes
-    loadout: o.loadout || defaultLoadout(h.hull, h.tier),
+    loadout: o.loadout || defaultLoadout(h.hull, h.tier, o.known ?? null),
     upgrades: o.upgrades || { spd: 0, hp: 0, rof: 0 },
     battles: 0, sinks: 0,
   };
@@ -100,24 +111,46 @@ export function newProfile(now = Date.now()) {
     settings: {},
   };
   STARTER_FLEET.forEach(hid => {
-    const s = makeRosterShip(hid, {}, now);
+    const s = makeRosterShip(hid, { known: p.harbor.researched }, now);   // tier-I guns only
     s.nm = pickShipName(p, hid);
     p.fleet.push(s);
   });
   return p;
 }
 
-/** Fill fields missing from older/partial saves. Never throws. */
-/** Replace cannons a hull may not carry (saves from before cannon tiers). */
-function legalizeLoadout(s) {
+/**
+ * Replace cannons a hull may not carry: above its tier (saves from before
+ * cannon tiers) or not researched. Falls back along the gun's research line.
+ */
+function legalizeLoadout(s, known) {
   const h = HULLS[s.hullId]; if (!h || !s.loadout) return;
-  const def = defaultLoadout(h.hull, h.tier);
+  const ok = id => canMountCannon(CANNON_BY_ID.get(id), { hullTier: h.tier }, known);
+  const def = defaultLoadout(h.hull, h.tier, known);
   for (const sl of Object.keys(s.loadout)) {
-    const cn = CANNON_BY_ID.get(s.loadout[sl]);
-    if (s.loadout[sl] && !canMountCannon(cn, { hullTier: h.tier })) s.loadout[sl] = def[sl] ?? null;
+    const id = s.loadout[sl];
+    if (id && !ok(id)) s.loadout[sl] = (CANNON_BY_ID.has(id) && fallbackCannon(id, ok)) || def[sl] || null;
   }
 }
 
+/**
+ * Saves from before cannon research (v < 2): grant the Gunnery tech (and its
+ * prerequisites) of every gun already mounted on a roster ship within its
+ * hull tier, so nobody loses equipment. Returns the tech ids added.
+ */
+export function grantMountedGunResearch(rawFleet, researched) {
+  const added = [];
+  for (const s of rawFleet || []) {
+    const h = HULLS[s?.hullId]; if (!h || !s.loadout || typeof s.loadout !== 'object') continue;
+    for (const id of Object.values(s.loadout)) {
+      const cn = CANNON_BY_ID.get(id), t = cannonTechId(id);
+      if (!cn || !t || !canMountCannon(cn, { hullTier: h.tier })) continue;
+      for (const r of techWithPrereqs(t)) if (!researched.includes(r)) { researched.push(r); added.push(r); }
+    }
+  }
+  return added;
+}
+
+/** Fill fields missing from older/partial saves. Never throws. */
 export function migrate(raw, now = Date.now()) {
   const base = newProfile(now);
   if (!raw || typeof raw !== 'object') return base;
@@ -133,7 +166,9 @@ export function migrate(raw, now = Date.now()) {
     ? raw.fleet.filter(s => s && HULLS[s.hullId] && !HULLS[s.hullId].enemyOnly).map(s => ({ ...makeRosterShip(s.hullId, {}, now), ...s }))
     : base.fleet;
   if (!p.fleet.length) p.fleet = base.fleet;
-  p.fleet.forEach(legalizeLoadout);
+  p.harbor.researched = p.harbor.researched.filter(id => typeof id === 'string');
+  if (!(Number(raw.v) >= 2)) grantMountedGunResearch(raw.fleet, p.harbor.researched);
+  p.fleet.forEach(s => legalizeLoadout(s, p.harbor.researched));
   if (typeof p.lastSeen !== 'number' || !isFinite(p.lastSeen)) p.lastSeen = now;
   // QA-010: coerce numeric fields (a string renown made `renown += n` concatenate)
   const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
