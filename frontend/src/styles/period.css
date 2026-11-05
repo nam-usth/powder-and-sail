@@ -477,11 +477,15 @@ body.theme-parchment #console .con-panel::before {
     #efe2c2 !important;
   box-shadow: 0 2px 5px rgba(0,0,0,.6) !important;
 }
-#console #minimap::after {
-  content: ''; position: absolute; right: 8px; bottom: 8px; width: 46px; height: 46px; pointer-events: none;
-  background: var(--pd-rose) center / contain no-repeat; opacity: .82;
-  filter: drop-shadow(0 0 1px rgba(239,226,194,.6));
+/* compass rose lives in the centre (fleet) panel — it must never cover the chart */
+#console #minimap::after { content: none !important; }
+#console #con-sel { position: relative; }
+#console #con-sel::after {
+  content: ''; position: absolute; right: 12px; bottom: 10px; width: 64px; height: 64px; pointer-events: none;
+  background: var(--pd-rose) center / contain no-repeat; opacity: .35; z-index: 0;
 }
+#console #con-sel > * { position: relative; z-index: 1; }
+@media (max-width: 760px) { #console #con-sel::after { width: 40px; height: 40px; opacity: .25; } }
 #console #mmcvs { border-radius: 0 !important; image-rendering: auto; }
 #console #mmlbl {
   top: 8px !important; left: 9px !important; padding: 1px 6px 2px; border-radius: 1px;
