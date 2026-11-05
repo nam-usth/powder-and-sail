@@ -399,11 +399,19 @@ export class OrderSystem {
   _engageSteer(ship, tgt, dt, o) {
     const prof = gunProfile(ship);
     const frac = o.kite ? TUNE.kiteFrac : TUNE.broadsideFrac;
-    let R = prof.sideRange * frac;
-    R = Math.max(R, isIsland(tgt) ? tgt.r + TUNE.shoreClearance : 3.5);
-    // spread several attackers into rings — but never past ~92 % of gun range
-    const room = Math.max(0, prof.sideRange * 0.92 - R);
-    R += ((o.rank || 0) % 3) * Math.min(2.5, room / 2);
+    let R;
+    if (isIsland(tgt)) {
+      // QA-001: gun range and accuracy are measured to the island CENTRE, so a
+      // gun-range ring (or r + path clearance) parked big forts at the very
+      // edge of range (≈ 28 % accuracy) where fort regen out-healed the fleet.
+      // Bombard from just off the shore instead, a little apart per ship.
+      R = tgt.r + (TUNE.siegeShore ?? 2.6) + ((o.rank || 0) % 3) * 1.4;
+    } else {
+      R = Math.max(prof.sideRange * frac, 3.5);
+      // spread several attackers into rings — but never past ~92 % of gun range
+      const room = Math.max(0, prof.sideRange * 0.92 - R);
+      R += ((o.rank || 0) % 3) * Math.min(2.5, room / 2);
+    }
     const d = Math.hypot(ship.x - tgt.x, ship.z - tgt.z);
     if (d > R + TUNE.approachSlack) { this._navTo(ship, tgt.x, tgt.z, dt, false); return; }
     this._orbit(ship, tgt.x, tgt.z, R, this._sideFor(ship, tgt), dt, 1);
