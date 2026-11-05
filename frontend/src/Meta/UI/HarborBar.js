@@ -11,6 +11,7 @@
 // on 'iow:meta-changed' and 'iow:langchange'. Position: top var(--hb-top).
 
 import { BUILDINGS } from '../../data/buildings.js';
+import { OFFLINE_MAX_SEC } from '../../data/harbor.js';
 import { rankIndex, rankOf, nextRank } from '../Campaign.js';
 import { sailableShips } from '../Shipyard.js';
 import { ShipyardPanel } from './ShipyardPanel.js';
@@ -146,6 +147,7 @@ export function showOfflineReport(report, ctx = {}) {
     <span class="mx-res lg">${resIcon('wood')}<b data-n="wood">+0</b></span>
     <span class="mx-res lg">${resIcon('gold')}<b data-n="gold">+0</b></span>
   </div>
+  ${report.seconds >= OFFLINE_MAX_SEC - 1 ? `<p class="hb-away-note">${esc(ms('away_capped', fmtDur(OFFLINE_MAX_SEC)))}</p>` : ''}
   ${capped ? `<p class="hb-away-note">${esc(ms('away_full'))}</p>` : ''}
   ${names.length ? `<ul class="hb-away-done">${names.map((n) => `<li>${icon('check')}<span>${esc(ms('away_finished', n))}</span></li>`).join('')}</ul>` : ''}
   <div class="hb-away-foot"><button type="button" class="mx-btn sm good" data-act="ok">${esc(ms('away_ok'))}</button></div>

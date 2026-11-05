@@ -3,6 +3,7 @@ import { DEFENSES } from '../../data/defenses.js';
 import { BUILD_GRID_SIZE } from '../../data/constants.js';
 import { T } from '../../i18n.js';
 import { PanelManager } from './PanelManager.js';
+import { harborBuildCost } from '../../Meta/HarborEconomy.js';
 
 // Display groups (category id → display info). Order matters — first is rendered first.
 const CATEGORY_GROUPS = [
@@ -128,8 +129,7 @@ export class BuildPanel {
       placed.forEach(inst => {
         const bldDef = this._allItems().find(b => b.id === inst.buildingId);
         if(!bldDef) return;
-        const upCostW = ((bldDef.cost && bldDef.cost.wood) || 0) * inst.level;
-        const upCostG = ((bldDef.cost && bldDef.cost.gold) || 0) * inst.level;
+        const { wood: upCostW, gold: upCostG } = harborBuildCost(bldDef, inst.level, st.harborBuildCostMult ?? 1);
         const canUp = inst.level < 10 && st.resWood >= upCostW && st.resGold >= upCostG;
         const hpPct = Math.round((inst.hp / inst.maxHp) * 100);
         const hpCol = hpPct > 60 ? 'var(--verd)' : hpPct > 30 ? 'var(--wax)' : '#a83838';
@@ -162,8 +162,7 @@ export class BuildPanel {
     const builtCount = instances.filter(i => i.buildingId === b.id && i.state !== 'destroyed').length;
     const isSel = (st.selectedBuilding === b) || (st.selectedDefense === b);
     const unlocked = this._isUnlocked(b);
-    const cW = (b.cost && b.cost.wood) || 0;
-    const cG = (b.cost && b.cost.gold) || 0;
+    const { wood: cW, gold: cG } = harborBuildCost(b, 0, st.harborBuildCostMult ?? 1);
     const cant = !unlocked || st.resWood < cW || st.resGold < cG;
     const lockMsg = !unlocked
       ? (b.unlock?.requiredLabLevel ? `🔒 Lab Lv${b.unlock.requiredLabLevel}` : '🔒 Locked')
@@ -227,8 +226,7 @@ export class BuildPanel {
       const b = all.find(x => x.id === node.dataset.bid);
       if (!b) return;
       const unlocked = this._isUnlocked(b);
-      const cW = (b.cost && b.cost.wood) || 0;
-      const cG = (b.cost && b.cost.gold) || 0;
+      const { wood: cW, gold: cG } = harborBuildCost(b, 0, st.harborBuildCostMult ?? 1);
       const cant = !unlocked || st.resWood < cW || st.resGold < cG;
       node.classList.toggle('cant', cant);
     });
@@ -251,8 +249,7 @@ export class BuildPanel {
       if (!inst) return;
       const bldDef = all.find(x => x.id === inst.buildingId);
       if (!bldDef) return;
-      const upCostW = ((bldDef.cost && bldDef.cost.wood) || 0) * inst.level;
-      const upCostG = ((bldDef.cost && bldDef.cost.gold) || 0) * inst.level;
+      const { wood: upCostW, gold: upCostG } = harborBuildCost(bldDef, inst.level, st.harborBuildCostMult ?? 1);
       const canUp   = inst.level < 10 && st.resWood >= upCostW && st.resGold >= upCostG;
       btn.disabled = !canUp;
       btn.classList.toggle('afford', canUp);

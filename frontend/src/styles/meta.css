@@ -580,6 +580,12 @@ body.lang-vi .sy-hhead h4 { font-weight: 700; }
 .sy-lockchip .mx-ic { width: 15px; height: 15px; }
 .sy-why { display: flex; align-items: center; gap: 5px; margin-top: 5px; font-size: 13.5px; font-style: italic; color: var(--mx-red); }
 .sy-why .mx-ic { width: 15px; height: 15px; flex: none; }
+.sy-blockers { display: block; list-style: none; padding: 0; margin: 5px 0 0; }
+.sy-blockers li { display: flex; align-items: center; gap: 5px; line-height: 1.25; }
+.sy-blockers li + li { margin-top: 2px; }
+.sy-hull.is-locked .sy-blockers { color: var(--mx-ink-3); }
+.sy-capnote { font-family: var(--mx-f-flav); font-style: italic; font-size: 13.5px; color: var(--mx-frame-ink-2); margin-top: 2px; opacity: .9; }
+.wc-capnote { margin-top: 4px; }
 @container (max-width: 470px) {
   .sy-hull { grid-template-columns: 96px minmax(0, 1fr); }
   .sy-hwell { width: 96px; height: 64px; }
@@ -966,6 +972,7 @@ body.theme-parchment .br-card, body.theme-parchment .hw-card {
 }
 .br-overlay.is-defeat .br-title { background: none; color: var(--mx-wax); filter: drop-shadow(0 2px 0 rgba(60,10,5,.35)); }
 .br-overlay.is-retreat .br-title { background: none; color: var(--mx-ink-2); filter: none; }
+.br-why { margin: 0 0 4px; font-family: var(--mx-f-flav); font-style: italic; font-size: 17px; color: var(--mx-ink-2); }
 .br-flags { display: flex; justify-content: center; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
 .br-stars { list-style: none; display: flex; justify-content: center; align-items: flex-end; gap: 26px; margin: 16px 0 12px; }
 .br-star { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 150px; text-align: center; }

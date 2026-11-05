@@ -12,18 +12,19 @@ import { HULLS, SHIP_TIERS, SALVAGE_SEC } from '../../data/harbor.js';
 import { HULL_SLOTS } from '../../data/ships.js';
 import { CANNON_BY_ID, getCannonLineCol } from '../../data/cannons.js';
 import {
-  shipyardLevel, shipyardSlots, fleetCap, rosterCap, tickRoster, hullOf, canBuild, startBuild,
+  shipyardLevel, shipyardSlots, fleetCap, fleetCapBreakdown, rosterCap, tickRoster, hullOf, canBuild, startBuild,
   repairQuote, startRepair, salvageQuote, startSalvage, rushQuote, rush, scrapShip,
 } from '../Shipyard.js';
-import { ms, hullName, className, fmtNum, fmtClock, roman } from './strings.js';
+import { ms, hullName, className, fmtNum, fmtClock, roman, capBreakdownText } from './strings.js';
 import { icon, resIcon, hullSvg, tierBadge, tierOf } from './icons.js';
 import {
   esc, el, domId, call, nowOf, emitMetaChanged, ensureMetaCss, revealWhenStyled,
   pushModal, popModal, focusFirst, patchKeyed, setText, reducedMotion,
 } from './dom.js';
 
-const MAX_HP  = Math.max(...Object.values(HULLS).map((h) => h.hp));
-const MAX_SPD = Math.max(...Object.values(HULLS).map((h) => h.spd));
+const BUILDABLE = Object.values(HULLS).filter((h) => !h.enemyOnly);   // QA-003: enemy flavour hulls are never offered
+const MAX_HP  = Math.max(...BUILDABLE.map((h) => h.hp));
+const MAX_SPD = Math.max(...BUILDABLE.map((h) => h.spd));
 const KNOTS = 60;                       // display only: world units per 1/60 s → "knots"
 const hex = (n) => '#' + (n >>> 0).toString(16).padStart(6, '0');
 
@@ -114,6 +115,7 @@ export class ShipyardPanel {
       <div class="sy-titles">
         <h2 class="sy-title mx-caps sy-panel-focus" id="${tid}" tabindex="-1" data-f="title"></h2>
         <div class="sy-sub" data-f="sub"></div>
+        <div class="sy-capnote" data-f="capNote"></div>
       </div>
       <dl class="sy-stats">
         <div class="sy-stat" data-f="slipTip"><dt class="mx-caps" data-f="slipL"></dt><dd><b data-f="slip"></b><span class="sy-pips" data-f="pips"></span></dd></div>
@@ -211,6 +213,9 @@ export class ShipyardPanel {
     setText(f.berth, `${p.fleet.length} / ${rosterCap(p)}`);
     f.berthTip.classList.toggle('is-full', p.fleet.length >= rosterCap(p));
     setText(f.cap, String(fleetCap(p)));
+    const capB = capBreakdownText(fleetCapBreakdown(p));
+    setText(f.capNote, `${ms('sy_fleetcap')}: ${capB.line}`);
+    f.capTip.title = [ms('sy_fleetcapTip'), capB.parts, ...capB.next].filter(Boolean).join('\n');
     setText(f.wood, fmtNum(p.res.wood));
     setText(f.gold, fmtNum(p.res.gold));
 
@@ -238,7 +243,7 @@ export class ShipyardPanel {
 
     const items = [];
     for (const t of SHIP_TIERS) {
-      const hulls = Object.values(HULLS).filter((h) => h.tier === t.tier);
+      const hulls = BUILDABLE.filter((h) => h.tier === t.tier);
       if (!hulls.length) continue;
       items.push({ kind: 'tier', t, locked: lv < t.shipyardLevel });
       hulls.forEach((h) => items.push({ kind: 'hull', h, t, locked: lv < t.shipyardLevel }));
@@ -386,19 +391,27 @@ export class ShipyardPanel {
   _hullSig(h, p, lang) {
     const cb = canBuild(p, h.id);
     const sw = p.res.wood < h.cost.wood, sg = p.res.gold < h.cost.gold;
-    const why = cb.ok ? '' : this._reason(cb, p, h);
+    const why = cb.ok ? '' : this._blockers(cb, p, h).join(';');
     return [lang, cb.ok, cb.reason || '', sw, sg, why].join('|');
   }
 
   _reason(cb, p, h) {
     if (cb.reason === 'resources') return ms('need', shortText(p.res, h.cost));
     if (cb.reason === 'shipyard_level') return ms('reason_shipyard_level', cb.need || h.shipyardLevel);
+    if (cb.reason === 'slipway_busy' && cb.slots) return ms('blk_slipway_busy', cb.busy, cb.slots);
+    if (cb.reason === 'roster_full' && cb.cap) return ms('blk_roster_full', cb.have, cb.cap);
     return ms('reason_' + cb.reason);
+  }
+
+  /** Every blocker from canBuild(…).blockers, as display lines. */
+  _blockers(cb, p, h) {
+    return (cb.blockers || [cb]).filter((b) => b.reason).map((b) => this._reason(b, p, h));
   }
 
   _hullHtml(h, p, locked) {
     const cb = canBuild(p, h.id);
-    const why = cb.ok ? '' : this._reason(cb, p, h);
+    const blk = cb.ok ? [] : this._blockers(cb, p, h);
+    const why = blk.join(' · ');
     const slots = HULL_SLOTS[h.hull] || [];
     const sw = p.res.wood < h.cost.wood, sg = p.res.gold < h.cost.gold;
     const nm = hullName(h);
@@ -421,7 +434,7 @@ export class ShipyardPanel {
       <span class="mx-cost ${sg ? 'short' : ''}" title="${esc(ms('gold'))}">${resIcon('gold')}<b>${fmtNum(h.cost.gold)}</b></span>
       ${btn}
     </div>
-    ${!cb.ok && !locked ? `<p class="sy-why">${icon('warn')}<span>${esc(why)}</span></p>` : ''}
+    ${blk.length ? `<ul class="sy-why sy-blockers">${blk.map((w) => `<li>${icon(locked ? 'lock' : 'warn')}<span>${esc(w)}</span></li>`).join('')}</ul>` : ''}
   </div>
 </article>`;
   }

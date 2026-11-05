@@ -6,6 +6,7 @@ import { CANNONS, CANNON_BY_ID, getCannonFillCol } from '../../data/cannons.js';
 import { ROLE_LABELS, ROLES } from '../Systems/Naval/FleetCommander.js';
 import { FLEET_MAX_SHIPS, WOOD_CAP, GOLD_CAP, WOOD_RATE, GOLD_RATE } from '../../data/constants.js';
 import { T } from '../../i18n.js';
+import { fleetCap } from '../../Meta/Shipyard.js';
 
 // Convert THREE-style 0xRRGGBB int to CSS hex
 const colHex = (n) => '#' + (n & 0xffffff).toString(16).padStart(6, '0');
@@ -33,6 +34,16 @@ const COMPACT_MIN = 86;  // ≥ this: no pips / dropdown
 const MINI_MIN  = 46;    // ≥ this: glyph + name + hull bar; below: "+N" chip
 
 export class HudController {
+  /** QA-007: fleet-group capacity shown on the tab. Open War: FLEET_MAX_SHIPS.
+   *  Harbor/battle: the campaign fleet cap (Meta/Shipyard.fleetCap), or none until the session is known. */
+  _groupCap(){
+    const mode = this._state.mode;
+    if (mode !== 'harbor' && mode !== 'battle') return FLEET_MAX_SHIPS;
+    const prof = (typeof window !== 'undefined') && window._game?._opts?.session?.profile;
+    if (!prof) return 0;
+    try { return Math.min(FLEET_MAX_SHIPS, fleetCap(prof)); } catch { return 0; }
+  }
+
   constructor(state, bus, fleet = null, orders = null){
     this._state = state;
     this._bus   = bus;
@@ -132,7 +143,7 @@ export class HudController {
         <span class="ft-stripe" style="background:${fleet.color}"></span>
         <span class="ft-nm">${fleet.name}</span>
         <span class="ft-hpbar"><span class="ft-hpfill" data-hpfid="${fleet.id}"></span></span>
-        <span class="ft-cnt">${ships.length}/${FLEET_MAX_SHIPS}</span>
+        <span class="ft-cnt">${ships.length}${this._groupCap() ? '/' + this._groupCap() : ''}</span>
         <span class="ft-role" data-fid="${fleet.id}" title="Click to cycle role">${ROLE_LABELS[fleet.role] || fleet.role}</span>
         ${st.fleets.length > 1 ? `<span class="ft-x" data-fid="${fleet.id}" title="Disband fleet">✕</span>` : ''}
       `;

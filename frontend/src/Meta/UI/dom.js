@@ -160,6 +160,7 @@ export function pushModal(entry) {
   if (!_stack.length) window.addEventListener('keydown', onKey, true);
   entry.returnFocus = document.activeElement;
   _stack.push(entry);
+  document.body?.classList.add('meta-modal-open');   // QA-008: hides world float text under meta modals
   return entry;
 }
 
@@ -168,7 +169,7 @@ export function popModal(entry) {
   const i = _stack.indexOf(entry);
   if (i < 0) return;
   _stack.splice(i, 1);
-  if (!_stack.length) window.removeEventListener('keydown', onKey, true);
+  if (!_stack.length) { window.removeEventListener('keydown', onKey, true); document.body?.classList.remove('meta-modal-open'); }
   const rf = entry.returnFocus;
   if (rf && rf.isConnected && typeof rf.focus === 'function') {
     try { rf.focus({ preventScroll: true }); } catch { /* ignore */ }

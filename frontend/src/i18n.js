@@ -21,8 +21,8 @@ const STRINGS = {
     retreatHint:     'Leave the battle (counts as a defeat, keeps half the plunder)',
     retreatConfirm:  'Retreat to the harbor? The battle counts as lost and you keep half the plunder.',
     noShipsToRetry:  'No ships left afloat — repair them in the Shipyard.',
-    objLabels:       { sink: 'Enemy ships sunk', forts: 'Forts destroyed', survive: 'Hold out', capture: 'Islands taken' },
-    objTypes:        { sink_all: 'Sink every enemy ship', destroy_forts: 'Destroy the enemy forts', survive: 'Keep a ship afloat until time runs out', capture: 'Capture the marked island' },
+    objLabels:       { sink: 'Enemy ships sunk', forts: 'Forts destroyed', survive: 'Hold out', capture: 'Islands taken', prize: 'Prize sunk', prizeHp: 'Prize hull', escape: 'Prize to safety', time: 'Time left', escaped: 'Escaped' },
+    objTypes:        { sink_all: 'Sink every enemy ship', destroy_forts: 'Destroy the enemy forts', survive: 'Keep a ship afloat until time runs out', capture: 'Capture the marked island', sink_target: 'Sink the prize before it escapes' },
     campaignWon:     'The Citadel of Storms has fallen — you are Admiral of the Isles!',
     // ── GameApp messages ──────────────────────────────────────
     welcomeMsg:        '⚓ Drag to select ships · Right-click to command · 1–9 fleets · ? for help',
@@ -81,6 +81,23 @@ const STRINGS = {
     applyTo:           'Apply last preset to:',
     allShips:          'All Ships',
     sameHull:          'Same Hull',
+    // UI3 (QA-004): Loadout panel + top action bar
+    lpTitle:           '⚙ FLEET LOADOUT',
+    lpTabCannons:      '⚓ Cannons',
+    lpTabUpgrades:     '⬆ Upgrades',
+    lpDps:             'DPS',
+    lpHintIdle:        'Click a cannon below → then click a slot to equip · double-click to fill all empty',
+    lpHintPicked:      (nm) => `${nm} selected — click a slot to equip · click again to deselect`,
+    lpTierNeed:        (nm, t) => `${nm}: needs a tier ${t} hull or better`,
+    lpTierTip:         (t, h) => `Needs a tier ${t} hull (this ship: ${h})`,
+    lpSunk:            'SUNK',
+    lpHp:              'HP',
+    lpMax:             'MAX',
+    lpUpgrade:         'Upgrade',
+    lpPresets:         { broadside: 'Broadside', sniper: 'Sniper', siege: 'Siege', brawler: 'Brawler', clear: 'Clear All' },
+    lpUpgNames:        { spd: 'Engine Sails', hp: 'Armour Plate', rof: 'Gun Drill' },
+    actBar:            { build: 'Build', research: 'Research', loadout: 'Loadout', revive: 'Revive', empire: 'Empire' },
+    actBarTip:         { build: 'Build', research: 'Research', loadout: 'Loadout', revive: 'Revive', empire: 'Empire Overview' },
     slotEmpty:         'Empty',
     slotClearTip:      (nm) => `${nm} · click to clear`,
     slotEmptyTip:      'Empty — pick a cannon first',
@@ -127,8 +144,8 @@ const STRINGS = {
     retreatHint:     'Rời trận (tính là thua, giữ một nửa chiến lợi phẩm)',
     retreatConfirm:  'Rút về cảng? Trận này sẽ tính là thua và bạn giữ một nửa chiến lợi phẩm.',
     noShipsToRetry:  'Không còn tàu nào nổi — hãy sửa chữa ở Xưởng tàu.',
-    objLabels:       { sink: 'Tàu địch bị đánh chìm', forts: 'Pháo đài bị phá', survive: 'Cầm cự', capture: 'Đảo chiếm được' },
-    objTypes:        { sink_all: 'Đánh chìm toàn bộ tàu địch', destroy_forts: 'Phá hủy các pháo đài địch', survive: 'Giữ ít nhất một tàu nổi đến hết giờ', capture: 'Chiếm hòn đảo được đánh dấu' },
+    objLabels:       { sink: 'Tàu địch bị đánh chìm', forts: 'Pháo đài bị phá', survive: 'Cầm cự', capture: 'Đảo chiếm được', prize: 'Chiến lợi phẩm bị đánh chìm', prizeHp: 'Thân tàu mục tiêu', escape: 'Mục tiêu tới nơi an toàn', time: 'Thời gian còn lại', escaped: 'Đã trốn thoát' },
+    objTypes:        { sink_all: 'Đánh chìm toàn bộ tàu địch', destroy_forts: 'Phá hủy các pháo đài địch', survive: 'Giữ ít nhất một tàu nổi đến hết giờ', capture: 'Chiếm hòn đảo được đánh dấu', sink_target: 'Đánh chìm tàu mục tiêu trước khi nó trốn thoát' },
     campaignWon:     'Thành Bão Tố đã thất thủ — bạn là Đô đốc Quần đảo!',
     // ── GameApp messages ──────────────────────────────────────
     welcomeMsg:        '⚓ Kéo chuột để chọn tàu · Chuột phải để ra lệnh · 1–9 hạm đội · ? để xem trợ giúp',
@@ -187,6 +204,23 @@ const STRINGS = {
     applyTo:           'Áp dụng preset cho:',
     allShips:          'Tất cả tàu',
     sameHull:          'Cùng thân tàu',
+    // UI3 (QA-004): Loadout panel + top action bar
+    lpTitle:           '⚙ TRANG BỊ HẠM ĐỘI',
+    lpTabCannons:      '⚓ Đại bác',
+    lpTabUpgrades:     '⬆ Nâng cấp',
+    lpDps:             'ST/giây',
+    lpHintIdle:        'Chọn một khẩu pháo bên dưới → rồi bấm vào ô để lắp · bấm đúp để lắp mọi ô trống',
+    lpHintPicked:      (nm) => `Đã chọn ${nm} — bấm vào ô để lắp · bấm lại để bỏ chọn`,
+    lpTierNeed:        (nm, t) => `${nm}: cần thân tàu bậc ${t} trở lên`,
+    lpTierTip:         (t, h) => `Cần thân tàu bậc ${t} (tàu này: ${h})`,
+    lpSunk:            'ĐÃ CHÌM',
+    lpHp:              'Máu',
+    lpMax:             'TỐI ĐA',
+    lpUpgrade:         'Nâng cấp',
+    lpPresets:         { broadside: 'Mạn tàu', sniper: 'Bắn xa', siege: 'Công thành', brawler: 'Cận chiến', clear: 'Gỡ hết' },
+    lpUpgNames:        { spd: 'Buồm tăng tốc', hp: 'Giáp mạn', rof: 'Luyện pháo thủ' },
+    actBar:            { build: 'Xây dựng', research: 'Nghiên cứu', loadout: 'Trang bị', revive: 'Hồi sinh', empire: 'Đế chế' },
+    actBarTip:         { build: 'Xây dựng', research: 'Nghiên cứu', loadout: 'Trang bị', revive: 'Hồi sinh', empire: 'Tổng quan đế chế' },
     slotEmpty:         'Trống',
     slotClearTip:      (nm) => `${nm} · click để gỡ`,
     slotEmptyTip:      'Trống — chọn pháo trước',
@@ -435,3 +469,25 @@ export function setLang(code) {
 }
 
 export function getLang() { return _lang; }
+
+// UI3 (QA-004): static top action-bar labels (index.html) follow the language.
+const _AB_KEYS = { build: 'B', research: 'R', loadout: 'L', revive: 'V', empire: 'O' };
+export function localiseActionBar() {
+  if (typeof document === 'undefined') return;
+  for (const [id, key] of Object.entries(_AB_KEYS)) {
+    const btn = document.getElementById('ab-' + id);
+    if (!btn) continue;
+    const lbl = btn.querySelector('.ab-lbl');
+    if (lbl && T.actBar?.[id]) lbl.textContent = T.actBar[id];
+    if (T.actBarTip?.[id]) btn.title = `${T.actBarTip[id]} [${key}]`;
+  }
+  const lp = document.getElementById('lp-title');
+  if (lp && T.lpTitle) lp.textContent = T.lpTitle;
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('iow:langchange', localiseActionBar);
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', localiseActionBar, { once: true });
+    else localiseActionBar();
+  }
+}

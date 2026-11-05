@@ -135,6 +135,7 @@ export class BattleSession {
     shipsOut.forEach(r => { const s = this.profile.fleet.find(x => x.uid === r.uid); if (s && r.upgrades) s.upgrades = r.upgrades; });
     summary.reason = reason;
     saveProfile(this.store, this.profile, this.now());
+    this._renderHud();   // QA-006: final objective/versus counts under the result card
     this.missionSys.dispose();
     this.summary = summary;
     this._showResult(summary, shipsOut);
