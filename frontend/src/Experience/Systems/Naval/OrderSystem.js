@@ -405,7 +405,7 @@ export class OrderSystem {
       // gun-range ring (or r + path clearance) parked big forts at the very
       // edge of range (≈ 28 % accuracy) where fort regen out-healed the fleet.
       // Bombard from just off the shore instead, a little apart per ship.
-      R = tgt.r + (TUNE.siegeShore ?? 2.6) + ((o.rank || 0) % 3) * 1.4;
+      R = tgt.r + (TUNE.siegeShore ?? 2) + ((o.rank || 0) % 3) * 0.8;
     } else {
       R = Math.max(prof.sideRange * frac, 3.5);
       // spread several attackers into rings — but never past ~92 % of gun range

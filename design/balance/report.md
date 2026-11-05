@@ -1,5 +1,91 @@
 # Balance report — campaign, Sea Battle, harbor economy (milestone AW)
 
+## 0. Gameplay pass, round 2 — "a smooth first two hours" (latest)
+
+Raw runs: `tools/balance/out/battle_g_base` (before), `battle_g_iter1` (reworked missions,
+6 seeds), `battle_g_v*` (chase probes, `--set`), `battle_g_final` (after the QA-001 siege fix),
+`economy_g_final`. Novice policy now goes for the prize first on `sink_target` missions.
+
+### 0.1 Novice win rate
+
+| Mission | Before (g_base, 5 seeds) | After iter1 (6 seeds) | Final tweaks since iter1 | Behaviour now |
+|---|---:|---:|---|---|
+| reef_1 | 100 % | 100 % | – | tutorial wolfpack |
+| reef_2 fort | **20 %** | 50 % | − San Pedro sloop, fort dmg 6; siege fix | guards on a 40 u leash |
+| reef_3 survive | 80 % (4 ships) | 100 % (4 ships) | QA-002: sim now uses the starter fleet; wave 3 at 105 s, brigantine carronade → swivel | schooner kites |
+| straits_1 | 60 % | **75 %** (77 s) | – | **chase**: laden merchantman (½ speed, 220 HP, head start) |
+| straits_2 capture | 60 % | 50 % | Gullhaven 160 HP / dmg 9; siege fix | brigantine guards, schooner kites |
+| straits_3 2 forts | 80 % | **83 %** | siege fix | frigate patrols between batteries |
+| indian_1 survive | **100 %** | **83 %** | – | dhows kite; 2 frigates in wave 3 (at 105 s) |
+| indian_2 | 60 % | **83 %** | – | crippled ships (< 30 %) run for Goa |
+| indian_3 capture | 100 % | 67 % | fort 380 / dmg 16; siege fix | galleon anchored (hold), escorts leashed |
+| spice_1 survive | **100 %** | **83 %** | – | 2nd heavy frigate, waves at 50/110 s |
+| spice_2 | **100 %** | 33 % (spd 0.6) | prize speed 0.6 → 0.56 (probe: 0.55 → 100 %, 0.6 → 75 %) | **treasure-galleon chase**, heavy frigates kite |
+| spice_3 2 forts | 100 % | 100 % | siege fix | guardship holds, frigates leashed |
+| storm_1 survive | **100 %** | 100 % (44 % HP) | wave 3 at 105 s | chain-shot boats kite |
+| storm_2 | **100 %** (110 s) | **83 %** (148 s) | – | **timeLimit 330 s**, junks kite, + war junk |
+| storm_3 final | **100 %** | 100 % | citadel 700 / dmg 27; siege fix | flagship guards, junks patrol, war junk holds |
+
+**After the QA-001 siege fix (`battle_g_final`, novice, 4 seeds):** reef_2 100 % (178 s, 65 % HP) ·
+reef_3 (starter fleet) 100 % (24 % HP, 0.75 ships lost) · straits_2 100 % (159 s) · straits_3 100 % ·
+indian_3 100 % · spice_3 100 % (116 s) · storm_3 100 % (161 s, 50 % HP) · **GATE storm_3 7×T3: 0 %** ·
+WIPE lone frigate (South China) **100 %** (was 40 %) · WIPE lone sloop 100 %.
+The siege fix roughly doubles what a fleet does to a fort, so every fort/capture mission is now
+**easier than band** for novices — they need a re-tune with the sim (next step: fort `tdmg` +25–35 %
+and/or escorts on `hold` under the walls; storm_3 citadel back toward 800 HP while the 7×T3 gate stays ≤ 20 %).
+
+Chase missions are deliberately brisk (75–95 s): the fight is "catch her before she
+reaches the lane". The escape is binary on speed — 0.45× never escaped, 0.55× (short
+route) always did — so `spdMult` is the knob; HP tunes the margin.
+
+### 0.2 QA-001 — bombard order (S1) fixed
+Cause: gun range and accuracy are measured to the island **centre**, and siege ships
+orbited at `r + 4` (+ ring spread), i.e. at 90–100 % of a range-20 gun → ~28 %
+accuracy, plus `BATTLE.fortRegen` = 2 % of max per 5.5 s, which on big forts
+(storm_3 citadel 875 HP → 17.5 HP/tick) out-healed the fleet.
+Fix: `OrderSystem._engageSteer` bombards from just off the shore (`r + 2 + rank·0.8`,
+`ORDER_TUNING.siegeShore` optional) — Open War siege uses the same ring, ships simply sit
+closer; `BATTLE.fortRegen` 0.02 → **0.006**.
+Probe (invulnerable fleets, escorts removed, `tools/qa`-style): reef_2 starter fleet
+111 s → **66 s**; storm_3 3×T5 never (875/875 after 11 min in QA) → **193 s** (par 420).
+
+### 0.3 Patrol, no death spiral (size-aware `makePatrol`)
+Budget ratio by fleet size (`PATROL.ratioBySize` 1: 0.30, 2: 0.38, else 0.45); at most as
+many enemy ships as you bring (1–2 ships); a lone trimmed foe gets tier-I guns
+(`loneLoadout`). Lone frigate in South China: was a full ghe bầu (falconet/grapeshot,
+novice 40 %) → now a cutter ≤ 85 HP with carronade/swivel. See WIPE rows.
+
+### 0.4 Harbor building costs (harbor only)
+`HARBOR_ECONOMY.buildCostMult` = 4 with `buildCostMultById` {shipyard 1, warehouse 1,
+research_lab 1, barracks 1.5}; priced by `Meta/HarborEconomy.harborBuildCost` (upgrade =
+cost × level × mult, rounded up to 5). A flat ×4+ soft-locked the economy agent (Shipyard
+Lv 4→5 = 2400 wood > storage cap). Economy sim (continuous, 20 runs, g_iter1 battles):
+
+| Milestone | Before (×1) | After |
+|---|---|---|
+| 20 producers | 11 min | 23 min |
+| island full | 35 min | **48 min** p50 (p90 57) |
+| own T2 / T3 / T5 | 15 / 49 / 143 min | 15 / 46 / **130** min |
+| campaign | 3.1 h | 3.0 h |
+
+The harbor still spills ~75 % of production at the storage cap: income is not the
+constraint, battles and timers are. A real player builds slower than the agent.
+
+### 0.5 Commander comeback in Sea Battle
+`CommanderSystem.comebackRate(st)`: in battle mode cooldowns run ×1.35 while own fleet HP
+fraction ≤ enemy's − 0.15, or < 0.35 (`BATTLE.comeback`). Open War keeps War Front < 45 → ×1.25.
+The novice sim uses no abilities, so win rates above are unaffected.
+
+### 0.6 Still open
+- **Fort and capture missions are now too easy (100 % novice) after the QA-001 fix** — re-tune
+  fort damage/HP next (see §0.1 note). Sieging with the whole fleet is now a real option, which
+  is the intended feel; the numbers just have not caught up.
+- spice_2 at 0.56× prize speed is unverified (between the 75 % and 100 % probes).
+- spice_3 and storm_1 stay at 100 % (spice_3 was not in scope; storm_1 has no ★★★).
+- Skilled policy was not re-run this round (no change makes play harder for experts except
+  kiting; expect ≥ 90 %).
+- The economy sim agent never builds a Barracks; fleet cap comes only from the shipyard.
+
 Targets and method: `design/balance/targets.md`. Tools: `tools/balance/sim_battle.mjs`,
 `tools/balance/sim_economy.mjs`, `tools/balance/scenarios.mjs`. Raw runs:
 `tools/balance/out/battle_{iter1,final,confirm}.{md,json}`, `economy_{econ_before,final}.md`.

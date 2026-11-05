@@ -215,6 +215,12 @@ suite('Meta · Cannon tiers', () => {
 });
 
 suite('Meta · Gameplay pass (first two hours)', () => {
+  test('migrate coerces numeric fields (QA-010)', () => {
+    const p = migrate({ renown: '514', res: { wood: '120', gold: 'x' }, stats: { wins: '3' }, fleet: [{ hullId: 'sloop', hpFrac: '0.5' }] }, T0);
+    assertEqual(p.renown, 514); p.renown += 4; assertEqual(p.renown, 518);
+    assertEqual(p.res.wood, 120); assert(typeof p.res.gold === 'number', 'gold numeric');
+    assertEqual(p.stats.wins, 3); assertEqual(p.fleet[0].hpFrac, 0.5);
+  });
   test('harbor building cost: ×1 is the authored price, harbor mult rounds up to 5', () => {
     const mill = BUILDINGS.find(b => b.id === 'lumber_mill'), lab = BUILDINGS.find(b => b.id === 'research_lab');
     assertEqual(JSON.stringify(harborBuildCost(mill, 0, 1)), JSON.stringify({ wood: mill.cost.wood, gold: mill.cost.gold }));

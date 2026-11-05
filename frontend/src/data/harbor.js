@@ -152,8 +152,9 @@ export const MIN_AFLOAT_FRAC = 0.05;
 export const BATTLE = {
   /** Guards engage once the player comes this close (mission.aggro overrides). */
   aggro: 70,
-  /** Fort HP regained per enemy repair tick (~5.5 s), fraction of max (mission.fortRegen overrides). */
-  fortRegen: 0.02,
+  /** Fort HP regained per enemy repair tick (~5.5 s), fraction of max (mission.fortRegen overrides).
+   *  0.02 → 0.006 (QA-001): proportional regen out-healed a bombarding fleet on big forts. */
+  fortRegen: 0.006,
   /** Destroyed forts are rebuilt by the enemy during the battle? */
   fortRebuild: false,
   /** HP/s enemy ships regain in their fort's harbor aura (AuraSystem 'enemy home'). */

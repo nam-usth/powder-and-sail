@@ -39,7 +39,8 @@ export const SCENARIOS = {
   // ── The Caribbean ──
   reef_1: { mission: 'reef_1', label: 'starter fleet (default guns)', ships: STARTER },
   reef_2: { mission: 'reef_2', label: 'starter fleet (default guns)', ships: STARTER },
-  reef_3: { mission: 'reef_3', label: 'starter + 1 brig (T2)', ships: [S('brigantine'), S('brig'), S('sloop'), S('sloop')] },
+  // reef_3 needs only reef_1: many players sail it with the starter fleet (QA-002)
+  reef_3: { mission: 'reef_3', label: 'starter fleet (default guns)', ships: STARTER },
   // ── The Atlantic Lanes ──
   straits_1: { mission: 'straits_1', label: '3×T2 + sloop', ships: [B('brigantine'), B('brig'), B('corvette'), S('sloop')] },
   straits_2: { mission: 'straits_2', label: '4×T2', ships: [B('brigantine'), B('brig'), B('brig'), B('corvette')] },

@@ -118,7 +118,7 @@ export const MISSIONS = [
       waves: [
         { at: 4,   ships: [{ hull: 'sloop', nm: 'Le Faucon', x: 90, z: -30, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'La Railleuse', x: 92, z: 30, loadout: FIT.pirateL }] },
         { at: 55,  ships: [{ hull: 'schooner', nm: 'La Licorne', x: 95, z: 0, loadout: FIT.falcL }, { hull: 'sloop', nm: 'Le Hardi', x: 90, z: -45, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'La Mouette', x: 92, z: 45, loadout: FIT.falcL }] },
-        { at: 90,  ships: [{ hull: 'brigantine', nm: 'La Belle Étoile', x: 95, z: 10, loadout: { L: 'carronade', R: 'carronade', B: 'swivel' } }, { hull: 'sloop', nm: 'Le Saint-Malo', x: 90, z: 45, loadout: FIT.pirateL }, { hull: 'sloop', nm: 'Le Corbeau', x: 90, z: -45, loadout: FIT.falcL }] },
+        { at: 105, ships: [{ hull: 'brigantine', nm: 'La Belle Étoile', x: 95, z: 10, loadout: { L: 'carronade', R: 'swivel', B: 'swivel' } }, { hull: 'sloop', nm: 'Le Saint-Malo', x: 90, z: 45, loadout: FIT.pirateL }] },   // QA-002: winnable with the starter fleet
       ],
     },
     enemies: [],
