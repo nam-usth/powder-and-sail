@@ -74,3 +74,9 @@ body.mode-battle #hud-top { top: 96px; }
 
 /* AW: cannons above the ship's hull tier */
 .lp2-cn-card.locked { opacity: .38; filter: grayscale(.8); cursor: not-allowed; }
+
+/* Harbor bar steps aside while a top-anchored panel (Loadout / Research / Build) is open */
+body.lp-open .hb-bar, body.rp-open .hb-bar, body.bp-open .hb-bar,
+body:has(#lp.pm-open) .hb-bar, body:has(#rp.pm-open) .hb-bar, body:has(#bp.pm-open) .hb-bar {
+  opacity: 0 !important; visibility: hidden !important; pointer-events: none !important;
+}

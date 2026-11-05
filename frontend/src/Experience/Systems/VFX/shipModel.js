@@ -850,7 +850,7 @@ function buildSails(bp, tier, hullParts) {
     sb.patch(tack, clew, head, clew, lee, 1, 0.18, 0, 5, 6);
   }
   // flags: masthead pennant/flag on the tallest mast, ensign astern (tier ≥ 2)
-  const fs = 0.75 + 0.12 * tier;
+  const fs = 0.9 + 0.16 * tier;            // art pass 2: bigger flags/pennants read faction + rank at range
   const main = sp.masts.reduce((a, b) => (b.m.h > a.m.h ? b : a), sp.masts[0]);
   {
     const top = main.at(1.0).add(V3(0, 0.02, 0));
@@ -868,7 +868,7 @@ function buildSails(bp, tier, hullParts) {
   for (const mi of sp.masts) {
     if (tier < 2 || (mi !== main && tier < 4)) continue;
     const top = mi.at(1.0);
-    const len = (0.8 + 0.25 * tier) * (mi === main ? 1 : 0.7), hw = 0.05 * fs;
+    const len = (0.9 + 0.38 * tier) * (mi === main ? 1 : 0.7), hw = 0.06 * fs;
     const p0 = V3(0, top.y + 0.30 - hw, top.z), p1 = V3(0, top.y + 0.30 + hw, top.z), tip = V3(0, top.y + 0.26, top.z - len);
     if (mi === main) { p0.y += 0.0; }
     sb.patch(p0, tip, p1, tip, lee, 3, 1.0, 0, 8, 1);
@@ -1042,8 +1042,11 @@ void main(){
         if (uEmblem > 0.5 && uEmblem < 1.5) base = mix(base, uFlagB, saltire(vUv, 0.05) * 0.92);
         else if (uEmblem > 1.5) base = mix(base, vec3(0.70, 0.10, 0.10), crossPattee(vUv) * 0.95);
       }
-      float band = step(0.05, vUv.y) * step(vUv.y, 0.13) * vKind.w;
-      base = mix(base, uTrim, band);                                    // livery stripe at the foot
+      // livery: a broad band at the foot of the courses + a head band on every square sail,
+      // so the faction reads at the default battle zoom (art pass 2; shader-only, no cost)
+      float band = step(0.04, vUv.y) * step(vUv.y, 0.20) * vKind.w
+                 + step(0.83, vUv.y) * step(vUv.y, 0.90) * (1.0 - step(0.5, kind));
+      base = mix(base, uTrim, clamp(band, 0.0, 1.0) * 0.92);
     }
     base *= 0.90 + 0.10 * vUv.y;                                        // weathered foot
     float n = sNoise(vUv * vec2(7.0, 9.0) + vKind.z * 17.0);

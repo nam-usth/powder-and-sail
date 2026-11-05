@@ -83,6 +83,7 @@ export function showBattleResult(summary, ctx = {}) {
     <header class="br-head">
       <div class="br-kicker mx-caps">${esc(name)}</div>
       <h2 class="br-title" id="${tid}">${esc(ms('br_' + outcome))}</h2>
+      ${!won && s.reason && ms('br_why_' + s.reason) !== 'br_why_' + s.reason ? `<p class="br-why">${esc(ms('br_why_' + s.reason))}</p>` : ''}
       <div class="br-flags">
         ${s.firstClear ? `<span class="mx-tag tag-first">${icon('sparkle')}${esc(ms('br_firstClear'))}</span>` : ''}
         ${promoted ? `<span class="mx-tag tag-promo">${icon('crown')}${esc(ms('br_promoted', rankName(promoted)))}</span>` : ''}

@@ -85,6 +85,14 @@ const OUT = resolve(args.out || join(ROOT, 'tools', 'balance', 'out'));
 const TAG = args.tag || 'latest';
 const GIT_REF = args['git-ref'] || null;
 const GIT_PATHS = args['git-paths'] ? String(args['git-paths']).split(',') : BALANCE_PATHS;
+/**
+ * --set '{"straits_1":{"enemies.0.hp":240,"escape.r":12}}' — ad-hoc mission
+ * overrides for what-if runs: dotted paths into data/campaign.js MISSIONS
+ * entries, applied to the served module only (the file on disk is untouched).
+ */
+const SET = args.set ? JSON.parse(args.set) : null;
+const PATCH_SRC = SET ? `\n;((MS, P) => { for (const [id, kv] of Object.entries(P)) { const m = MS.find(x => x.id === id); if (!m) continue;
+  for (const [path, v] of Object.entries(kv)) { const ks = path.split('.'); let o = m; for (const k of ks.slice(0, -1)) o = o[k] ??= {}; o[ks[ks.length - 1]] = v; } } })(MISSIONS, ${JSON.stringify(SET)});\n` : '';
 
 function pickScenarios() {
   if (args.mission) {
@@ -163,6 +171,10 @@ async function startServer() {
       }
       const file = join(ROOT, p);
       if (!file.startsWith(ROOT)) { res.writeHead(403); return res.end(); }
+      if (SET && rel === 'frontend/src/data/campaign.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' });
+        return res.end((await readFile(file, 'utf8')) + PATCH_SRC);
+      }
       // Sound files are not needed headless — skip the bytes.
       if (extname(file) === '.mp3') { res.writeHead(404); return res.end(); }
       const body = await readFile(file);
@@ -271,9 +283,14 @@ async function runPolicy({ policy, capSec }) {
 
   const captureTarget = () => (obj.islands || []).map(id => g._islands.find(i => i.def.id === id)).find(i => i && i.own !== 'player');
 
+  // sink_target: a player reads the objective and goes for the prize (ship.ai.prize) first.
+  const prizeShips = () => obj.type === 'sink_target' ? alive(st.enemyShips).filter(s => s.ai?.prize) : [];
+
   function decideNovice() {
     const P = alive(st.playerShips); if (!P.length) return;
     const c = centroid(P), E = alive(st.enemyShips), F = forts();
+    const PZ = prizeShips();
+    if (PZ.length) { const t = nearest(PZ, c); if (!busyWith(t, 'attack')) order(t, 'ship'); return; }
     if (E.length) { const t = nearest(E, c); if (!busyWith(t, 'attack')) order(t, 'ship'); return; }
     if (F.length) { const t = nearest(F, c); if (!busyWith(t, 'siege')) order(t, 'island'); return; }
     const cap = obj.type === 'capture' ? captureTarget() : null;
@@ -293,7 +310,9 @@ async function runPolicy({ policy, capSec }) {
     if (closeShip || closeFort) ab('barrage');
     const nearE = E.length ? nearest(E, c) : (F.length ? nearest(F, c) : null);
     if (nearE && d(nearE, c) > 60) ab('winds');
-    // Targets: weakest ship in reach, else nearest ship; forts once the escorts are gone
+    // Targets: the prize first (sink_target), then weakest ship in reach, else nearest ship; forts once the escorts are gone
+    const PZ = prizeShips();
+    if (PZ.length) { const t = nearest(PZ, c); if (!busyWith(t, 'attack')) order(t, 'ship'); return; }
     if (E.length) {
       const inReach = E.filter(e => P.some(p => d(p, e) < reach + 6));
       const t = inReach.length ? inReach.reduce((b, x) => (x.hp < b.hp ? x : b)) : nearest(E, c);
@@ -330,7 +349,7 @@ async function runPolicy({ policy, capSec }) {
     plunder: sum?.plunder || { wood: 0, gold: 0 },
     reward: sum?.reward || { wood: 0, gold: 0 },
     renown: sum?.renown || 0,
-    sunk: ms.sunk.length,
+    sunk: ms.sunk.length, escaped: ms.escaped?.length || 0,
     enemies: st.enemyShips.length,
     forts: ms.fortsDestroyed(), fortsTotal: ms.enemyFortIds.length,
     dmgDealt: Math.round(st.stats.dmgDealt), dmgTaken: Math.round(st.stats.dmgTaken),
@@ -441,7 +460,7 @@ async function main() {
   const order = Object.keys(scenarios);
   const summary = summarize(runs).sort((a, b) => order.indexOf(a.scenario) - order.indexOf(b.scenario) || a.policy.localeCompare(b.policy));
   await mkdir(OUT, { recursive: true });
-  const meta = { tag: TAG, gitRef: GIT_REF, date: new Date().toISOString(), seeds: SEEDS, seed0: SEED0, capSec: CAP_SEC, policies: POLICIES, wallSec: Math.round((Date.now() - t0) / 1000) };
+  const meta = { tag: TAG, gitRef: GIT_REF, set: SET, date: new Date().toISOString(), seeds: SEEDS, seed0: SEED0, capSec: CAP_SEC, policies: POLICIES, wallSec: Math.round((Date.now() - t0) / 1000) };
   await writeFile(join(OUT, `battle_${TAG}.json`), JSON.stringify({ meta, scenarios, summary, runs }, null, 1));
   const md = `# Battle sim — ${TAG}${GIT_REF ? ` (balance files from git ${GIT_REF})` : ''}\n\n${meta.date} · ${SEEDS} seeds/scenario/policy · cap ${CAP_SEC}s · ${meta.wallSec}s wall\n\n${markdown(summary, scenarios)}\n`;
   await writeFile(join(OUT, `battle_${TAG}.md`), md);

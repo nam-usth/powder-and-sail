@@ -23,11 +23,11 @@ import * as FACT from '../../data/factions.js';
 import { RANKS } from '../../data/harbor.js';
 import { makePrng } from '../../data/islandShapes.js';
 import * as CAMP from '../Campaign.js';
-import { sailableShips, fleetCap, tickRoster, hullOf } from '../Shipyard.js';
+import { sailableShips, fleetCap, fleetCapBreakdown, tickRoster, hullOf } from '../Shipyard.js';
 import { LANDS, HOLES, ISLANDS, ISLETS } from './worldCoasts.js';
 import {
   ms, hullName, rankName, regionName, regionDesc, missionName, missionDesc, isleName, className, factionName,
-  fmtNum, fmtClock,
+  fmtNum, fmtClock, capBreakdownText,
 } from './strings.js';
 import { icon, resIcon, hullSvg, rankBadge, tierBadge, starIcon, flagSvg, laurel } from './icons.js';
 import { showHowToWin } from './HowToWin.js';
@@ -912,6 +912,7 @@ export class WorldChart {
   <section class="wc-bsec wc-fleet" ${lock ? 'hidden' : ''}>
     <h4 class="mx-sec sm"><span>${esc(ms('wc_fleet'))}</span><small data-f2="selN"></small></h4>
     <div class="wc-picks" data-f2="picks"></div>
+    <p class="wc-note wc-capnote" data-f2="capNote"></p>
     <p class="wc-note" data-f2="yard" hidden></p>
   </section>
 </div>
@@ -955,6 +956,8 @@ export class WorldChart {
       });
     }
     setText(host.querySelector('[data-f2="selN"]'), ms('wc_sel', this._sel.size, cap));
+    const capNote = host.querySelector('[data-f2="capNote"]');
+    if (capNote) setText(capNote, `${ms('sy_fleetcap')} ${cap}: ${capBreakdownText(fleetCapBreakdown(p)).line}`);
     const yard = host.querySelector('[data-f2="yard"]');
     const inYard = p.fleet.length - ships.length;
     if (yard) { yard.hidden = !inYard; setText(yard, inYard ? ms('wc_inYard', inYard) : ''); }

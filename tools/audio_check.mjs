@@ -6,6 +6,7 @@
 // Waits for the Audio Lab's offline renders (OfflineAudioContext) and returns
 // per-render peak / RMS / NaN / clipped-sample counts. Optional env:
 //   AUDIO_SHOT=<png path>   full-page screenshot of the analysis (waveforms + spectrograms)
+//   AUDIO_SHOT_SEL=<css>    screenshot only this element (e.g. '#compare' for the cannon comparison grid)
 //   AUDIO_WAV=<dir>         export every render as 16-bit WAV
 // smoke.mjs exits 1 when the page logged console errors.
 import { writeFile, mkdir } from 'node:fs/promises';
@@ -17,7 +18,9 @@ export default async function audioCheck(page) {
   if (process.env.AUDIO_SHOT) {
     const file = resolve(process.env.AUDIO_SHOT);
     await mkdir(dirname(file), { recursive: true });
-    await page.screenshot({ path: file, fullPage: true });
+    const sel = process.env.AUDIO_SHOT_SEL;   // e.g. '#compare' — just that element
+    if (sel) await page.locator(sel).screenshot({ path: file });
+    else await page.screenshot({ path: file, fullPage: true });
   }
   if (process.env.AUDIO_WAV) {
     const dir = resolve(process.env.AUDIO_WAV);

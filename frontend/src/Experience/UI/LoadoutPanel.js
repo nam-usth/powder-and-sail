@@ -66,6 +66,7 @@ const PRESETS = [
   { id:'brawler',    label:'Brawler',    icon:'⚔',  loadout:(h)=>{ const lo={}; (HULL_SLOTS[h]||[]).forEach(s=>{ lo[s]='demi_can'; }); return lo; } },
   { id:'clear',      label:'Clear All',  icon:'✕',  loadout:(h)=>{ const lo={}; (HULL_SLOTS[h]||[]).forEach(s=>{ lo[s]=null; }); return lo; } },
 ];
+const presetLabel = (p) => T.lpPresets?.[p.id] || p.label;   // UI3: localised preset names
 
 // Top-down ship silhouette SVG — hull shape varies by class
 const SHIP_SVGS = {
@@ -165,13 +166,13 @@ export class LoadoutPanel {
           <div class="lp2-sub">
             <span class="lp2-hull-badge">${s.hull}</span>
             ${fleet ? `<span class="lp2-fleet-dot" style="background:${fleet.color}"></span><span class="lp2-fleet-nm">${fleet.name}</span>` : ''}
-            <span class="lp2-hp" style="color:${dead ? '#cc4040' : s.hp/s.maxHp > .5 ? '#60cc80' : s.hp/s.maxHp > .25 ? '#e8b840' : '#cc4040'}">${dead ? 'SUNK' : Math.round(s.hp/s.maxHp*100)+'% HP'}</span>
+            <span class="lp2-hp" style="color:${dead ? '#cc4040' : s.hp/s.maxHp > .5 ? '#60cc80' : s.hp/s.maxHp > .25 ? '#e8b840' : '#cc4040'}">${dead ? T.lpSunk : Math.round(s.hp/s.maxHp*100)+'% '+T.lpHp}</span>
           </div>
         </div>
 
         <div class="lp2-tab-pills">
-          <button class="lp2-pill${this._tab==='cannons'?' on':''}" data-tab="cannons">⚓ Cannons</button>
-          <button class="lp2-pill${this._tab==='upgrades'?' on':''}" data-tab="upgrades">⬆ Upgrades</button>
+          <button class="lp2-pill${this._tab==='cannons'?' on':''}" data-tab="cannons">${T.lpTabCannons}</button>
+          <button class="lp2-pill${this._tab==='upgrades'?' on':''}" data-tab="upgrades">${T.lpTabUpgrades}</button>
         </div>
 
         <button class="lp2-arr" id="lp2-next" ${idx >= all.length - 1 ? 'disabled' : ''}>▸</button>
@@ -200,7 +201,7 @@ export class LoadoutPanel {
       <!-- ① Stats bar -->
       <div class="lp2-stats">
         <div class="lp2-dps-wrap">
-          <div class="lp2-dps-lbl">DPS</div>
+          <div class="lp2-dps-lbl">${T.lpDps}</div>
           <div class="lp2-dps-val" id="lp2-dps">0</div>
         </div>
         <div class="lp2-weight-wrap" id="lp2-weight-wrap">
@@ -216,14 +217,14 @@ export class LoadoutPanel {
       </div>
 
       <!-- ③ Hint -->
-      <div class="lp2-hint-bar" id="lp2-hint">Click a cannon → then click a slot to equip</div>
+      <div class="lp2-hint-bar" id="lp2-hint">${T.lpHintIdle}</div>
 
       <!-- ④ Cannon cards -->
       <div class="lp2-cn-grid" id="lp2-cn-grid"></div>
 
       <!-- ⑤ Presets -->
       <div class="lp2-presets-bar">
-        ${PRESETS.map(p => `<button class="lp2-preset" data-pid="${p.id}">${p.icon} ${p.label}</button>`).join('')}
+        ${PRESETS.map(p => `<button class="lp2-preset" data-pid="${p.id}">${p.icon} ${presetLabel(p)}</button>`).join('')}
         <div class="lp2-preset-scope">
           <span class="lp2-scope-lbl">${T.applyTo}</span>
           <button class="lp2-scope-btn" data-scope="all">${T.allShips}</button>
@@ -240,7 +241,7 @@ export class LoadoutPanel {
     });
     body.querySelectorAll('.lp2-scope-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        if (!this._lastPreset) { this._flashHint('Select a preset first'); return; }
+        if (!this._lastPreset) { this._flashHint(T.hintPresetFirst); return; }
         const st = this._state;
         const ships = btn.dataset.scope === 'hull'
           ? st.playerShips.filter(x => x.alive && x.hull === s.hull)
@@ -314,7 +315,7 @@ export class LoadoutPanel {
 
       card.addEventListener('click', e => {
         e.stopPropagation();
-        if (!canMountCannon(cn, this._ship)) { this._flashHint(`${cn.nm}: needs a tier ${ROMAN_TIER[cn.tier]} hull or better`); return; }
+        if (!canMountCannon(cn, this._ship)) { this._flashHint(T.lpTierNeed(cn.nm, ROMAN_TIER[cn.tier])); return; }
         this._picked = (this._picked === cn.id) ? null : cn.id;
         this._syncAll();
       });
@@ -393,7 +394,7 @@ export class LoadoutPanel {
       card.classList.toggle('picked', isPk);
       const locked = !canMountCannon(cn, s);
       card.classList.toggle('locked', locked);
-      card.title = locked ? `Needs a tier ${ROMAN_TIER[cn.tier]} hull (this ship: ${ROMAN_TIER[s.hullTier] || '?'})` : '';
+      card.title = locked ? T.lpTierTip(ROMAN_TIER[cn.tier], ROMAN_TIER[s.hullTier] || '?') : '';
       card.classList.toggle('equipped', cnt > 0);
       const badge = document.getElementById(`lp2-badge-${cn.id}`);
       if (badge) badge.textContent = cnt > 0 ? `×${cnt}` : '';
@@ -404,10 +405,10 @@ export class LoadoutPanel {
     if (hint) {
       if (pickedCn) {
         hint.className = 'lp2-hint-bar picked';
-        hint.textContent = `${pickedCn.nm} selected — click a slot to equip · click again to deselect`;
+        hint.textContent = T.lpHintPicked(pickedCn.nm);
       } else {
         hint.className = 'lp2-hint-bar';
-        hint.textContent = 'Click a cannon below → then click a slot to equip · double-click to fill all empty';
+        hint.textContent = T.lpHintIdle;
       }
     }
   }
@@ -457,11 +458,11 @@ export class LoadoutPanel {
       row.innerHTML = `
         <span class="lp2-upg-icon">${upg.icon}</span>
         <div class="lp2-upg-info">
-          <div class="lp2-upg-name">${upg.nm}</div>
+          <div class="lp2-upg-name">${T.lpUpgNames?.[upg.id] || upg.nm}</div>
           <div class="lp2-upg-stars">${'★'.repeat(lv)}${'☆'.repeat(upg.max-lv)}</div>
         </div>
-        <div class="lp2-upg-cost">${maxed ? '<span style="color:var(--brass-light)">MAX</span>' : [cW?`🪵${cW}`:'',cG?`🪙${cG}`:''].filter(Boolean).join(' ')}</div>
-        <button class="lp2-upg-btn" ${can?'':'disabled'}>${maxed ? '—' : 'Upgrade'}</button>`;
+        <div class="lp2-upg-cost">${maxed ? `<span style="color:var(--brass-light)">${T.lpMax}</span>` : [cW?`🪵${cW}`:'',cG?`🪙${cG}`:''].filter(Boolean).join(' ')}</div>
+        <button class="lp2-upg-btn" ${can?'':'disabled'}>${maxed ? '—' : T.lpUpgrade}</button>`;
       if (can) row.querySelector('.lp2-upg-btn').addEventListener('click', () => this._applyUpgrade(idx, upg.id));
       list.appendChild(row);
     });
@@ -486,7 +487,7 @@ export class LoadoutPanel {
       applySpeed(ship); this._overlay.build(ship);
     });
     this._picked = null; this._syncAll();
-    this._flashHint(T.hintPresetApplied(preset.label, ships.length));
+    this._flashHint(T.hintPresetApplied(presetLabel(preset), ships.length));
   }
 
   _applyUpgrade(idx, upgId) {

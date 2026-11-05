@@ -135,6 +135,18 @@ export function migrate(raw, now = Date.now()) {
   if (!p.fleet.length) p.fleet = base.fleet;
   p.fleet.forEach(legalizeLoadout);
   if (typeof p.lastSeen !== 'number' || !isFinite(p.lastSeen)) p.lastSeen = now;
+  // QA-010: coerce numeric fields (a string renown made `renown += n` concatenate)
+  const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+  p.renown = Math.max(0, num(p.renown));
+  p.res.wood = Math.max(0, num(p.res.wood, base.res.wood));
+  p.res.gold = Math.max(0, num(p.res.gold, base.res.gold));
+  for (const k of Object.keys(base.stats)) p.stats[k] = Math.max(0, num(p.stats[k]));
+  p.campaign.patrolsWon = Math.max(0, num(p.campaign.patrolsWon));
+  p.fleet.forEach(s => {
+    s.hpFrac = Math.min(1, Math.max(0, num(s.hpFrac, 1)));
+    s.readyAt = num(s.readyAt); s.battles = num(s.battles); s.sinks = num(s.sinks);
+  });
+  p.harbor.buildings.forEach(b => { b.level = Math.min(10, Math.max(1, Math.round(num(b.level, 1)))); });
   return p;
 }
 

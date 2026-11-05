@@ -20,9 +20,20 @@ export const START_RES = { wood: 260, gold: 160 };
 // campaign lasts hours, not minutes (design/balance/report.md §Economy).
 // rateMult scales base income AND building production, live and offline.
 // buildTimeMult replaces constants.BUILD_TIME_MULT (0.12, Open War "test
-// mode") for harbor building construction/upgrade timers — WIRING: BuildSystem
-// must use it in harbor mode (see design/balance/report.md §Wiring).
-export const HARBOR_ECONOMY = { rateMult: 0.25, buildTimeMult: 1 };
+// mode") for harbor building construction/upgrade timers (HarborSession sets
+// st.harborBuildTimeMult, BuildSystem reads it).
+// buildCostMult scales harbor building placement AND upgrade costs (upgrade =
+// cost × level × mult), rounded up to 5 (Meta/HarborEconomy.harborBuildCost).
+// HarborSession sets st.harborBuildCostMult; BuildSystem reads it (?? 1, so
+// Open War pays the authored data/buildings.js costs). Rationale: without it
+// the island filled up in ~35 min of a ~3.5 h campaign (report.md §Harbor).
+// buildCostMultById exempts the progression buildings: their upgrade price is
+// cost × level, so ×4 on a Lv 4 Shipyard would exceed the storage cap and
+// soft-lock tier V (economy sim, report.md §Harbor costs).
+export const HARBOR_ECONOMY = {
+  rateMult: 0.25, buildTimeMult: 1, buildCostMult: 4,
+  buildCostMultById: { shipyard: 1, warehouse: 1, research_lab: 1, barracks: 1.5 },
+};
 /** The harbor keeps producing while the fleet is at sea (offline rules, capped). */
 export const PRODUCE_AT_SEA = true;
 
@@ -141,12 +152,24 @@ export const MIN_AFLOAT_FRAC = 0.05;
 export const BATTLE = {
   /** Guards engage once the player comes this close (mission.aggro overrides). */
   aggro: 70,
-  /** Fort HP regained per enemy repair tick (~5.5 s), fraction of max (mission.fortRegen overrides). */
-  fortRegen: 0.02,
+  /** Fort HP regained per enemy repair tick (~5.5 s), fraction of max (mission.fortRegen overrides).
+   *  0.02 → 0.006 (QA-001): proportional regen out-healed a bombarding fleet on big forts. */
+  fortRegen: 0.006,
   /** Destroyed forts are rebuilt by the enemy during the battle? */
   fortRebuild: false,
   /** HP/s enemy ships regain in their fort's harbor aura (AuraSystem 'enemy home'). */
   fortShipRegen: 3,
+  /**
+   * Commander comeback valve in Sea Battle (Systems/Naval/CommanderSystem
+   * comebackActive): abilities recharge `cdRate`× faster while the player is
+   * losing the exchange — own fleet HP fraction is `behind` (or more) under the
+   * enemy's, or below `floor` outright. Open War keeps its War Front rule.
+   */
+  comeback: { cdRate: 1.35, behind: 0.15, floor: 0.35 },
+  /** Default kite distance as a fraction of the ship's longest gun range (EnemyAI 'kite'). */
+  kiteRangeFrac: 0.75,
+  /** Escape zone radius for fleeing enemies (mission.escape.r overrides). */
+  escapeR: 8,
 };
 
 // ── Battle economy ────────────────────────────────────────────

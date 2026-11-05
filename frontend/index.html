@@ -12,9 +12,9 @@
 <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&family=Pirata+One&family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Cinzel:wght@400;500;700;800&family=Spectral:ital,wght@0,400;0,500;0,600;1,400&family=Be+Vietnam+Pro:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="src/styles/main.css?v=av1">
 <link rel="stylesheet" href="src/styles/hud.css?v=av3">
-<link rel="stylesheet" href="src/styles/modes.css?v=aw1">
-<link rel="stylesheet" href="src/styles/meta.css?v=aw1">
-<link rel="stylesheet" href="src/styles/period.css?v=hud1">
+<link rel="stylesheet" href="src/styles/modes.css?v=aw3">
+<link rel="stylesheet" href="src/styles/meta.css?v=ui3">
+<link rel="stylesheet" href="src/styles/period.css?v=ui3b">
 </head>
 <body class="theme-parchment">
 <!-- ── AA: Loading screen — hidden as soon as Resources fires ready ── -->
@@ -121,20 +121,20 @@
   <div id="settings-modal">
     <div class="help-card" style="min-width:340px;max-width:440px">
       <div class="help-hdr">
-        <b id="settings-title">⚙ Settings</b>
+        <b id="settings-title">Settings</b>
         <span class="help-x" onclick="document.getElementById('settings-modal').classList.remove('open')">✕</span>
       </div>
       <div style="display:flex;flex-direction:column;gap:20px;padding-top:4px">
 
         <!-- Language -->
         <div>
-          <div id="settings-lang-label" class="settings-section-label">LANGUAGE</div>
+          <div id="settings-lang-label" class="settings-section-label">Language</div>
           <div id="lang-btns" style="display:flex;gap:8px;flex-wrap:wrap"></div>
         </div>
 
         <!-- Graphics -->
         <div>
-          <div class="settings-section-label" id="settings-gfx-label">GRAPHICS</div>
+          <div class="settings-section-label" id="settings-gfx-label">Graphics</div>
           <div style="display:flex;flex-direction:column;gap:10px">
 
             <!-- Range display style -->
@@ -176,61 +176,50 @@
           </div>
         </div>
 
+        <!-- Sound (UI2): music + effects volume, mutes -->
+        <div>
+          <div class="settings-section-label" id="settings-snd-label">Sound</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="settings-row snd">
+              <span class="settings-row-label" id="lbl-music">Music</span>
+              <div class="snd-ctl">
+                <input type="range" class="snd-range" id="vol-music" min="0" max="100" step="5" aria-labelledby="lbl-music">
+                <span class="snd-val" id="vol-music-v">60</span>
+                <button type="button" class="snd-mute" id="mute-music" aria-pressed="false" title="Mute">♪</button>
+              </div>
+            </div>
+            <div class="settings-row snd">
+              <span class="settings-row-label" id="lbl-sfx">Effects</span>
+              <div class="snd-ctl">
+                <input type="range" class="snd-range" id="vol-sfx" min="0" max="100" step="5" aria-labelledby="lbl-sfx">
+                <span class="snd-val" id="vol-sfx-v">80</span>
+                <span style="width:32px;flex:0 0 32px"></span>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-row-label" id="lbl-allsnd">All sound</span>
+              <div class="settings-toggle-group" id="tog-allsnd">
+                <button class="stog-btn active" data-val="on" id="lbl-snd-on">On</button>
+                <button class="stog-btn" data-val="off" id="lbl-snd-off">Off</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
 
   <!-- Cannon tooltip (shown on hover in loadout) -->
   <div id="cannon-tip"></div>
+  <!-- Help card (?) — content rendered by Experience/UI/HelpCard.js (localised) -->
   <div id="help-modal">
     <div class="help-card">
       <div class="help-hdr">
-        <b>🎮 CONTROLS</b>
-        <span class="help-x" onclick="document.getElementById('help-modal').classList.remove('open')">✕</span>
+        <b id="help-title">Controls</b>
+        <span class="help-x" role="button" aria-label="Close" onclick="document.getElementById('help-modal').classList.remove('open')">✕</span>
       </div>
-      <div class="help-grid">
-        <div class="help-col">
-          <div class="help-sec">SELECT</div>
-          <div><kbd>Click</kbd> Select ship</div>
-          <div><kbd>Drag</kbd> Box-select</div>
-          <div><kbd>Shift</kbd>+click/drag Add</div>
-          <div><kbd>Dbl-click</kbd> Same hull on screen</div>
-          <div><kbd>F2</kbd> / <kbd>Ctrl</kbd>+<kbd>A</kbd> All ships</div>
-          <div><kbd>1</kbd>–<kbd>9</kbd> Recall fleet (twice: centre)</div>
-          <div><kbd>Ctrl</kbd>+<kbd>1–9</kbd> Assign fleet</div>
-          <div><kbd>Shift</kbd>+<kbd>1–9</kbd> Add to fleet</div>
-        </div>
-        <div class="help-col">
-          <div class="help-sec">ORDERS</div>
-          <div><kbd>Right-click</kbd> Move / attack / siege</div>
-          <div><kbd>Shift</kbd>+right-click Queue waypoint</div>
-          <div><kbd>A</kbd> Attack-move</div>
-          <div><kbd>P</kbd> Patrol</div>
-          <div><kbd>S</kbd> Stop · <kbd>H</kbd> Hold</div>
-          <div><kbd>F</kbd> Formation · <kbd>T</kbd> Stance</div>
-          <div><kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> Commander abilities</div>
-        </div>
-        <div class="help-col">
-          <div class="help-sec">CAMERA</div>
-          <div><kbd>Arrows</kbd> / screen edge Pan</div>
-          <div><kbd>Middle-drag</kbd> Grab-pan</div>
-          <div><kbd>Scroll</kbd> Zoom</div>
-          <div><kbd>Space</kbd> Centre on selection</div>
-          <div><kbd>Minimap</kbd> Click: look · right-click: order</div>
-          <div><kbd>G</kbd> Cycle your islands</div>
-        </div>
-        <div class="help-col">
-          <div class="help-sec">PANELS &amp; VIEW</div>
-          <div><kbd>B</kbd> Build · <kbd>R</kbd> Research</div>
-          <div><kbd>L</kbd> Loadout · <kbd>V</kbd> Revive</div>
-          <div><kbd>O</kbd> Empire · <kbd>M</kbd> Market</div>
-          <div><kbd>Tab</kbd> Range overlay</div>
-          <div><kbd>Alt</kbd> Tactical view (hold)</div>
-          <div><kbd>Shift</kbd>+<kbd>F</kbd> Fog of war</div>
-          <div><kbd>Esc</kbd> Cancel / close / pause</div>
-          <div><kbd>?</kbd> Toggle this help</div>
-        </div>
-      </div>
+      <div id="help-body"></div>
     </div>
   </div>
 
@@ -324,47 +313,7 @@
     <button id="end-harbor-btn" onclick="location.assign('?mode=harbor')">🏝 Harbor</button>
   </div>
 
-  <!-- Tutorial overlay (first-launch) -->
-  <div id="tutorial-overlay" style="
-    display:none;position:fixed;inset:0;background:rgba(4,12,24,.90);
-    align-items:center;justify-content:center;z-index:800;pointer-events:all;
-  ">
-    <div style="max-width:480px;background:#0a1828;border:1px solid #2e6090;border-radius:10px;padding:28px 32px;color:#c0d4e8;font-family:'Inter',sans-serif;font-size:13px;line-height:1.8">
-      <div style="font-family:'Cinzel',serif;font-size:18px;color:#e8b840;letter-spacing:.12em;margin-bottom:16px;text-align:center">⚓ POWDER &amp; SAIL</div>
-      <div id="tut-steps">
-        <div class="tut-step" data-step="0">
-          <b style="color:#e8b840">1 — Command your fleet</b><br>
-          Drag a box (or click a ship) to select. <b>Right-click</b> the sea to sail, an enemy ship to attack,
-          an island to besiege it. <kbd>Shift</kbd>+right-click queues waypoints; <kbd>Space</kbd> centres the camera.
-        </div>
-        <div class="tut-step" data-step="1" style="display:none">
-          <b style="color:#e8b840">2 — Fleets, formations &amp; stances</b><br>
-          <kbd>Ctrl</kbd>+<kbd>1–9</kbd> saves the selection as a fleet, <kbd>1–9</kbd> recalls it.
-          <kbd>F</kbd> cycles Line Ahead / Line Abreast / Wedge; <kbd>T</kbd> cycles Aggressive / Defensive / Hold Fire.
-          Ships fight broadside-on: they circle a target keeping their strongest side toward it.
-        </div>
-        <div class="tut-step" data-step="2" style="display:none">
-          <b style="color:#e8b840">3 — Capture, build &amp; research</b><br>
-          Right-click a neutral island (or an enemy one whose fort is down) to capture it.<br>
-          <kbd>B</kbd> opens the build dock on your island; <kbd>R</kbd> opens Research.
-        </div>
-        <div class="tut-step" data-step="3" style="display:none">
-          <b style="color:#e8b840">4 — Push the War Front</b><br>
-          Capturing islands, sinking ships and out-producing the enemy push the front bar (top).
-          Reach 100% to win; at 0% you lose.
-        </div>
-        <div class="tut-step" data-step="4" style="display:none">
-          <b style="color:#e8b840">5 — Market &amp; Fog</b><br>
-          Press <kbd>M</kbd> to open the Market — trade wood for gold.<br>
-          Press <kbd>Shift</kbd>+<kbd>F</kbd> to toggle Fog of War. <kbd>?</kbd> shows every control.
-        </div>
-      </div>
-      <div style="display:flex;justify-content:space-between;margin-top:20px;gap:12px">
-        <button id="tut-skip" style="padding:8px 20px;background:rgba(46,96,144,.3);border:1px solid #2e6090;border-radius:4px;color:#6080a0;cursor:pointer;font-family:inherit">Skip</button>
-        <button id="tut-next" style="padding:8px 28px;background:linear-gradient(180deg,#f7eccc,#c8a84c);border:none;border-radius:4px;color:#1a1000;font-weight:600;cursor:pointer;font-family:inherit;font-size:13px">Next →</button>
-      </div>
-    </div>
-  </div>
+  <!-- First-session onboarding (spotlight tour + captain's notes): Experience/UI/Onboarding.js -->
 
   <!-- Pause overlay -->
   <div id="pause-overlay" style="display:none;position:absolute;inset:0;background:rgba(4,12,24,.85);flex-direction:column;align-items:center;justify-content:center;gap:18px;z-index:40;pointer-events:all">
@@ -407,6 +356,6 @@
 <!-- Game entry point as ES module -->
 <!-- Period glyph masks (--g-*, .gi-*) for the HUD skin -->
 <script type="module" src="src/styles/icons.js?v=hud1"></script>
-<script type="module" src="src/main.js?v=aw1"></script>
+<script type="module" src="src/main.js?v=ui3"></script>
 </body>
 </html>

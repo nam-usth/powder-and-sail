@@ -74,6 +74,9 @@ const MODEL = {
 /** Harbor build timers: data/harbor.js HARBOR_ECONOMY.buildTimeMult when present (else Open War's BUILD_TIME_MULT). */
 const BTM = H.HARBOR_ECONOMY?.buildTimeMult ?? K.BUILD_TIME_MULT;
 const BY_ID = Object.fromEntries(BUILDINGS.map(b => [b.id, b]));
+/** Harbor building prices: data/harbor.js HARBOR_ECONOMY.buildCostMult (CLI --cost-mult for what-ifs). */
+const BCM = Econ.harborCostMult(args['cost-mult'] != null ? { ...H.HARBOR_ECONOMY, buildCostMult: Number(args['cost-mult']) } : H.HARBOR_ECONOMY);
+const bcost = (id, lv = 0) => Econ.harborBuildCost(BY_ID[id], lv, BCM);
 const GRID_CELLS = 68;                               // home island SPRAWL/4242 (data/islandShapes)
 const cellsOf = id => { const f = BY_ID[id]?.footprint || { w: 1, h: 1 }; return f.w * f.h; };
 const T0 = Date.UTC(2026, 0, 1, 8, 0, 0);
@@ -186,15 +189,16 @@ class Player {
   }
   place(id) {
     const d = BY_ID[id];
-    if (!this.canPlace(id) || !this.afford(d.cost)) return false;
-    this.pay(d.cost, 'buildings');
+    const c = bcost(id);
+    if (!this.canPlace(id) || !this.afford(c)) return false;
+    this.pay(c, 'buildings');
     this.cells += cellsOf(id);
     this.p.harbor.buildings.push({ buildingId: id, level: 1, state: 'building', buildTimer: d.buildTime * BTM, buildDuration: d.buildTime * BTM });
     this.stats.built[id] = (this.stats.built[id] || 0) + 1;
     this.note(`build ${id}`);
     return true;
   }
-  upgradeCost(b) { const d = BY_ID[b.buildingId]; return { wood: (d.cost.wood || 0) * b.level, gold: (d.cost.gold || 0) * b.level }; }
+  upgradeCost(b) { return bcost(b.buildingId, b.level); }
   upgrade(b) {
     if (b.state !== 'active' || b.upgradeTimer > 0 || b.level >= 10) return false;
     const c = this.upgradeCost(b);
@@ -329,8 +333,8 @@ class Player {
     // a sensible player keeps room for two warehouses (T4/T5 hulls cost more than the base cap)
     const whRoom = 2 * Math.max(0, 2 - blds.filter(b => b.buildingId === 'warehouse').length);
     const roomFor = id => this.canPlace(id) && this.cells + cellsOf(id) + whRoom <= GRID_CELLS;
-    if (roomFor('lumber_mill')) cands.push(mk('mill', BY_ID.lumber_mill.cost, BY_ID.lumber_mill.productionByLevel[0], 0, () => this.place('lumber_mill'), bt('lumber_mill')));
-    if (roomFor('gold_mine')) cands.push(mk('mine', BY_ID.gold_mine.cost, 0, BY_ID.gold_mine.productionByLevel[0], () => this.place('gold_mine'), bt('gold_mine')));
+    if (roomFor('lumber_mill')) cands.push(mk('mill', bcost('lumber_mill'), BY_ID.lumber_mill.productionByLevel[0], 0, () => this.place('lumber_mill'), bt('lumber_mill')));
+    if (roomFor('gold_mine')) cands.push(mk('mine', bcost('gold_mine'), 0, BY_ID.gold_mine.productionByLevel[0], () => this.place('gold_mine'), bt('gold_mine')));
     for (const b of blds) {
       if (b.state !== 'active' || b.upgradeTimer > 0 || b.level >= 10) continue;
       if (b.buildingId === 'lumber_mill') cands.push(mk('mill+', this.upgradeCost(b), prodDelta('lumber_mill', b.level), 0, () => this.upgrade(b), ut('lumber_mill')));
@@ -342,12 +346,12 @@ class Player {
       const whs = blds.filter(b => b.buildingId === 'warehouse');
       const fresh = whs.length < 2 && this.canPlace('warehouse');
       const wh = whs.filter(b => b.state === 'active' && !(b.upgradeTimer > 0) && b.level < 10).sort((a, b) => a.level - b.level)[0];
-      const cost = fresh ? BY_ID.warehouse.cost : wh ? this.upgradeCost(wh) : null;
+      const cost = fresh ? bcost('warehouse') : wh ? this.upgradeCost(wh) : null;
       const act = fresh ? () => this.place('warehouse') : wh ? () => this.upgrade(wh) : null;
       if (cost) cands.push({ kind: 'warehouse', cost, dW: 0, dG: 0, payback: 0, storage: needCap, bt: 0,
         act: () => { const ok = act(); if (ok) this._lastWh = this.active; return ok; } });
     }
-    if (want?.kind === 'lab' && !blds.some(b => b.buildingId === 'research_lab')) cands.push({ kind: 'lab', cost: BY_ID.research_lab.cost, dW: 0, dG: 0, payback: 0, storage: true, bt: 0, act: () => this.place('research_lab') });
+    if (want?.kind === 'lab' && !blds.some(b => b.buildingId === 'research_lab')) cands.push({ kind: 'lab', cost: bcost('research_lab'), dW: 0, dG: 0, payback: 0, storage: true, bt: 0, act: () => this.place('research_lab') });
     cands.sort((a, b) => a.payback - b.payback);
     // attention budget: a player clicks one harbor purchase per ACTION_GAP seconds of play
     if (this.active - (this._lastBuy || -1e9) < ACTION_GAP) return false;
@@ -544,7 +548,7 @@ for (const model of MODELS) {
   if (VERBOSE) console.log(players[0].log.join('\n'));
   reports.push(report(players, model));
 }
-const md = `# Economy sim — ${TAG}\n\nknobs: rateMult ${RATE_MULT} · produce at sea ${AT_SEA} · live adjacency ×${ADJ_MULT} · payback ≤ ${PAYBACK_MAX / 60} min · battle overhead ${BATTLE_OVERHEAD}s · battles from ${BATTLES.replace(ROOT + '/', '')} (${POLICY})\n\n${reports.map(mdReport).join('\n\n')}\n`;
+const md = `# Economy sim — ${TAG}\n\nknobs: rateMult ${RATE_MULT} · buildCostMult ${JSON.stringify(BCM)} · produce at sea ${AT_SEA} · live adjacency ×${ADJ_MULT} · payback ≤ ${PAYBACK_MAX / 60} min · battle overhead ${BATTLE_OVERHEAD}s · battles from ${BATTLES.replace(ROOT + '/', '')} (${POLICY})\n\n${reports.map(mdReport).join('\n\n')}\n`;
 mkdirSync(OUT, { recursive: true });
 writeFileSync(join(OUT, `economy_${TAG}.json`), JSON.stringify({ knobs: { RATE_MULT, AT_SEA, ADJ_MULT, PAYBACK_MAX }, reports }, null, 1));
 writeFileSync(join(OUT, `economy_${TAG}.md`), md);

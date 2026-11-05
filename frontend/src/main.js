@@ -17,7 +17,7 @@ window._toast = (m, d, t) => toasts.show(m, d, t);
 
 window.addEventListener('DOMContentLoaded', () => {
 
-  if (getLang() === 'vi') document.body.classList.add('lang-vi');
+  { const l = getLang(); if (l !== 'en') document.body.classList.add('lang-' + l); }
 
   // ── Aura / regen upgrade callbacks (called from HTML onclick) ─
   window.setRange = (r) => {
@@ -251,8 +251,26 @@ window.addEventListener('DOMContentLoaded', () => {
   }
 
   const settingsModal = document.getElementById('settings-modal');
+  // UI2: settings labels follow the language; sound section (music + effects)
+  function localiseSettings() {
+    import('./Meta/UI/strings.js').then(({ ms }) => {
+      const set = (id, k) => { const el = document.getElementById(id); if (el) el.textContent = ms(k); };
+      [['settings-title','set_title'], ['settings-lang-label','set_lang'], ['settings-gfx-label','set_gfx'], ['settings-snd-label','set_sound'],
+       ['lbl-range-style','set_range'], ['lbl-filled','set_filled'], ['lbl-edge','set_edge'], ['lbl-quality','set_quality'],
+       ['lbl-high','set_high'], ['lbl-low','set_low'], ['lbl-shadows','set_shadows'], ['lbl-shon','set_on'], ['lbl-shoff','set_off'],
+       ['lbl-theme','set_theme'], ['lbl-th-adm','set_adm'], ['lbl-th-par','set_par'], ['lbl-music','set_music'], ['lbl-sfx','set_sfx'],
+       ['lbl-allsnd','set_all'], ['lbl-snd-on','set_on'], ['lbl-snd-off','set_off']].forEach(([id, k]) => set(id, k));
+      const mb = document.getElementById('mute-music');
+      if (mb) mb.title = mb.getAttribute('aria-pressed') === 'true' ? ms('set_unmute') : ms('set_mute');
+    }).catch(() => {});
+  }
+  localiseSettings();
+  window.addEventListener('iow:langchange', localiseSettings);
+  import('./Experience/UI/SettingsSound.js').then(m => m.initSettingsSound()).catch(e => console.warn('[settings sound]', e));
+
   document.getElementById('settings-btn')?.addEventListener('click', () => {
     buildLangButtons();
+    window._syncSettingsSound?.();
     window._game?._panels ? window._game._panels.toggle('settings-modal') : settingsModal?.classList.toggle('open');
   });
   settingsModal?.addEventListener('click', e => {
@@ -273,6 +291,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // ── Help modal ───────────────────────────────────────────────
   const helpModal = document.getElementById('help-modal');
   function toggleHelp() {
+    if (!helpModal?.classList.contains('open')) import('./Experience/UI/HelpCard.js').then(m => m.renderHelp()).catch(() => {});
     window._game?._panels ? window._game._panels.toggle('help-modal') : helpModal?.classList.toggle('open');
   }
   document.getElementById('help-btn')?.addEventListener('click', toggleHelp);
@@ -300,33 +319,10 @@ window.addEventListener('DOMContentLoaded', () => {
     window._refreshMarket?.();
   });
 
-  // ── Tutorial overlay ────────────────────────────────────────
-  (function initTutorial() {
-    const TUT_KEY = 'iow_tut_done';
-    if (localStorage.getItem(TUT_KEY)) return;
-    const overlay = document.getElementById('tutorial-overlay');
-    if (!overlay) return;
-    overlay.style.display = 'flex';
-    let step = 0;
-    const steps = overlay.querySelectorAll('.tut-step');
-    const nextBtn = document.getElementById('tut-next');
-    const skipBtn = document.getElementById('tut-skip');
-    function show(i) {
-      steps.forEach((s, si) => s.style.display = si === i ? '' : 'none');
-      if (nextBtn) nextBtn.textContent = i >= steps.length - 1 ? 'Play! ⚓' : 'Next →';
-    }
-    show(0);
-    nextBtn?.addEventListener('click', () => {
-      step++;
-      if (step >= steps.length) { closeTut(); return; }
-      show(step);
-    });
-    skipBtn?.addEventListener('click', closeTut);
-    function closeTut() {
-      overlay.style.display = 'none';
-      localStorage.setItem(TUT_KEY, '1');
-    }
-  })();
+  // ── First-session onboarding (UI2) ──────────────────────────
+  // The old 5-card tutorial overlay is replaced by Experience/UI/Onboarding.js
+  // (spotlight tour per mode + one-time notes; progress in 'pas_onboard').
+  // Started below once the GameApp exists.
 
   // ── Keyboard shortcut: ? = help ──────────────────────────────
   // AU: number keys now recall fleets (control groups); panels use letters
@@ -364,6 +360,9 @@ window.addEventListener('DOMContentLoaded', () => {
       // Re-apply GFX settings now that renderer + overlay exist
       Object.entries(loadGfx()).forEach(([k, v]) => applyGfx(k, v));
       if (screen) { screen.style.opacity = '0'; setTimeout(() => screen.style.display = 'none', 520); }
+      // audio-director: per-mode music (Open War) + bus-driven cues (fort down, building placed)
+      import('./Experience/UI/Onboarding.js').then(m => m.startOnboarding(window._game)).catch(e => console.warn('[onboarding]', e));
+      import('./Experience/Utils/ModeAudio.js').then(m => m.startModeAudio(window._game)).catch(e => console.warn('[audio]', e));
     });
   });
 

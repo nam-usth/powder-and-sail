@@ -1,7 +1,10 @@
 import * as THREE from 'three';
-import { moveToward, separateFleet } from '../Naval/MovementSystem.js';
+import { moveToward, separateFleet, steerTo } from '../Naval/MovementSystem.js';
 import { DEFENSES, getDefenseStats } from '../../../data/defenses.js';
-import { BUILD_DECK_Y } from '../../../data/constants.js';
+import { BUILD_DECK_Y, RANGE_U, MAP } from '../../../data/constants.js';
+import { CANNON_BY_ID } from '../../../data/cannons.js';
+import { BATTLE } from '../../../data/harbor.js';
+import { HULL_SLOTS } from '../../../data/ships.js';
 import { makeBuildingMesh } from '../../World/BuildingModels.js';
 
 // ── EnemyAI v2 ────────────────────────────────────────────────────
@@ -59,15 +62,21 @@ export class EnemyAI {
     this._retargetTimer -= dt;
     this._stratTimer    += dt;
 
-    if (this._retargetTimer <= 0) {
-      this._retargetTimer = this._retargetInterval();
-      this._decideStrategy(alive, st);
-      this._assignTargets(alive, st);
-    }
+    // AW Sea Battle: ships with their own tactic (kite / guard / hold / prize /
+    // flee, set from the mission data) steer themselves; the rest sail as the
+    // usual wolfpack. Open War never sets ship.ai, so `line` = alive there.
+    const line = st.mode === 'battle' ? this._battleTactics(alive, dt, st) : alive;
 
-    this._executeStrategy(alive, dt, st);
-    this._buildHistory(alive[0], dt, st);
-    this._executeMovement(alive, dt);
+    if (line.length) {
+      if (this._retargetTimer <= 0) {
+        this._retargetTimer = this._retargetInterval();
+        this._decideStrategy(line, st);
+        this._assignTargets(line, st);
+      }
+      this._executeStrategy(line, dt, st);
+      this._buildHistory(line[0], dt, st);
+      this._executeMovement(line, dt);
+    }
     separateFleet(st.enemyShips);
 
     // S4: enemy ships only attack player forts, NOT neutrals (neutrals are passive unless attacked)
@@ -140,16 +149,100 @@ export class EnemyAI {
     const player = st.playerShips.filter(s => s.alive);
     const forts  = this._islands.filter(i => i.own === 'enemy' && !i.down && !i.def.decor);
     const avgHP  = alive.reduce((a, s) => a + s.hp / s.maxHp, 0) / alive.length;
-    const aggro  = st.battleAggro || 70, a2 = aggro * aggro;
-    const near = (a, b, r2) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2 < r2;
-    if (!this._engaged) {
-      this._engaged = !!st.battleAlwaysEngage || player.some(p =>
-        alive.some(e => near(p, e, a2)) || forts.some(f => near(p, f, (f.r + aggro * .6) ** 2)));
-    }
+    this._checkEngaged(alive, st);
     const strat = (avgHP < 0.2 && forts.length) ? STRAT.RETREAT
                 : (this._engaged && player.length) ? STRAT.ENGAGE
                 : STRAT.BUILDUP;
     if (strat !== this._strat) { this._strat = strat; this._stratTimer = 0; }
+  }
+
+  /** Battle: the fleet engages once the player comes within aggro range of any ship or fort (then stays engaged). */
+  _checkEngaged(alive, st) {
+    if (this._engaged) return true;
+    const player = st.playerShips.filter(s => s.alive);
+    const forts  = this._islands.filter(i => i.own === 'enemy' && !i.down && !i.def.decor);
+    const aggro  = st.battleAggro || 70, a2 = aggro * aggro;
+    const near = (a, b, r2) => (a.x - b.x) ** 2 + (a.z - b.z) ** 2 < r2;
+    this._engaged = !!st.battleAlwaysEngage || player.some(p =>
+      alive.some(e => near(p, e, a2)) || forts.some(f => near(p, f, (f.r + aggro * .6) ** 2)));
+    return this._engaged;
+  }
+
+  // ── AW Sea Battle tactics (battle mode only) ──────────────────
+  // ship.ai is set by BattleSession from data/campaign.js (mission.ai +
+  // EnemySpec.ai):
+  //   tactic 'engage' (default wolfpack) · 'kite' (circle at ~¾ gun range)
+  //          'guard' (engage, but never chase further than `leash` from post)
+  //          'hold' (stay on post, fire when the player comes)
+  //   route [{x,z}]   patrol loop before the fleet engages
+  //   prize true      runs for st.battleEscape once engaged (MissionSystem
+  //                   'sink_target': lose if it gets away); spdMult = laden
+  //   fleeHp f        below this HP fraction, run for st.battleEscape
+  // Returns the ships left to the wolfpack.
+  _battleTactics(alive, dt, st) {
+    const engaged = this._checkEngaged(alive, st);
+    const player = st.playerShips.filter(p => p.alive);
+    const esc = st.battleEscape;
+    const line = [];
+    for (const s of alive) {
+      const a = s.ai;
+      if (!a) { line.push(s); continue; }
+      if (esc && (a.escaping || (a.prize && (engaged || a.runAtOnce)) ||
+          (a.fleeHp && s.hp / s.maxHp < a.fleeHp))) {
+        a.escaping = true;
+        this._sailRoute(s, esc.route || [esc], dt, a.spdMult);
+        continue;
+      }
+      if (a.route && (!engaged || a.tactic === 'patrol')) { this._sailRoute(s, a.route, dt, a.spdMult, true); continue; }
+      if (!engaged || !player.length) {
+        if (a.tactic && a.tactic !== 'engage' && a.post) { moveToward(s, a.post.x, a.post.z, dt, this._islands); continue; }
+        line.push(s); continue;
+      }
+      const p = player.reduce((b, x) => ((x.x - s.x) ** 2 + (x.z - s.z) ** 2 < (b.x - s.x) ** 2 + (b.z - s.z) ** 2 ? x : b));
+      if (a.tactic === 'kite') { this._kite(s, p, dt); continue; }
+      if (a.tactic === 'hold' && a.post) { moveToward(s, a.post.x, a.post.z, dt, this._islands); continue; }
+      if (a.tactic === 'guard' && a.post) {
+        const leash = a.leash || 40;
+        if ((p.x - a.post.x) ** 2 + (p.z - a.post.z) ** 2 > leash * leash) { moveToward(s, a.post.x, a.post.z, dt, this._islands); continue; }
+      }
+      line.push(s);
+    }
+    return line;
+  }
+
+  /** Longest gun range of a ship (world units). */
+  _gunRange(s) {
+    let r = 8;
+    for (const sl of HULL_SLOTS[s.hull] || []) { const c = CANNON_BY_ID.get(s.loadout?.[sl]); if (c) r = Math.max(r, RANGE_U[c.rt] || 0); }
+    return r;
+  }
+
+  /** Circle the nearest player ship at ~kiteRangeFrac × gun range; open the distance when crowded. */
+  _kite(s, p, dt) {
+    const a = s.ai;
+    const kd = a.kiteDist || Math.max(10, this._gunRange(s) * (a.kiteFrac ?? BATTLE.kiteRangeFrac ?? 0.75));
+    const dx = s.x - p.x, dz = s.z - p.z, d = Math.hypot(dx, dz) || 1;
+    a._flipT = (a._flipT || 0) - dt;
+    const edge = MAP / 2 - 14;
+    if (a._flipT <= 0 && (Math.abs(s.x) > edge || Math.abs(s.z) > edge)) { a.side = -(a.side || 1); a._flipT = 6; }
+    const side = a.side || (a.side = (s.x * 7 + s.z) % 2 > 0 ? 1 : -1);
+    const close = d < kd * 0.75;
+    const th = (close ? 0.55 : 1.2) * side, r = close ? kd + 8 : kd;
+    const ux = dx / d, uz = dz / d;
+    const rx = ux * Math.cos(th) - uz * Math.sin(th), rz = ux * Math.sin(th) + uz * Math.cos(th);
+    steerTo(s, p.x + rx * r, p.z + rz * r, dt, this._islands, { arrive: false });
+  }
+
+  /** Follow waypoints (loop = patrol; else stop at the last one). spdMult < 1 = laden. */
+  _sailRoute(s, route, dt, spdMult = 1, loop = false) {
+    const a = s.ai;
+    if (a._wp == null || a._route !== route) { a._route = route; a._wp = 0; }
+    let wp = route[Math.min(a._wp, route.length - 1)];
+    if ((wp.x - s.x) ** 2 + (wp.z - s.z) ** 2 < 36) {
+      a._wp = loop ? (a._wp + 1) % route.length : Math.min(a._wp + 1, route.length - 1);
+      wp = route[a._wp];
+    }
+    steerTo(s, wp.x, wp.z, dt, this._islands, { speed: s.maxSpeed * (spdMult || 1), arrive: !loop && a._wp === route.length - 1 });
   }
 
   _assignTargets(alive, st) {

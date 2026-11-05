@@ -1,5 +1,6 @@
 import { StatusEffects } from '../Combat/StatusEffects.js';
 import { toasts }        from '../../UI/ToastQueue.js';
+import { BATTLE }        from '../../../data/harbor.js';
 
 // ── CommanderSystem.js (AT) ─────────────────────────────────────
 // Three commander abilities on cooldown, hotkeys Z/X/C + a small HUD dock
@@ -7,6 +8,9 @@ import { toasts }        from '../../UI/ToastQueue.js';
 // while you are LOSING (front < 45) cooldowns recover 25 % faster — an
 // Age-of-War-style comeback valve that keeps the tug-of-war tense without
 // snowballing the winner.
+// AW: Sea Battle has no War Front — there the valve opens while the player is
+// losing the exchange (fleet HP fraction behind the enemy's, see
+// comebackActive / data/harbor.js BATTLE.comeback).
 //
 //   Z ⚔ Broadside Barrage — instant reload + 50 % damage for 10 s
 //   X 🌬 Favorable Winds   — fleet speed ×1.4 for 12 s
@@ -21,8 +25,33 @@ export const ABILITIES = [
   { id: 'repairs', key: 'c', icon: '🛠', name: 'Emergency Repairs', desc: 'Heal 25% max HP over 5s',         cd: 90, dur: 5  },
 ];
 
-const COMEBACK_RATE = 1.25;   // cooldown speed while warFront < 45
+const COMEBACK_RATE = 1.25;   // cooldown speed while warFront < 45 (Open War)
 const UI_TICK       = 0.25;   // HUD refresh cadence (s)
+
+/** Σ hp / Σ maxHp over a fleet (sunk ships count as 0 hp). */
+export function fleetHpFrac(ships) {
+  let hp = 0, max = 0;
+  for (const s of ships || []) { max += s.maxHp || 0; if (s.alive) hp += Math.max(0, s.hp); }
+  return max ? hp / max : 0;
+}
+
+/**
+ * Comeback valve state → cooldown rate multiplier (1 = off).
+ * Open War: War Front below 45. Sea Battle (st.mode 'battle'): own fleet HP
+ * fraction ≥ `behind` under the enemy's (every enemy that has appeared, sunk
+ * ones at 0), or under `floor` outright. Pure: reads only the state.
+ * @param {object} st game state
+ * @param {object} [cfg] BATTLE.comeback override (tests)
+ */
+export function comebackRate(st, cfg = BATTLE.comeback) {
+  if (st.mode !== 'battle') return (st.warFront ?? 50) < 45 ? COMEBACK_RATE : 1;
+  if (!cfg) return 1;
+  const ours = fleetHpFrac(st.playerShips);
+  if (!st.playerShips?.some(s => s.alive)) return 1;
+  const theirs = st.enemyShips?.length ? fleetHpFrac(st.enemyShips) : 0;
+  const losing = ours < (cfg.floor ?? 0) || ours <= theirs - (cfg.behind ?? 0.15);
+  return losing ? (cfg.cdRate ?? COMEBACK_RATE) : 1;
+}
 
 export class CommanderSystem {
   constructor(state, bus, vfx) {
@@ -75,8 +104,17 @@ export class CommanderSystem {
     const st = this._state;
     if (st.gameOver) return;
 
-    // War Front comeback valve: losing side recovers abilities faster
-    const cdRate = (st.warFront ?? 50) < 45 ? COMEBACK_RATE : 1;
+    // Comeback valve: the losing side recovers abilities faster (War Front in
+    // Open War, fleet HP exchange in Sea Battle). st.cmdComeback lets the HUD show it.
+    const cdRate = comebackRate(st);
+    if ((cdRate > 1) !== !!st.cmdComeback) {
+      st.cmdComeback = cdRate > 1;
+      const bar = typeof document !== 'undefined' && document.getElementById('cmd-bar');
+      if (bar) {
+        bar.classList.toggle('comeback', st.cmdComeback);
+        bar.title = st.cmdComeback ? `Rallying — abilities recharge ${Math.round((cdRate - 1) * 100)}% faster` : '';
+      }
+    }
     for (const ab of ABILITIES) {
       if (this._cds[ab.id] > 0) this._cds[ab.id] = Math.max(0, this._cds[ab.id] - dt * cdRate);
       if (this._active[ab.id] > 0) {

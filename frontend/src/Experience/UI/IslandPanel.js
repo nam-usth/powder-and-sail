@@ -4,6 +4,7 @@ import { toasts } from './ToastQueue.js';
 // AN: island shape badge (low-TODO 'Island shape label in HUD/IslandPanel')
 const SHAPE_BADGE = { CRESCENT:'🌙 Crescent', ATOLL:'⭕ Atoll', FORTRESS:'🏰 Fortress', SPRAWL:'🌿 Sprawl', MIRROR:'🪞 Mirrored', DISC:'⚪ Disc' };
 import { PanelManager } from './PanelManager.js';
+import { harborBuildCost } from '../../Meta/HarborEconomy.js';
 import { getBarracksShipCapBonus } from '../Utils/ShipCapacity.js';
 // ── ISLAND PANEL ─────────────────────────────────────────────────
 // Shows island info when selected, and building detail when a cell is clicked.
@@ -245,7 +246,7 @@ export class IslandPanel {
       if(!g.items.length) return;
       const open = this._openGroup===g.key;
       const affordCount = g.items.filter(b=>this._isUnlocked(b)
-        && st.resWood>=((b.cost&&b.cost.wood)||0) && st.resGold>=((b.cost&&b.cost.gold)||0)).length;
+        && (c=>st.resWood>=c.wood && st.resGold>=c.gold)(harborBuildCost(b,0,st.harborBuildCostMult??1))).length;
       h+=`<div class="dock-grp ${open?'open':''}" data-grp="${g.key}">
         <div class="dock-grp-hdr" data-action="toggle-grp" data-grp="${g.key}">
           <span class="dock-grp-caret">${open?'▾':'▸'}</span>
@@ -257,7 +258,7 @@ export class IslandPanel {
         h+=`<div class="dock-grp-body">`;
         g.items.forEach(b=>{
           const unlocked=this._isUnlocked(b);
-          const cW=(b.cost&&b.cost.wood)||0, cG=(b.cost&&b.cost.gold)||0;
+          const {wood:cW, gold:cG}=harborBuildCost(b,0,st.harborBuildCostMult??1);
           const cant=!unlocked||st.resWood<cW||st.resGold<cG;
           const isSel=(st.selectedBuilding===b)||(st.selectedDefense===b);
           const built=instances.filter(i=>i.buildingId===b.id&&i.state!=='destroyed').length;
@@ -303,8 +304,7 @@ export class IslandPanel {
     </div>`;
 
     if(expanded){
-      const upCostW=((def.cost&&def.cost.wood)||0)*inst.level;
-      const upCostG=((def.cost&&def.cost.gold)||0)*inst.level;
+      const {wood:upCostW, gold:upCostG}=harborBuildCost(def,inst.level,st.harborBuildCostMult??1);
       const canUp=inst.level<10&&st.resWood>=upCostW&&st.resGold>=upCostG;
       const canManage=isl.own==='player';
 

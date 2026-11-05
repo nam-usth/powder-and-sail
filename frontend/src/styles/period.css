@@ -477,11 +477,15 @@ body.theme-parchment #console .con-panel::before {
     #efe2c2 !important;
   box-shadow: 0 2px 5px rgba(0,0,0,.6) !important;
 }
-#console #minimap::after {
-  content: ''; position: absolute; right: 8px; bottom: 8px; width: 46px; height: 46px; pointer-events: none;
-  background: var(--pd-rose) center / contain no-repeat; opacity: .82;
-  filter: drop-shadow(0 0 1px rgba(239,226,194,.6));
+/* compass rose lives in the centre (fleet) panel — it must never cover the chart */
+#console #minimap::after { content: none !important; }
+#console #con-sel { position: relative; }
+#console #con-sel::after {
+  content: ''; position: absolute; right: 12px; bottom: 10px; width: 64px; height: 64px; pointer-events: none;
+  background: var(--pd-rose) center / contain no-repeat; opacity: .35; z-index: 0;
 }
+#console #con-sel > * { position: relative; z-index: 1; }
+@media (max-width: 760px) { #console #con-sel::after { width: 40px; height: 40px; opacity: .25; } }
 #console #mmcvs { border-radius: 0 !important; image-rendering: auto; }
 #console #mmlbl {
   top: 8px !important; left: 9px !important; padding: 1px 6px 2px; border-radius: 1px;
@@ -1408,3 +1412,255 @@ body.lang-vi .isl-name, body.lang-vi .lp2-nm, body.lang-vi #end-title, body.lang
   font-variant: small-caps; font-weight: 600 !important; letter-spacing: .01em !important; line-height: 1.25 !important;
 }
 body.lang-vi #top-header .hl { font-family: "Pirata One", "EB Garamond", serif !important; }
+
+/* ══ 14. UI2 POLISH (ux/ui pass, 2026-11-04) ═══════════════════════
+   versus bar end-cap · settings title · war-front beam · phone fleet
+   strip · audio sliders · help card · onboarding (spotlight + notes) */
+
+/* versus bar: the swallow-tail pennant read as a stray "[" (dark foe
+   colours vanish on the wood/paper). The foe colour now rings the badge. */
+.vs-bar .vs-foe { padding-right: 8px !important; }
+.vs-bar .vs-foe::before, .vs-bar .vs-foe::after { content: none !important; display: none !important; }
+.vs-bar .vs-foe .vs-badge {
+  box-shadow: 0 0 0 2px var(--foe, #a03030), 0 0 0 3px #f1e2bd, 0 0 0 4px #4a3410, 0 1px 3px rgba(0,0,0,.5) !important;
+}
+.vs-bar .vs-you .vs-badge {
+  box-shadow: 0 0 0 2px #5d8f45, 0 0 0 3px #f1e2bd, 0 0 0 4px #4a3410, 0 1px 3px rgba(0,0,0,.5) !important;
+}
+@media (max-width: 760px) { .vs-bar .vs-foe { padding-right: 7px !important; } }
+
+/* settings / help title: a proper engraved heading, not a faint caption */
+.help-hdr { padding-bottom: 8px !important; margin-bottom: 12px !important; border-bottom: 1px solid rgba(58,37,15,.35) !important; }
+.help-hdr b, #settings-title {
+  display: inline-flex; align-items: center; gap: 10px;
+  font: 400 30px/1.1 var(--pd-f-title) !important; letter-spacing: .01em !important;
+  color: var(--pd-rubric) !important; text-transform: none !important; text-shadow: 0 1px 0 rgba(255,248,226,.6);
+}
+.help-hdr b .gi, #settings-title .gi { font-size: 24px; color: var(--pd-ink); }
+.help-x { top: 4px !important; }
+
+/* war front (Open War): a carved beam — your sap-green colours vs. the
+   enemy's crimson, tally notches, brass marker. No teal→red gradient. */
+#warfront { gap: 0 !important; height: 34px !important; width: min(640px, 72vw) !important; filter: drop-shadow(0 3px 6px rgba(0,0,0,.35)); }
+#warfront .wf-side {
+  height: 34px !important; padding: 0 12px !important; border-radius: 0 !important; gap: 7px !important;
+  background: var(--pd-wood) !important; border: 1px solid #3a250f !important; box-shadow: inset 0 0 0 1px rgba(255,240,200,.25) !important;
+}
+#warfront .wf-side-l { border-right: none !important; border-radius: 4px 0 0 4px !important; }
+#warfront .wf-side-r { border-left: none !important; border-radius: 0 4px 4px 0 !important; }
+#warfront .wf-crest {
+  width: 24px; height: 24px; border-radius: 50%; font-size: 13px !important; color: #2a1806 !important;
+  background: var(--pd-brass-coin); box-shadow: 0 0 0 2px #5d8f45, 0 0 0 3px #f1e2bd, 0 0 0 4px #4a3410;
+}
+#warfront .wf-side-r .wf-crest { box-shadow: 0 0 0 2px #8e2414, 0 0 0 3px #f1e2bd, 0 0 0 4px #4a3410; }
+#warfront .wf-label { color: var(--pd-rail-fg) !important; font: 400 15px/1 var(--pd-f-head) !important; text-shadow: none !important; white-space: nowrap; }
+#warfront .wf-side-l .wf-label, #warfront .wf-side-r .wf-label { color: var(--pd-rail-fg) !important; }
+#warfront .wf-bar {
+  flex: 1 1 auto; align-self: center; height: 14px !important; margin: 0 -1px; border-radius: 1px !important;
+  background: #1c1108 !important; border: 1px solid #1a0f06 !important;
+  box-shadow: 0 0 0 1px #a07a32, inset 0 1px 2px rgba(0,0,0,.8) !important; position: relative;
+}
+#warfront .wf-bar::after {                    /* tally notches every 10 % */
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(20,12,4,.55) calc(10% - 1px) 10%);
+}
+#warfront .wf-fill-l, #warfront.wf-winning .wf-fill-l {
+  background: linear-gradient(180deg, rgba(255,245,215,.35), rgba(255,245,215,0) 45%, rgba(0,0,0,.2)), #5d8f45 !important; box-shadow: none !important;
+}
+#warfront .wf-fill-r, #warfront.wf-losing .wf-fill-r {
+  background: linear-gradient(180deg, rgba(255,245,215,.3), rgba(255,245,215,0) 45%, rgba(0,0,0,.2)), #8e2414 !important; box-shadow: none !important;
+}
+#warfront.wf-winning .wf-fill-l { background-color: #6fa452 !important; }
+#warfront.wf-losing  .wf-fill-r { background-color: #a52c1a !important; }
+#warfront .wf-mid { background: rgba(241,226,189,.55) !important; z-index: 3; }
+#warfront .wf-divider { z-index: 4; top: -8px !important; height: 30px !important; }
+#warfront .wf-pct { top: -24px !important; }
+.wf-delta.pos { color: #3e6b47 !important; text-shadow: 0 1px 0 rgba(255,248,226,.8) !important; }
+.wf-delta.neg { color: #8e2414 !important; text-shadow: 0 1px 0 rgba(255,248,226,.8) !important; }
+@media (max-width: 760px) {
+  #warfront { width: calc(100vw - 24px) !important; height: 30px !important; }
+  #warfront .wf-side { height: 30px !important; padding: 0 7px !important; }
+}
+
+/* phone (≤760 px): the fleet cards come back as a strip above chart + orders */
+@media (max-width: 760px) {
+  #console { flex-wrap: wrap; }
+  #con-sel { display: flex !important; order: -1; flex: 1 1 100% !important; height: 104px; padding: 6px !important; gap: 4px !important; }
+  #con-map { order: 0; }
+  #con-cmd { order: 1; }
+  #console #fleet-tabs { display: none !important; }
+  #console #fleet-panel { gap: 5px !important; padding-top: 0 !important; }
+  #console .scard { max-width: none !important; padding: 5px 6px 4px !important; }
+  #console .scard .cname { font-size: 12.5px !important; }
+}
+@media (max-width: 480px) {
+  #con-sel { height: 92px; }
+}
+
+/* settings: sound rows (range sliders as brass-capped rules) */
+.settings-row.snd { gap: 10px; }
+.settings-row.snd .settings-row-label { min-width: 74px; }
+.snd-ctl { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; justify-content: flex-end; }
+.snd-val { min-width: 34px; text-align: right; font: 500 13px/1 var(--pd-f-num); color: var(--pd-ink-2); font-variant-numeric: tabular-nums; }
+.snd-range {
+  -webkit-appearance: none; appearance: none; flex: 1 1 auto; max-width: 190px; height: 6px; margin: 0; cursor: pointer;
+  border-radius: 3px; border: 1px solid rgba(58,37,15,.55);
+  background: linear-gradient(90deg, #8a6524 0 var(--v, 50%), rgba(255,248,226,.6) var(--v, 50%) 100%);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.25);
+}
+.snd-range::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--pd-brass-coin); border: 1px solid #4a3410; box-shadow: 0 1px 3px rgba(0,0,0,.45);
+}
+.snd-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--pd-brass-coin); border: 1px solid #4a3410; }
+.snd-range:focus-visible { outline: 2px solid var(--pd-azure); outline-offset: 3px; }
+.snd-range:disabled { opacity: .45; cursor: default; }
+.snd-mute {
+  width: 32px; height: 28px; display: grid; place-items: center; padding: 0 !important; cursor: pointer;
+  border-radius: 2px; font-size: 15px; color: var(--pd-ink-2);
+  background: rgba(255,248,226,.5); border: 1px solid rgba(58,37,15,.45);
+}
+.snd-mute[aria-pressed="true"] { color: #fbe6cc; background: var(--pd-wax-grad); border-color: #5c1006; }
+.snd-mute:focus-visible { outline: 2px solid var(--pd-azure); outline-offset: 2px; }
+
+/* help card: key legend in five columns + "how to win" footer */
+#help-modal { z-index: 1000 !important; }
+#help-modal .help-card { width: min(1000px, calc(100vw - 24px)); max-width: min(1000px, calc(100vw - 24px)) !important; box-sizing: border-box; }
+.help-grid.hc5 .help-col { font-size: 13px !important; line-height: 1.75 !important; }
+.help-grid.hc5 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; gap: 16px !important; }
+.help-col > div { break-inside: avoid; }
+.help-col .hk-note { font: italic 400 12.5px/1.45 var(--pd-f-fell); color: var(--pd-ink-2); margin-top: 4px; }
+.help-win {
+  margin-top: 14px; padding: 12px 14px 10px; border: 1px solid rgba(58,37,15,.4); border-radius: 2px;
+  background: rgba(255,248,226,.45); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px;
+}
+.help-win h4 { grid-column: 1 / -1; margin: 0; display: flex; align-items: center; gap: 8px; font: 400 18px/1 var(--pd-f-head); color: var(--pd-rubric); }
+.help-win h4::after { content: ''; flex: 1; border-top: 1px solid rgba(58,37,15,.45); }
+.help-win section b { display: block; font: 400 15px/1.2 var(--pd-f-head); color: var(--pd-ink); margin-bottom: 3px; }
+.help-win section p { margin: 0; font: 400 13.5px/1.45 var(--pd-f-body); color: var(--pd-ink-2); }
+.help-foot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+.help-foot .pd-plaque { min-width: 0; height: 34px; font-size: 14px !important; }
+.help-foot .pd-plaque.quiet { background: rgba(255,248,226,.5) !important; color: var(--pd-ink-2) !important; box-shadow: none !important; border: 1px solid rgba(58,37,15,.5) !important; text-shadow: none; }
+@media (max-width: 1100px) { .help-grid.hc5 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; } }
+@media (max-width: 760px) {
+  .help-grid.hc5 { grid-template-columns: 1fr 1fr !important; }
+  .help-win { grid-template-columns: 1fr; }
+  .help-hdr b, #settings-title { font-size: 24px !important; }
+}
+@media (max-width: 480px) { .help-grid.hc5 { grid-template-columns: 1fr !important; } }
+
+/* ── onboarding: spotlight ring + captain's notes ────────────────── */
+.ob-spot {
+  position: fixed; z-index: 940; pointer-events: none; border-radius: 6px;
+  box-shadow: 0 0 0 3px #f1d27a, 0 0 0 5px rgba(58,37,15,.85), 0 0 0 9999px rgba(24,14,4,.42);
+  transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease, opacity .2s;
+}
+.ob-spot.no-dim { box-shadow: 0 0 0 3px #f1d27a, 0 0 0 5px rgba(58,37,15,.85), 0 0 18px 6px rgba(241,210,122,.55); }
+.ob-spot::after {                       /* slow pulse */
+  content: ''; position: absolute; inset: -6px; border-radius: 9px; border: 2px solid rgba(241,210,122,.9);
+  animation: obPulse 1.6s ease-out infinite;
+}
+@keyframes obPulse { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(1.12); } }
+.ob-tip {
+  position: fixed; z-index: 950; width: min(340px, calc(100vw - 24px)); box-sizing: border-box;
+  padding: 12px 16px 12px; color: var(--pd-ink); font: 400 15px/1.5 var(--pd-f-body);
+  border: 1px solid #3a250f; border-radius: 3px;
+  background: var(--pd-grain) 0 0 / 200px 200px, linear-gradient(180deg, #f8eed4 0%, #ecdcb4 100%);
+  box-shadow: 0 0 0 3px #efe1bf, 0 0 0 4px #3a250f, 0 10px 26px rgba(40,24,6,.45);
+  transition: left .25s ease, top .25s ease, opacity .2s;
+}
+.ob-tip.is-hidden { opacity: 0; pointer-events: none; }
+.ob-tip .ob-arrow {
+  position: absolute; width: 14px; height: 14px; background: #f3e5c2; border: 1px solid #3a250f;
+  transform: rotate(45deg); box-shadow: 0 0 0 3px #efe1bf;
+}
+.ob-tip.at-below .ob-arrow { top: -11px; border-right: none; border-bottom: none; }
+.ob-tip.at-above .ob-arrow { bottom: -11px; border-left: none; border-top: none; }
+.ob-tip.at-left .ob-arrow, .ob-tip.at-right .ob-arrow, .ob-tip.at-center .ob-arrow { display: none; }
+.ob-kicker { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 2px;
+  font: italic 400 12.5px/1 var(--pd-f-fell); color: var(--pd-ink-3); }
+.ob-title { margin: 0 0 4px; font: 400 21px/1.15 var(--pd-f-head); color: var(--pd-rubric); letter-spacing: .01em; }
+.ob-body { margin: 0; }
+.ob-body kbd, .ob-do kbd {
+  display: inline-block; min-width: 16px; padding: 0 5px; margin: 0 1px; text-align: center;
+  font: 600 12px/18px var(--pd-f-num); color: var(--pd-ink); border-radius: 2px;
+  background: linear-gradient(180deg, #fbf3dc, #e6d2a6); border: 1px solid rgba(58,37,15,.55); box-shadow: 0 1px 0 rgba(58,37,15,.45);
+}
+.ob-do { margin: 8px 0 0; padding: 5px 8px; border-left: 3px solid var(--pd-rubric); background: rgba(142,36,20,.07);
+  font: italic 400 14px/1.35 var(--pd-f-fell); color: var(--pd-ink-2); }
+.ob-acts { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; }
+.ob-acts .ob-right { display: flex; gap: 8px; margin-left: auto; }
+.ob-btn {
+  height: 32px; padding: 0 14px; cursor: pointer; border-radius: 2px;
+  font: 400 15px/1 var(--pd-f-head); letter-spacing: .02em; color: #2a1806;
+  background: var(--pd-brass-grad); border: 1px solid #4a3410;
+  box-shadow: inset 0 1px 0 rgba(255,250,220,.65), inset 0 -2px 3px rgba(80,50,10,.4), 0 2px 4px rgba(0,0,0,.35);
+}
+.ob-btn:hover { filter: brightness(1.08); }
+.ob-btn.ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--pd-ink-3); padding: 0 4px;
+  font: italic 400 14px/1 var(--pd-f-fell); text-decoration: underline; text-underline-offset: 3px; }
+.ob-btn.ghost:hover { color: var(--pd-rubric); }
+.ob-btn:focus-visible { outline: 2px solid var(--pd-azure); outline-offset: 2px; }
+.ob-dots { display: flex; gap: 5px; }
+.ob-dots i { width: 7px; height: 7px; border-radius: 50%; border: 1px solid #4a3410; background: transparent; }
+.ob-dots i.on { background: #8e2414; border-color: #5c1006; }
+.ob-dots i.done { background: #8a6524; }
+/* the welcome letter (centre, with a seal) */
+.ob-tip.at-center { width: min(440px, calc(100vw - 24px)); padding: 18px 22px 16px; text-align: left; }
+.ob-tip.at-center .ob-title { font: 400 30px/1.1 var(--pd-f-title); text-align: center; margin-bottom: 8px; }
+.ob-scrim { position: fixed; inset: 0; z-index: 935; background: var(--pd-scrim); }
+/* one-time captain's notes (contextual hints) */
+.ob-tip.is-hint { width: min(300px, calc(100vw - 24px)); padding: 10px 14px 10px; }
+.ob-tip.is-hint .ob-title { font-size: 17px; }
+@media (max-width: 760px) {
+  .ob-tip { font-size: 14px; padding: 10px 12px; }
+  .ob-title { font-size: 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-spot, .ob-tip { transition: none; }
+  .ob-spot::after { animation: none; }
+}
+body.lang-vi .ob-title, body.lang-vi .ob-btn { font-variant: small-caps; font-weight: 600; }
+body.lang-ja .ob-title, body.lang-ja .ob-btn, body.lang-ja .help-hdr b, body.lang-ja #settings-title,
+body.lang-ja .help-sec, body.lang-ja .settings-section-label, body.lang-ja .help-win h4, body.lang-ja .help-win section b {
+  font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "EB Garamond", serif !important; letter-spacing: 0 !important;
+}
+/* the harbor bar lives on <body>, above #ui's stacking context: tuck it away
+   while a #ui modal (help · settings) is open so it cannot cover the card */
+body:has(#help-modal.open, #help-modal.pm-open, #settings-modal.open, #settings-modal.pm-open) .hb-bar { visibility: hidden; }
+body:has(#warfront) #hud-top { top: 108px !important; }      /* clear the war-front beam (Open War) */
+@media (max-width: 760px) { body:has(#warfront) #hud-top { top: 142px !important; } }
+
+/* ── commander comeback ("Rallying"): ember-lit brass rail around the Z/X/C plaques ── */
+#cmd-bar.comeback {
+  position: relative; border-radius: 4px;
+  box-shadow: 0 0 0 1px #4a3410, 0 0 0 2px #d9b45e, 0 0 10px 2px rgba(214,110,34,.55), inset 0 0 8px rgba(226,120,40,.25);
+  animation: pd-ember 2.4s ease-in-out infinite;
+}
+#cmd-bar.comeback::before {
+  content: '⚑'; position: absolute; left: -7px; top: -9px; z-index: 2; pointer-events: none;
+  width: 16px; height: 16px; display: grid; place-items: center; border-radius: 50%;
+  font: 400 10px/1 var(--pd-f-head); color: #fbe3c0;
+  background: radial-gradient(circle at 34% 28%, #e07a3a 0%, #a52c1a 55%, #5a1006 100%);
+  border: 1px solid #2a0904; box-shadow: 0 1px 2px rgba(0,0,0,.6);
+}
+#cmd-bar.comeback .cmd-btn:not(.on-cd) { box-shadow: inset 0 1px 0 rgba(255,250,220,.6), inset 0 -2px 3px rgba(80,50,10,.4), 0 0 6px rgba(232,128,40,.6) !important; }
+@keyframes pd-ember {
+  0%, 100% { box-shadow: 0 0 0 1px #4a3410, 0 0 0 2px #d9b45e, 0 0 8px 1px rgba(214,110,34,.45), inset 0 0 6px rgba(226,120,40,.2); }
+  50%      { box-shadow: 0 0 0 1px #4a3410, 0 0 0 2px #f2cf72, 0 0 14px 3px rgba(232,128,40,.7), inset 0 0 10px rgba(226,120,40,.32); }
+}
+@media (prefers-reduced-motion: reduce) { #cmd-bar.comeback { animation: none; } }
+
+/* QA-008: world float text ("+2" production ticks) never draws over meta modals */
+body.meta-modal-open #float-text-layer { display: none !important; }
+
+/* QA-009: the orders card fits the console height (Z/X/C plaques were clipped at 1440×810) */
+#cmd-card { gap: 3px !important; min-height: 0; }
+#cmd-card .cc-row { flex: none; }
+#cmd-card .cc-head { padding-bottom: 3px !important; }
+#cmd-card .cc-btn { width: 31px !important; height: 31px !important; }
+#cmd-card .cc-btn .cc-ic { font-size: 15px !important; }
+#cmd-card .cc-abil { padding-top: 5px !important; margin-top: 1px !important; }
+#cmd-card .cmd-btn { height: 30px !important; }
+/* QA-009: long faction names ("Armada of the Spanish Crown") are shown whole on desktop */
+.vs-bar .vs-name { max-width: min(320px, 22vw) !important; }

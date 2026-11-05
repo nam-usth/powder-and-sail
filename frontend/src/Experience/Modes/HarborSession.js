@@ -7,7 +7,7 @@ import { ISLAND_DEFS }              from '../../data/maps.js';
 import { HULLS, SAVE_INTERVAL_SEC, OFFLINE_REPORT_MIN_SEC, MOORING_REGEN_FRAC, HARBOR_ECONOMY } from '../../data/harbor.js';
 import { TECH_TREE }                from '../../data/upgrades.js';
 import { saveProfile }              from '../../Meta/Profile.js';
-import { applyOffline }             from '../../Meta/HarborEconomy.js';
+import { applyOffline, harborCostMult } from '../../Meta/HarborEconomy.js';
 import { tickRoster }               from '../../Meta/Shipyard.js';
 import { abandonPendingBattle }     from '../../Meta/Campaign.js';
 import { gotoMode }                 from '../../Meta/ModeRouter.js';
@@ -69,6 +69,7 @@ export class HarborSession {
     const st = game._state, p = this.profile;
     st.econRateMult = HARBOR_ECONOMY.rateMult;      // harbor clock (EconomySystem / HUD read it)
     st.harborBuildTimeMult = HARBOR_ECONOMY.buildTimeMult;   // real build timers at home (Open War keeps BUILD_TIME_MULT)
+    st.harborBuildCostMult = harborCostMult(HARBOR_ECONOMY);   // harbor building/upgrade prices {default, id: mult} (Open War pays authored costs)
     const home = game._islands[0];
     st.resWood = p.res.wood;
     st.resGold = p.res.gold;

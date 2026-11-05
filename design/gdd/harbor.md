@@ -49,7 +49,13 @@ Shipyard (new, `frontend/src/Meta/`); Campaign (World Chart launches battles).
 
 ## Tuning Knobs
 `data/harbor.js`: `OFFLINE_MAX_SEC`, `SAVE_INTERVAL_SEC`, starter buildings,
-starter fleet. `data/constants.js`: caps and base rates (shared with Open War).
+starter fleet, `HARBOR_ECONOMY` (`rateMult` 0.25, `buildTimeMult` 1,
+`buildCostMult` 4 with `buildCostMultById` exemptions: shipyard/warehouse/lab ×1,
+barracks ×1.5). Harbor building price = `Meta/HarborEconomy.harborBuildCost(def, level)`:
+place = cost × mult, upgrade from L = cost × L × mult, rounded up to 5. Open War
+pays the authored `data/buildings.js` costs (BuildSystem reads
+`st.harborBuildCostMult ?? 1`). The progression buildings are exempt because
+cost × level × mult would outgrow the storage cap and soft-lock tier V. `data/constants.js`: caps and base rates (shared with Open War).
 
 ## Acceptance Criteria
 - Reloading the page restores every building at the same cell and level.

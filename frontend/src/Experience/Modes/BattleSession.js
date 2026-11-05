@@ -7,7 +7,7 @@ import { saveProfile }           from '../../Meta/Profile.js';
 import { applyOffline }          from '../../Meta/HarborEconomy.js';
 import { getMission, makePatrol, applyBattleResult } from '../../Meta/Campaign.js';
 import { gotoMode }              from '../../Meta/ModeRouter.js';
-import { MissionSystem, fmt }    from '../Systems/Match/MissionSystem.js';
+import { MissionSystem, fmt, enemyAi, escapeZone, OBJ_TEXT } from '../Systems/Match/MissionSystem.js';
 import { shipSpec, enemySpec }   from './shipSpec.js';
 import { restoreResearch }       from './HarborSession.js';
 import { bus }                   from '../EventBus.js';
@@ -55,14 +55,16 @@ export class BattleSession {
     this.game = game;
     const st = game._state, m = this.mission;
     st.resWood = 0; st.resGold = 0;   // battles have no economy (resources live in the harbor)
-    st.battleAggro = m.aggro || BATTLE.aggro;                       // data/harbor.js BATTLE knobs
+    st.battleAggro = m.ai?.aggro || m.aggro || BATTLE.aggro;        // data/harbor.js BATTLE knobs (mission.ai.aggro overrides)
     st.battleFortRegen = m.fortRegen ?? BATTLE.fortRegen;
     st.battleFortRebuild = BATTLE.fortRebuild;
     st.battleFortShipRegen = BATTLE.fortShipRegen;
     st.selArcs = true;          // broadside cones on the selected ships
     st.battleAlwaysEngage = m.objective?.type === 'survive';
+    st.battleEscape = escapeZone(m, BATTLE.escapeR);                 // prizes / runners sail here (EnemyAI)
+    (m.enemies || []).forEach((e, i) => { const s = st.enemyShips[i]; if (s) s.ai = enemyAi(e, m); });   // per-ship tactics
     restoreResearch(st, this.profile.harbor.researched);
-    this.missionSys = new MissionSystem(st, game._islands, m, bus, (e, i) => this._spawnEnemy(e, i));
+    this.missionSys = new MissionSystem(st, game._islands, m, bus, (e, i) => this._spawnEnemy(e, i), { escapeR: BATTLE.escapeR });
     const sp = m.spawn || { x: -70, z: 0 };
     st.camDist = 75;
     game._cam.jumpTo(sp.x + 25, sp.z);
@@ -76,6 +78,7 @@ export class BattleSession {
   _spawnEnemy(e, i) {
     const g = this.game, st = g._state;
     const ship = g._makeFromSpec(enemySpec(e, i, this.mission.faction), st.enemyShips.length, 'enemy');
+    ship.ai = enemyAi(e, this.mission);
     st.enemyShips.push(ship); st.allShips.push(ship);
     bus.emit('ship:spawned', { ship });
     g._vfx.playSound?.('warning');
@@ -132,6 +135,7 @@ export class BattleSession {
     shipsOut.forEach(r => { const s = this.profile.fleet.find(x => x.uid === r.uid); if (s && r.upgrades) s.upgrades = r.upgrades; });
     summary.reason = reason;
     saveProfile(this.store, this.profile, this.now());
+    this._renderHud();   // QA-006: final objective/versus counts under the result card
     this.missionSys.dispose();
     this.summary = summary;
     this._showResult(summary, shipsOut);
@@ -219,11 +223,11 @@ export class BattleSession {
     const OT = T.objTypes || { sink_all: 'Sink every enemy ship', destroy_forts: 'Destroy the enemy forts', survive: 'Keep a ship afloat', capture: 'Capture the island' };
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const lines = ms.progress().map(p =>
-      `<div class="obj ${p.done ? 'obj-done' : ''}">${p.done ? '✔' : '◇'} ${esc(L[p.key] || p.key)}: <b>${esc(p.value)}</b></div>`).join('');
+      `<div class="obj ${p.done ? 'obj-done' : ''}">${p.done ? '✔' : '◇'} ${esc(L[p.key] || p.label || p.key)}: <b>${esc(p.value)}</b></div>`).join('');
     const afloat = this.game._state.playerShips.filter(s => s.alive).length;
     const html =
       `<div class="obj-title">${esc(m.nm)}</div>` +
-      `<div class="obj" style="opacity:.85">${esc(OT[m.objective.type] || '')}</div>` + lines +
+      `<div class="obj" style="opacity:.85">${esc(OT[m.objective.type] || OBJ_TEXT.types[m.objective.type] || '')}</div>` + lines +
       `<div class="obj">🚢 ${afloat} / ${this.roster.length} · ⏱ ${fmt(ms.time)}${m.parTime ? ` <span style="opacity:.6">(par ${fmt(m.parTime)})</span>` : ''}</div>`;
     if (html !== this._lastHud) { el.innerHTML = html; this._lastHud = html; }
     this._renderVs();
@@ -241,7 +245,8 @@ export class BattleSession {
     if (n2) n2.textContent = en + (this.missionSys.wavesPending() ? '+' : '');
     if (c) {
       const o = this.mission.objective;
-      c.textContent = o.type === 'survive' ? fmt(Math.max(0, o.seconds - this.missionSys.time)) : fmt(this.missionSys.time);
+      const left = o.type === 'survive' ? o.seconds : this.mission.timeLimit;   // count down when the clock decides
+      c.textContent = left ? fmt(Math.max(0, left - this.missionSys.time)) : fmt(this.missionSys.time);
     }
   }
 }

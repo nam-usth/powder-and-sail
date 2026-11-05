@@ -9,6 +9,10 @@
 // English `nm` / `desc` in data/ when a translation is missing.
 
 import { getLang } from '../../i18n.js';
+import { UI2 } from './strings.ui2.js';
+import { FR } from './strings.fr.js';
+import { JA } from './strings.ja.js';
+import { TECH_TREE } from '../../data/upgrades.js';
 
 const plural = (n, one, many) => (n === 1 ? one : many);
 
@@ -59,6 +63,22 @@ export const MS = {
     reason_slipway_busy: 'All slipways are busy',
     reason_roster_full: 'All berths are full — scrap a ship first',
     reason_unknown_hull: 'Unknown hull',
+    reason_resources: 'Not enough stock',
+    blk_slipway_busy: (b, n) => `Slipways busy (${b}/${n})`,
+    blk_roster_full: (h, c) => `Berths full (${h}/${c}) — scrap a ship or raise the fleet cap`,
+    capb_base: (n) => `Base ${n}`,
+    capb_yard: (n) => `Shipyard +${n}`,
+    capb_bar: (n) => `Barracks +${n}`,
+    capb_max: (n) => `Maximum ${n} reached`,
+    capb_next: 'To raise it',
+    capn_build_shipyard: 'Build a Shipyard',
+    capn_upgrade_shipyard: (to) => `Shipyard Lv ${to} +1`,
+    capn_upgrade_barracks: (to) => `Barracks Lv ${to} +1`,
+    capn_build_barracks: 'Barracks +1',
+    capn_needs: (s) => `needs ${s}`,
+    miss_lab_level: (n) => `Research Lab Lv ${n}`,
+    miss_research: (nm) => `research “${nm}”`,
+    away_capped: (d) => `Catch-up is capped at ${d} — the harbor rests after that.`,
     t_buildStart: (nm, hull) => `⚒ Keel laid: ${nm} (${hull})`,
     t_ready: (nm) => `⚓ ${nm} is ready to sail!`,
     t_repair: (nm) => `🔧 ${nm} is in dry dock for repairs`,
@@ -118,6 +138,7 @@ export const MS = {
 
     // ── Battle result ───────────────────────────────────────
     br_victory: 'Victory', br_defeat: 'Defeat', br_retreat: 'Retreat',
+    br_why_escaped: 'The prize slipped away to safety', br_why_fleet_lost: 'Your fleet was lost', br_why_time: 'Time ran out',
     br_firstClear: 'First victory!',
     br_spoils: 'Spoils of War',
     br_missionReward: 'Mission reward', br_plunder: 'Plunder',
@@ -221,6 +242,22 @@ export const MS = {
     reason_slipway_busy: 'Tất cả triền đà đang bận',
     reason_roster_full: 'Bến neo đã đầy — hãy phá dỡ bớt tàu',
     reason_unknown_hull: 'Không rõ loại tàu',
+    reason_resources: 'Không đủ tài nguyên',
+    blk_slipway_busy: (b, n) => `Triền đà đang bận (${b}/${n})`,
+    blk_roster_full: (h, c) => `Bến neo đầy (${h}/${c}) — phá dỡ bớt tàu hoặc nâng giới hạn hạm đội`,
+    capb_base: (n) => `Cơ bản ${n}`,
+    capb_yard: (n) => `Xưởng tàu +${n}`,
+    capb_bar: (n) => `Doanh trại +${n}`,
+    capb_max: (n) => `Đã đạt tối đa ${n}`,
+    capb_next: 'Để nâng thêm',
+    capn_build_shipyard: 'Xây Xưởng tàu',
+    capn_upgrade_shipyard: (to) => `Xưởng tàu cấp ${to} +1`,
+    capn_upgrade_barracks: (to) => `Doanh trại cấp ${to} +1`,
+    capn_build_barracks: 'Doanh trại +1',
+    capn_needs: (s) => `cần ${s}`,
+    miss_lab_level: (n) => `Phòng nghiên cứu cấp ${n}`,
+    miss_research: (nm) => `nghiên cứu “${nm}”`,
+    away_capped: (d) => `Thời gian bù tối đa là ${d} — sau đó cảng nghỉ ngơi.`,
     t_buildStart: (nm, hull) => `⚒ Bắt đầu đóng ${nm} (${hull})`,
     t_ready: (nm) => `⚓ ${nm} đã sẵn sàng ra khơi!`,
     t_repair: (nm) => `🔧 ${nm} đã vào ụ sửa chữa`,
@@ -280,6 +317,7 @@ export const MS = {
 
     // ── Battle result ───────────────────────────────────────
     br_victory: 'Chiến thắng', br_defeat: 'Thất bại', br_retreat: 'Rút lui',
+    br_why_escaped: 'Tàu mục tiêu đã trốn thoát an toàn', br_why_fleet_lost: 'Hạm đội của bạn đã bị tiêu diệt', br_why_time: 'Đã hết thời gian',
     br_firstClear: 'Chiến thắng đầu tiên!',
     br_spoils: 'Phần thưởng',
     br_missionReward: 'Thưởng nhiệm vụ', br_plunder: 'Chiến lợi phẩm',
@@ -377,6 +415,12 @@ export const MS = {
   },
 };
 
+// UI2 pass: onboarding / help / settings keys (EN, VI) + full FR and JA tables
+Object.assign(MS.en, UI2.en);
+Object.assign(MS.vi, UI2.vi);
+MS.fr = FR;
+MS.ja = JA;
+
 /** Active language code, tolerant of i18n not being initialised (Node tests). */
 function lang() {
   try { return getLang() || 'en'; } catch { return 'en'; }
@@ -421,13 +465,13 @@ export const regionDesc  = (r) => viData(r, 'desc') ?? dataName('regiond_' + r.i
 export const missionName = (m) => viData(m, 'nm') ?? dataName('mis_' + m.id, m.nm);
 export const missionDesc = (m) => viData(m, 'desc') ?? dataName('misd_' + m.id, m.desc || '');
 export const isleName    = (i) => viData(i, 'nm') ?? dataName('isle_' + i.id, i.nm);
-export const factionName = (f) => (f ? viData(f, 'nm') ?? f.nm ?? f.id ?? '' : '');
+export const factionName = (f) => (f ? viData(f, 'nm') ?? dataName('fac_' + f.id, f.nm ?? f.id ?? '') : '');
 export const className   = (c) => ms('cls_' + c);
 
 /** Locale-aware integer formatting (1,234 / 1.234). */
 export function fmtNum(n) {
   const v = Math.floor(Number(n) || 0);
-  try { return v.toLocaleString(lang() === 'vi' ? 'vi-VN' : 'en-US'); } catch { return String(v); }
+  try { return v.toLocaleString({ vi: 'vi-VN', fr: 'fr-FR', ja: 'ja-JP' }[lang()] || 'en-US'); } catch { return String(v); }
 }
 
 /** Countdown clock: 45 → "0:45", 125 → "2:05", 3725 → "1:02:05". */
@@ -449,4 +493,30 @@ export function fmtDur(sec) {
 /** Roman numeral for a tier number (1..10). */
 export function roman(n) {
   return ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][n] || String(n);
+}
+
+/**
+ * Fleet cap explained (Shipyard.fleetCapBreakdown) as display text:
+ * { parts: "Base 3 · Shipyard +1 · Barracks +1", next: ["Barracks +1 — needs Research Lab Lv 2", …] }
+ * @param {object} b result of fleetCapBreakdown(profile)
+ * @param {(id:string)=>string} [researchName] maps a research id to its display name
+ */
+export function capBreakdownText(b, researchName = (id) => TECH_TREE.find((t) => t.id === id)?.nm || id) {
+  if (!b) return { parts: '', next: [], line: '' };
+  const parts = [ms('capb_base', b.base)];
+  if (b.shipyard?.bonus) parts.push(ms('capb_yard', b.shipyard.bonus));
+  if (b.barracks?.bonus) parts.push(ms('capb_bar', b.barracks.bonus));
+  const miss = (m) => (m.kind === 'lab_level' ? ms('miss_lab_level', m.need)
+    : m.kind === 'research' ? ms('miss_research', researchName(m.id)) : '?');
+  const next = (b.next || []).map((n) => {
+    const head = n.kind === 'build_shipyard' ? ms('capn_build_shipyard')
+      : n.kind === 'upgrade_shipyard' ? ms('capn_upgrade_shipyard', n.to)
+      : n.kind === 'upgrade_barracks' ? ms('capn_upgrade_barracks', n.to)
+      : ms('capn_build_barracks');
+    return n.missing?.length && n.ok === false ? `${head} — ${ms('capn_needs', n.missing.map(miss).join(', '))}` : head;
+  });
+  const partsStr = parts.join(' · ');
+  const line = b.capped ? `${partsStr} · ${ms('capb_max', b.max)}`
+    : next.length ? `${partsStr} · ${ms('capb_next')}: ${next.join(' / ')}` : partsStr;
+  return { parts: partsStr, next, line };
 }

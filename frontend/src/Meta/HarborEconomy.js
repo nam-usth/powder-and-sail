@@ -83,3 +83,40 @@ export function applyOffline(profile, now = Date.now()) {
   }
   return report;
 }
+
+/**
+ * The harbor's cost multiplier set: {default, <buildingId>: mult} from
+ * HARBOR_ECONOMY.buildCostMult (+ buildCostMultById overrides). HarborSession
+ * stores it as st.harborBuildCostMult.
+ */
+export function harborCostMult(econ = HARBOR_ECONOMY) {
+  return { default: econ.buildCostMult ?? 1, ...(econ.buildCostMultById || {}) };
+}
+
+/** Multiplier for one building: number → itself; set → its id entry, else default. */
+export function costMultFor(def, mult) {
+  if (mult && typeof mult === 'object') return mult[def?.id] ?? mult.default ?? 1;
+  return mult ?? 1;
+}
+
+/**
+ * Harbor price of a building action (design/balance/report.md §Harbor costs).
+ * Placement (level 0) pays `def.cost`; an upgrade from level L pays
+ * `def.cost × L` (the Open War rule) — both × `mult`, rounded up to 5.
+ * With mult = 1 the result equals the authored cost exactly (Open War).
+ * BuildSystem charges this in harbor mode (st.harborBuildCostMult); UI panels
+ * should display the same numbers.
+ * @param {{cost?:{wood?:number,gold?:number}}} def building/defense definition
+ * @param {number} [level=0] 0 = place; L ≥ 1 = upgrade L → L+1
+ * @param {number|object} [mult=harborCostMult()] a number, or a {default, id: mult} set
+ * @returns {{wood:number, gold:number}}
+ */
+export function harborBuildCost(def, level = 0, mult = harborCostMult()) {
+  const m = costMultFor(def, mult);
+  const k = Math.max(1, level || 0) * m;
+  const r = v => {
+    const x = (v || 0) * k;
+    return m === 1 || !x ? Math.round(x) : Math.ceil(x / 5 - 1e-9) * 5;
+  };
+  return { wood: r(def?.cost?.wood), gold: r(def?.cost?.gold) };
+}
