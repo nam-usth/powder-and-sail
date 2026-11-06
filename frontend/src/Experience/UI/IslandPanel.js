@@ -315,8 +315,18 @@ export class IslandPanel {
         stats=`<span>⚔ ${ds.damage} dmg</span><span>◎ ${ds.range}u</span><span>◉ ${ds.accuracy}%</span>`;
       } else if(def.id==='lumber_mill'||def.id==='gold_mine'){
         const res=def.id==='lumber_mill'?'🪵':'🪙';
-        const base=(def.productionByLevel&&def.productionByLevel[inst.level-1])||0;
-        stats=`<span>${res} ${base}/s base</span><span style="color:var(--accent-teal)">+adjacency & trait applied</span>`;
+        // Real rate = table × adjacency × island trait × harbor clock — the same
+        // math the top bar and EconomySystem use, so the numbers always agree.
+        const k=st.econRateMult??1;
+        const mult=(this._build.getAdjacencyMult?.(inst,isl)??1)*(this._build._traitMult?.(isl,def.id)??1);
+        const tbl=def.productionByLevel||[];
+        const producing=inst.state==='active';
+        const cur=producing?(tbl[inst.level-1]||0)*mult*k:0;
+        const nxt=inst.level<10?(tbl[inst.level]||0)*mult*k:null;
+        const f=v=>(+v.toFixed(2)).toString();
+        stats=`<span>${res} +${f(cur)}/s${producing?'':' (idle)'}</span>`+
+          (nxt!=null?`<span style="color:var(--accent-teal)">Lv${inst.level+1}: +${f(nxt)}/s</span>`:'')+
+          (Math.abs(mult-1)>0.001?`<span style="opacity:.75">×${mult.toFixed(2)} adjacency/trait</span>`:'');
       } else if(def.id==='warehouse'){
         stats=`<span>🏛 +cap & loot protection</span>`;
       } else {

@@ -3,6 +3,8 @@
 // Trade routes:   each player-owned island beyond the first generates
 //                 passive gold per second (scales with island count).
 
+import { WOOD_CAP, GOLD_CAP } from '../../../data/constants.js';
+
 const PRICE_TICK    = 15;    // seconds between price drift
 const ROUTE_TICK    = 3;     // seconds between passive income ticks
 const WOOD_BASE     = 8;     // gold per 10 wood sold
@@ -28,27 +30,51 @@ export class TradeSystem {
 
   // ── Public API ───────────────────────────────────────────────
 
-  // Sell `amt` wood → returns gold gained (deducts wood from state)
+  /** Current storage caps (base + warehouses), same rule as EconomySystem. */
+  _caps() {
+    const bonus = this._state._warehouseCapBonus || 0;
+    return { wood: WOOD_CAP + bonus, gold: GOLD_CAP + bonus };
+  }
+
+  /**
+   * Sell up to `amt` wood → returns gold gained. Never sells more wood than the
+   * gold storage can take, and never lowers a stock that is above its cap.
+   * `this.lastReason`: 'ok' | 'no_wood' | 'gold_full'.
+   */
   sellWood(amt) {
     const st = this._state;
-    const have = Math.min(amt, st.resWood || 0);
-    if (have <= 0) return 0;
-    const gold = Math.round(have * (WOOD_BASE / 10) * this.woodPrice);
+    const rate = (WOOD_BASE / 10) * this.woodPrice;            // gold per wood
+    const space = Math.max(0, this._caps().gold - (st.resGold || 0));
+    let have = Math.min(amt, Math.floor(st.resWood || 0));
+    if (have <= 0) { this.lastReason = 'no_wood'; return 0; }
+    if (space < 1) { this.lastReason = 'gold_full'; return 0; }
+    have = Math.min(have, Math.floor(space / rate));
+    if (have <= 0) { this.lastReason = 'gold_full'; return 0; }
+    const gold = Math.min(Math.round(have * rate), Math.floor(space));
     st.resWood -= have;
-    st.resGold  = Math.min((st.resGold || 0) + gold, st.GOLD_CAP || 600);
+    st.resGold = (st.resGold || 0) + gold;
+    this.lastReason = 'ok'; this.lastAmount = have;
     this._bus.emit('trade:sold', { type: 'wood', amt: have, gold });
     return gold;
   }
 
-  // Buy `amt` wood for gold → returns wood gained (deducts gold from state)
+  /**
+   * Buy up to `amt` wood for gold → returns wood gained. Buys only what the
+   * wood storage can take. `this.lastReason`: 'ok' | 'no_gold' | 'wood_full'.
+   */
   buyWood(amt) {
     const st = this._state;
-    const cost = Math.round(amt * (1 / (GOLD_BASE / 10)) / this.goldPrice);
-    if ((st.resGold || 0) < cost) return 0;
+    const goldPerWood = (1 / (GOLD_BASE / 10)) / this.goldPrice;
+    const space = Math.max(0, Math.floor(this._caps().wood - (st.resWood || 0)));
+    if (space < 1) { this.lastReason = 'wood_full'; return 0; }
+    const want = Math.min(amt, space, Math.floor((st.resGold || 0) / goldPerWood));
+    if (want <= 0) { this.lastReason = 'no_gold'; return 0; }
+    const cost = Math.max(1, Math.round(want * goldPerWood));
     st.resGold -= cost;
-    st.resWood  = Math.min((st.resWood || 0) + amt, st.WOOD_CAP || 800);
-    this._bus.emit('trade:bought', { type: 'wood', amt, cost });
-    return amt;
+    st.resWood = (st.resWood || 0) + want;
+    this.lastReason = 'ok'; this.lastAmount = want;
+    this._bus.emit('trade:bought', { type: 'wood', amt: want, cost });
+    return want;
   }
 
   // ── Frame update ─────────────────────────────────────────────

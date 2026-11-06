@@ -306,16 +306,27 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('market-close')?.addEventListener('click', () => {
     const p = document.getElementById('market-panel'); if (p) p.style.display = 'none';
   });
+  // Market messages explain WHY a trade failed (storage full vs not enough stock)
+  const tradeMsg = (tr, ok) => {
+    const vi = document.body.classList.contains('lang-vi');
+    const R = {
+      no_wood:   vi ? 'Không đủ gỗ để bán' : 'Not enough wood',
+      no_gold:   vi ? 'Không đủ vàng' : 'Not enough gold',
+      gold_full: vi ? 'Kho vàng đã đầy — xây/nâng cấp Nhà kho' : 'Gold storage is full — build or upgrade a Warehouse',
+      wood_full: vi ? 'Kho gỗ đã đầy — xây/nâng cấp Nhà kho' : 'Wood storage is full — build or upgrade a Warehouse',
+    };
+    return ok || R[tr.lastReason] || '…';
+  };
   document.getElementById('sell-wood-btn')?.addEventListener('click', () => {
     const g = window._game; if (!g) return;
     const gold = g._trade.sellWood(50);
-    g._showMsg(gold > 0 ? `Sold 50 🪵 → +${gold} 🪙` : 'Not enough wood', 1400);
+    g._showMsg(tradeMsg(g._trade, gold > 0 && `−${g._trade.lastAmount} 🪵 → +${gold} 🪙`), 1600);
     window._refreshMarket?.();
   });
   document.getElementById('buy-wood-btn')?.addEventListener('click', () => {
     const g = window._game; if (!g) return;
     const got = g._trade.buyWood(50);
-    g._showMsg(got > 0 ? `Bought 50 🪵` : 'Not enough gold', 1400);
+    g._showMsg(tradeMsg(g._trade, got > 0 && `+${got} 🪵`), 1600);
     window._refreshMarket?.();
   });
 
