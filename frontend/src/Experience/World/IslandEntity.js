@@ -1030,7 +1030,7 @@ export class IslandEntity {
         rocks.push([x, h - sc * 0.3, z, sc]); taken.push([x, z, sc * 0.9]);
       }
     }
-    return { palms: palms.slice(0, 140), trees: trees.slice(0, 320), bamboo: [], shrubs: shrubs.slice(0, 130), rocks: rocks.slice(0, 60) };
+    return { palms: palms.slice(0, 120), trees: trees.slice(0, 260), bamboo: [], shrubs: shrubs.slice(0, 130), rocks: rocks.slice(0, 60) };
   }
 
   _instanced(geo, mat, list, kind) {
