@@ -33,21 +33,27 @@
 // objective with an enemy behaviour so no two play alike.
 // Coordinates: world units, map is ±150. Player spawns west.
 
-/** Sea regions in campaign order (= data/factions.js SEAS). minRenown gates entry. */
+/** Sea regions in campaign order (= data/factions.js SEAS). minRenown gates entry.
+ *  chart: the region's zone box on the World Chart {x,y,w,h} (0..1 of the map). */
 export const REGIONS = [
   { id: 'caribbean',  nm: 'The Caribbean',       vi: 'Biển Caribe',          minRenown: 0,   col: '#5cc8a8',
+    chart: { x: .017, y: .03, w: .193, h: .94 },
     factions: ['buccaneers', 'spain', 'france'],
     desc: 'Warm shoals and coral cays where buccaneers, Spanish guarda-costas and French corsairs prey on free traders.' },
   { id: 'atlantic',   nm: 'The Atlantic Lanes',  vi: 'Hải lộ Đại Tây Dương', minRenown: 30,  col: '#6f9fd8',
+    chart: { x: .210, y: .03, w: .193, h: .94 },
     factions: ['england', 'france'],
     desc: 'The open trade lanes, policed by the armed Indiamen and coastal batteries of the Honourable Saltwind Company.' },
   { id: 'indian',     nm: 'The Indian Ocean',    vi: 'Ấn Độ Dương',          minRenown: 80,  col: '#e8b840',
+    chart: { x: .403, y: .03, w: .194, h: .94 },
     factions: ['portugal', 'malabar'],
     desc: 'Monsoon seas of the pepper trade: Portuguese carracks out of Goa and the swift ghurabs of the Malabar corsairs.' },
   { id: 'spice',      nm: 'The Spice Straits',   vi: 'Eo biển Hương liệu',   minRenown: 160, col: '#c97c3a',
+    chart: { x: .597, y: .03, w: .193, h: .94 },
     factions: ['netherlands', 'malay'],
     desc: 'Clove and nutmeg islands held by the Spice Company castles, and the lanong war-praus of the Orang Laut.' },
   { id: 'southchina', nm: 'The South China Sea', vi: 'Biển Đông',            minRenown: 260, col: '#cc5566',
+    chart: { x: .790, y: .03, w: .193, h: .94 },
     factions: ['chinese', 'vietnamese', 'portugal'],
     desc: 'Typhoon waters ruled by the war junks of the Red Banner Fleet and the raiders of the Gulf of Tonkin.' },
 ];
@@ -80,7 +86,7 @@ const FIT = {
 export const MISSIONS = [
   // ── The Caribbean — buccaneers, Spain, France (tiers I–II) ─────────
   {
-    id: 'reef_1', region: 'caribbean', faction: 'buccaneers', chart: { x: .133, y: .374 },
+    id: 'reef_1', region: 'caribbean', faction: 'buccaneers', chart: { x: .131, y: .760 },
     nm: "Smugglers' Cove",
     desc: 'Two buccaneer sloops run contraband through our waters. Send them to the bottom.',
     objective: { type: 'sink_all' },
@@ -93,7 +99,7 @@ export const MISSIONS = [
     reward: { wood: 120, gold: 80 }, firstClear: { wood: 100, gold: 80 }, renown: 10, requires: [],
   },
   {
-    id: 'reef_2', region: 'caribbean', faction: 'spain', chart: { x: .070, y: .337 },
+    id: 'reef_2', region: 'caribbean', faction: 'spain', chart: { x: .069, y: .310 },
     nm: 'The San Telmo Battery',
     desc: 'A Spanish battery on a coral cay fires on every free trader that passes. Silence its guns.',
     objective: { type: 'destroy_forts' },
@@ -109,7 +115,7 @@ export const MISSIONS = [
     reward: { wood: 160, gold: 120 }, firstClear: { wood: 140, gold: 100 }, renown: 14, requires: ['reef_1'],
   },
   {
-    id: 'reef_3', region: 'caribbean', faction: 'france', chart: { x: .198, y: .448 },
+    id: 'reef_3', region: 'caribbean', faction: 'france', chart: { x: .167, y: .500 },
     nm: 'Hold the Windward Channel',
     desc: 'Corsairs of Saint-Domingue come at us in waves. Keep a ship afloat until the tide turns.',
     ai: { byHull: { schooner: { tactic: 'kite' } } },   // La Licorne skirmishes with her falconets
@@ -129,7 +135,7 @@ export const MISSIONS = [
 
   // ── The Atlantic Lanes — the Saltwind Company, France (tiers II–III) ──
   {
-    id: 'straits_1', region: 'atlantic', faction: 'england', chart: { x: .265, y: .332 },
+    id: 'straits_1', region: 'atlantic', faction: 'england', chart: { x: .356, y: .280 },
     nm: 'The Saltwind Convoy',
     desc: 'A Saltwind Company merchantman carries powder and shot to our rivals. She will run for the northern lanes the moment she sees us — sink her before she slips away. Her escorts are fair game.',
     objective: { type: 'sink_target' },
@@ -145,7 +151,7 @@ export const MISSIONS = [
     reward: { wood: 240, gold: 180 }, firstClear: { wood: 200, gold: 160 }, renown: 18, requires: ['reef_2'],
   },
   {
-    id: 'straits_2', region: 'atlantic', faction: 'france', chart: { x: .388, y: .117 },
+    id: 'straits_2', region: 'atlantic', faction: 'france', chart: { x: .278, y: .580 },
     nm: 'Seize Gullhaven',
     desc: 'Saint-Malo corsairs have taken Gullhaven and its fine anchorage. Knock out their battery, then raise your flag over the island.',
     objective: { type: 'capture', islands: ['gullhaven'] },
@@ -162,7 +168,7 @@ export const MISSIONS = [
     reward: { wood: 260, gold: 200 }, firstClear: { wood: 220, gold: 180 }, renown: 18, requires: ['reef_3'],
   },
   {
-    id: 'straits_3', region: 'atlantic', faction: 'england', chart: { x: .345, y: .468 },
+    id: 'straits_3', region: 'atlantic', faction: 'england', chart: { x: .344, y: .800 },
     nm: 'The Twin Batteries',
     desc: 'Two Company batteries guard the Saltwind narrows, with a frigate on patrol between them. Bring both down.',
     objective: { type: 'destroy_forts' },
@@ -181,7 +187,7 @@ export const MISSIONS = [
 
   // ── The Indian Ocean — Estado da Índia, Malabar corsairs (tier III) ──
   {
-    id: 'indian_1', region: 'indian', faction: 'malabar', chart: { x: .711, y: .498 },
+    id: 'indian_1', region: 'indian', faction: 'malabar', chart: { x: .444, y: .850 },
     nm: 'Monsoon Raiders',
     desc: 'The monsoon has turned and the Malabar ghurabs ride it in. Hold your anchorage until the squall passes.',
     objective: {
@@ -199,7 +205,7 @@ export const MISSIONS = [
     reward: { wood: 360, gold: 280 }, firstClear: { wood: 300, gold: 240 }, renown: 26, requires: ['straits_3'],
   },
   {
-    id: 'indian_2', region: 'indian', faction: 'portugal', chart: { x: .679, y: .388 },
+    id: 'indian_2', region: 'indian', faction: 'portugal', chart: { x: .503, y: .600 },
     nm: 'The Carracks of Goa',
     desc: 'Three carracks of the Estado da Índia sail from Goa under escort. Break the squadron — a battered ship will run for the Goa roads, and takes her cargo with her.',
     objective: { type: 'sink_all' },
@@ -217,7 +223,7 @@ export const MISSIONS = [
     reward: { wood: 400, gold: 320 }, firstClear: { wood: 340, gold: 280 }, renown: 28, requires: ['indian_1'],
   },
   {
-    id: 'indian_3', region: 'indian', faction: 'portugal', chart: { x: .734, y: .564 },
+    id: 'indian_3', region: 'indian', faction: 'portugal', chart: { x: .461, y: .350 },
     nm: 'The Pepper Fort',
     desc: 'The Portuguese pepper fort at Kannur taxes every cargo on the coast. Batter down its walls and raise your flag over it.',
     objective: { type: 'capture', islands: ['pepper_fort'] },
@@ -239,7 +245,7 @@ export const MISSIONS = [
 
   // ── The Spice Straits — the Spice Company, Orang Laut (tier IV) ─────
   {
-    id: 'spice_1', region: 'spice', faction: 'malay', chart: { x: .839, y: .586 },
+    id: 'spice_1', region: 'spice', faction: 'malay', chart: { x: .689, y: .270 },
     nm: 'Lanong Ambush',
     desc: 'Orang Laut lanongs lie in wait among the islets of Singapura. Keep a ship afloat until the tide carries you clear.',
     objective: {
@@ -256,7 +262,7 @@ export const MISSIONS = [
     reward: { wood: 480, gold: 380 }, firstClear: { wood: 400, gold: 340 }, renown: 32, requires: ['indian_3'],
   },
   {
-    id: 'spice_2', region: 'spice', faction: 'netherlands', chart: { x: .869, y: .671 },
+    id: 'spice_2', region: 'spice', faction: 'netherlands', chart: { x: .722, y: .540 },
     nm: 'The Homeward Fleet',
     desc: "The Gouden Leeuw carries a year of nutmeg home, and she will crowd on sail the moment she sights you. Her heavy frigates will hang off at long range and pound you. Sink the treasure galleon before she reaches the open sea.",
     objective: { type: 'sink_target' },
@@ -273,7 +279,7 @@ export const MISSIONS = [
     reward: { wood: 540, gold: 420 }, firstClear: { wood: 460, gold: 380 }, renown: 36, requires: ['spice_1'],
   },
   {
-    id: 'spice_3', region: 'spice', faction: 'netherlands', chart: { x: .974, y: .670 },
+    id: 'spice_3', region: 'spice', faction: 'netherlands', chart: { x: .686, y: .800 },
     nm: 'Kasteel Amboina',
     desc: 'The Company castle at Amboina chokes the clove trade with two bastions. Reduce them both.',
     objective: { type: 'destroy_forts' },
@@ -296,7 +302,7 @@ export const MISSIONS = [
 
   // ── The South China Sea — Red Banner Fleet, Tonkin raiders (tier V) ──
   {
-    id: 'storm_1', region: 'southchina', faction: 'vietnamese', chart: { x: .876, y: .387 },
+    id: 'storm_1', region: 'southchina', faction: 'vietnamese', chart: { x: .839, y: .850 },
     nm: 'Typhoon Season',
     desc: 'A typhoon drives you onto the Tonkin raiders’ coast. Keep a ship afloat until the storm blows itself out.',
     ai: { byHull: { ghe_bau: { tactic: 'kite' } } },    // chain-shot boats cripple your rigging from range
@@ -314,7 +320,7 @@ export const MISSIONS = [
     reward: { wood: 640, gold: 520 }, firstClear: { wood: 540, gold: 460 }, renown: 40, requires: ['spice_3'],
   },
   {
-    id: 'storm_2', region: 'southchina', faction: 'chinese', chart: { x: .917, y: .367 },
+    id: 'storm_2', region: 'southchina', faction: 'chinese', chart: { x: .928, y: .590 },
     nm: 'The Red Banner Fleet',
     desc: 'The Red Banner Fleet gathers off Amoy — war junks with painted eyes and a hundred guns. A typhoon is an hour behind it: sink the whole fleet before the storm breaks.',
     objective: { type: 'sink_all' },
@@ -335,7 +341,7 @@ export const MISSIONS = [
     reward: { wood: 700, gold: 580 }, firstClear: { wood: 600, gold: 500 }, renown: 45, requires: ['storm_1'],
   },
   {
-    id: 'storm_3', region: 'southchina', faction: 'chinese', chart: { x: .948, y: .329 },
+    id: 'storm_3', region: 'southchina', faction: 'chinese', chart: { x: .867, y: .300 },
     nm: 'Citadel of Storms',
     desc: "The Red Banner's island citadel commands the South China Sea. Its walls, its war junks and its admiral's flagship must fall.",
     objective: { type: 'destroy_forts' },
@@ -363,7 +369,7 @@ export const MISSIONS = [
 // enemy strength actually met, so a small fleet meets (and earns) less —
 // a wiped player can always win a patrol with what was salvaged.
 export const PATROL = {
-  id: 'patrol', chart: { x: .147, y: .440 }, nm: 'Pirate Patrol',
+  id: 'patrol', chart: { x: .075, y: .600 }, nm: 'Pirate Patrol',
   desc: 'Sweep the nearby waters for raiders. Repeatable; the enemy is sized to the fleet you bring.',
   /** Enemy hull pools by sea (campaign order), strongest first. */
   pools: {
@@ -401,7 +407,7 @@ export const PATROL = {
 export const FINAL_MISSION = 'storm_3';
 
 /** Open War = the classic full match (mode=skirmish). */
-export const OPEN_WAR = { id: 'open_war', chart: { x: .363, y: .792 }, nm: 'Open War' };
+export const OPEN_WAR = { id: 'open_war', chart: { x: .239, y: .890 }, nm: 'Open War' };
 
 /** The player's home port on the World Chart (Port Royal). */
-export const HOME = { chart: { x: .105, y: .407 } };
+export const HOME = { chart: { x: .050, y: .865 } };
