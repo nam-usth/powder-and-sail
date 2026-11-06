@@ -19,7 +19,8 @@ import * as THREE from 'three';
 // GFX: follows Render/GfxQuality (gfx.level) live; setIslandQuality('high'|'low')
 // overrides. HIGH adds ground detail shading, palm sway, stone-shaded boulders,
 // shrubs, contact shadows, pier/fort/harbour props; LOW halves vegetation.
-import { generateShape, mirrorShape, GRID, makePrng, HARBOR, harborWaterSDF, harborCoastR, harborLandSDF, harborMainSDF, sdfSmax } from '../../data/islandShapes.js';
+import { generateShape, mirrorShape, GRID, makePrng, HARBOR, harborWaterSDF, harborLandSDF, harborMainSDF,
+         harborReliefMask, harborPenAxis } from '../../data/islandShapes.js';
 import { BUILD_CELL_WORLD, BUILD_DECK_Y } from '../../data/constants.js';
 import { ModelKit, PALETTE as P, kindMaterial, teamMaterial, chiselledRock,
          contactShadowTexture, setBuildingQuality, updateModelLighting, makeBuildingMesh } from './BuildingModels.js';
@@ -69,6 +70,17 @@ const C = {
   cliff: new THREE.Color(0x8E8A82), cliffDk: new THREE.Color(0x67635D),
   earth: new THREE.Color(0x8C7152), rockBank: new THREE.Color(0x8F877A), bed: new THREE.Color(0x4F8A87),
 };
+/** Home island (v5): the painted-map palette — olive/moss lowland, warm yellow-green
+ *  light on slopes, blue-green jungle in the valleys, sage on the hills, warm
+ *  beige sand with pale edges, warm grey-brown rock. */
+const HOME = {
+  grassDk: new THREE.Color(0x5E6B2E), grass: new THREE.Color(0x73823B), grassLt: new THREE.Color(0x9DA650),
+  sage: new THREE.Color(0x8E9A6C), jungle: new THREE.Color(0x3A6242), jungleDk: new THREE.Color(0x2A4A35),
+  rock: new THREE.Color(0x978A79), rockDk: new THREE.Color(0x6E6255), rockLt: new THREE.Color(0xB8AB95),
+  sand: new THREE.Color(0xDCC49B), sandDk: new THREE.Color(0xC9AF83), sandPale: new THREE.Color(0xEEE2C2),
+  wet: new THREE.Color(0xBCA47C), bed: new THREE.Color(0x4F8A87), earth: new THREE.Color(0x8A6F4E),
+};
+const SUN = new THREE.Vector3(0.45, 0.75, 0.48).normalize();
 const ASIAN = new Set(['malay', 'chinese', 'vietnamese', 'malabar']);
 /** Seas whose islands carry the Asian biome (broadleaf, bamboo, darker basalt). */
 const ASIAN_SEAS = new Set(['indian', 'spice', 'southchina']);
@@ -210,20 +222,20 @@ function frondGeo(droop) {
   _frondCache.set(key, g);
   return g;
 }
-function palmGeometry() {
-  return cached('geo:palm', () => {
+function palmGeometry(home = false) {
+  return cached('geo:palm' + (home ? ':home' : ''), () => {
     const k = new ModelKit();
     let x = 0, y = 0;
     const segs = 6, H = 3.2;
     for (let i = 0; i < segs; i++) {
       const t1 = (i + 1) / segs, nx = 0.62 * t1 * t1, ny = H * t1;
       const r0 = 0.15 - 0.06 * (i / segs), r1 = 0.15 - 0.06 * t1;
-      k.tube('matte', x, y, 0, nx, ny, 0, r0, r1 * 0.92, 6, i % 2 ? 0x7A5F43 : 0x8C6E4E, { open: true, jit: 0.06, ao: false });
+      k.tube('matte', x, y, 0, nx, ny, 0, r0, r1 * 0.92, 6, home ? (i % 2 ? 0x8A7458 : 0x9C8564) : (i % 2 ? 0x7A5F43 : 0x8C6E4E), { open: true, jit: 0.06, ao: false });
       x = nx; y = ny;
     }
     for (let f = 0; f < 8; f++) {
       const a = f / 8 * TAU + (f % 2) * 0.22, len = 1.55 + (f % 3) * 0.18;
-      k.geo('matte', frondGeo(0.75 + (f % 2) * 0.25), x, y + 0.05, 0, f % 2 ? 0x3F8B3A : 0x56A445,
+      k.geo('matte', frondGeo(0.75 + (f % 2) * 0.25), x, y + 0.05, 0, home ? (f % 2 ? 0x7C9C45 : 0x9AB55C) : (f % 2 ? 0x3F8B3A : 0x56A445),
         { ry: a, rz: 0.12 + (f % 3) * 0.08, sx: len, sy: len, sz: len, ao: false, jit: 0.1 });
     }
     for (let c = 0; c < 3; c++) {
@@ -233,12 +245,14 @@ function palmGeometry() {
     return k.bake(true).matte;
   });
 }
-function broadleafGeometry() {
-  return cached('geo:broadleaf', () => {
+function broadleafGeometry(home = false) {
+  return cached('geo:broadleaf' + (home ? ':home' : ''), () => {
     const k = new ModelKit();
     k.tube('matte', 0, 0, 0, 0.1, 1.5, 0.05, 0.16, 0.1, 6, 0x6B4E35, { ao: false });
     k.tube('matte', 0.05, 1.0, 0.02, -0.45, 1.75, 0.1, 0.08, 0.05, 5, 0x6B4E35, { ao: false });
-    const blobs = [[0.1, 2.05, 0.05, 0.95, 0x3D7A34], [-0.55, 1.9, 0.2, 0.7, 0x4A8A3C], [0.55, 1.75, -0.25, 0.68, 0x447F37], [0, 2.55, -0.1, 0.62, 0x58993F]];
+    const blobs = home   // jungle canopy: blue-green underside → moss → olive crown
+      ? [[0.1, 2.05, 0.05, 0.95, 0x3E6A40], [-0.55, 1.9, 0.2, 0.7, 0x35603F], [0.55, 1.75, -0.25, 0.68, 0x4A7443], [0, 2.55, -0.1, 0.62, 0x6E8645]]
+      : [[0.1, 2.05, 0.05, 0.95, 0x3D7A34], [-0.55, 1.9, 0.2, 0.7, 0x4A8A3C], [0.55, 1.75, -0.25, 0.68, 0x447F37], [0, 2.55, -0.1, 0.62, 0x58993F]];
     blobs.forEach(([bx, by, bz, r, c], i) => k.rock('matte', r, bx, by, bz, c, 41 + i, { sy: 0.78, ao: false, jit: 0.12 }));
     return k.bake(true).matte;
   });
@@ -257,12 +271,12 @@ function bambooGeometry() {
     return k.bake(true).matte;
   });
 }
-function shrubGeometry() {
-  return cached('geo:shrub', () => {
+function shrubGeometry(home = false) {
+  return cached('geo:shrub' + (home ? ':home' : ''), () => {
     const k = new ModelKit();
-    k.rock('matte', 0.42, 0, 0.22, 0, 0x4F8A3C, 51, { sy: 0.7, ao: false, jit: 0.14 });
-    k.rock('matte', 0.3, 0.35, 0.16, 0.12, 0x5F9A45, 52, { sy: 0.7, ao: false, jit: 0.14 });
-    k.rock('matte', 0.26, -0.3, 0.12, -0.15, 0x467F35, 53, { sy: 0.7, ao: false, jit: 0.14 });
+    k.rock('matte', 0.42, 0, 0.22, 0, home ? 0x6A7A3E : 0x4F8A3C, 51, { sy: 0.7, ao: false, jit: 0.14 });
+    k.rock('matte', 0.3, 0.35, 0.16, 0.12, home ? 0x8E9A6C : 0x5F9A45, 52, { sy: 0.7, ao: false, jit: 0.14 });
+    k.rock('matte', 0.26, -0.3, 0.12, -0.15, home ? 0x55683A : 0x467F35, 53, { sy: 0.7, ao: false, jit: 0.14 });
     return k.bake(true).matte;
   });
 }
@@ -674,18 +688,46 @@ export class IslandEntity {
     d += (fbm(x * 0.2 + sx, z * 0.2 - sx) - 0.5) * 1.4 * smooth01((d + 0.8) / 1.4);
     return smax(d, Math.hypot(x, z) - (this.r - 0.2), 1.2);
   }
-  /** HARBOR mainland only (no islets): noisy coast smooth-cut by the quay waterfront. */
+  /** HARBOR mainland only (no islets): the analytic coast plus a little noise (straight at the quay). */
   _mainSdf(x, z) {
-    const dOut = Math.hypot(x, z) - harborCoastR(x, z) + (fbm(x * 0.17 + 4.0, z * 0.17) - 0.5) * 1.1;
-    return sdfSmax(dOut, -harborWaterSDF(x, z), HARBOR.cornerK);
+    const quay = harborWaterSDF(x, z) < 3 ? 0.15 : 1;
+    return harborMainSDF(x, z) + (fbm(x * 0.17 + 4.0, z * 0.17) - 0.5) * 1.1 * quay;
+  }
+  /** 0..1: inside the town peninsula (flat, narrow beach, no relief). */
+  _penW(x, z) { return 1 - smooth01((harborPenAxis(x, z) - HARBOR.pen[4] + 0.5) / 5); }
+  /**
+   * Mountain relief above the base profile (HARBOR): a ridge of peaks with
+   * shoulders, ridged gullies, rolling jungle hills; zero on the lowland round
+   * the build grid, on the beaches and on the town peninsula.
+   */
+  _reliefAtD(x, z, d) {
+    const m = harborReliefMask(x, z) * smooth01((-d - 2.6) / 8) * (1 - this._penW(x, z));
+    if (m <= 0) return 0;
+    let h = 0;
+    for (let i = 0; i < HARBOR.peaks.length; i++) {
+      const [px, pz, ph, pr0] = HARBOR.peaks[i], th = Math.atan2(x - px, z - pz);
+      const pr = pr0 * (1 + 0.22 * Math.sin(3 * th + i * 1.7) + 0.12 * Math.sin(5 * th - i));   // spurs + gullies
+      const t = Math.hypot(x - px, z - pz) / pr;
+      if (t >= 2.3) continue;
+      const cone = t < 1 ? Math.pow(1 - t, 1.3) : 0, sh = 1 - t / 2.3;
+      h = smax(h, ph * (0.74 * cone + 0.3 * sh * sh), 2.2);
+    }
+    const n = fbm(x * 0.12 + 11, z * 0.12 - 4), rn = 1 - Math.abs(2 * n - 1);
+    h *= 0.78 + 0.44 * rn;
+    h += (fbm(x * 0.33, z * 0.33 + 9) - 0.5) * 1.1 * smooth01(h / 3);
+    h += 2.2 * smooth01(fbm(x * 0.07 - 3, z * 0.07 + 8) * 1.8 - 0.45);
+    return h * m;
+  }
+  /** HARBOR base profile: plateau → grassy bank → wide sand beach (bw wide) → shelf. */
+  _harborBase(d, bw) {
+    const bank = Math.min(1.7, bw * 0.3);
+    if (d <= -bw) return DECK;
+    if (d < -bw + bank) return DECK + (0.62 - DECK) * smooth01((d + bw) / bank);
+    if (d < 0) return 0.05 + 0.57 * Math.pow(-d / (bw - bank), 0.85);
+    if (d < 1.6) return 0.05 - 0.5 * d / 1.6;
+    return -0.45 - 2.6 * smooth01((d - 1.6) / 4.0);
   }
   _heightFromD(d) {
-    if (this.isHarbor) {                                   // grass plateau → rock cliff → stony shore
-      if (d <= -0.55) return DECK;
-      if (d < 0.3) return DECK + (0.3 - DECK) * smooth01((d + 0.55) / 0.85);
-      if (d < 2.4) return 0.3 - 0.75 * (d - 0.3) / 2.1;
-      return -0.45 - 2.6 * smooth01((d - 2.4) / 3.2);
-    }
     if (d <= -0.3) return DECK;
     if (d < 0.45) return DECK + (0.82 - DECK) * smooth01((d + 0.3) / 0.75);
     if (d < 2.7) return 0.82 - 1.25 * Math.pow((d - 0.45) / 2.25, 0.85);
@@ -694,16 +736,17 @@ export class IslandEntity {
   /** Terrain height (world y) at local x,z. */
   _heightAt(x, z) { return this._heightAtD(x, z, this._sdf(x, z)); }
   _heightAtD(x, z, d) {
-    let h = this._heightFromD(d);
-    if (!this.isHarbor) return h;
-    const q = HARBOR.quayZ, qh = this._quayHalf;
-    if (Math.abs(x) < qh + 0.4 && z > q - 0.05 && z < q + 6) h = Math.min(h, -1.3);      // quay: deep at the wall
-    if (Math.abs(x) < qh + 0.4 && z <= q - 0.05 && d < 0.6) h = DECK;                      // quay top stays level
-    const sq = Math.max(Math.abs(x), Math.abs(z)) - 19.8;                                 // outside the build grid
-    if (sq > 0 && z < 8 && d < -1.2) {
-      const hill = smooth01(sq / 4.5) * smooth01((-d - 1.2) / 3.5) * (0.55 + 0.9 * fbm(x * 0.09 + 2, z * 0.09 - 3));
-      h += 3.4 * hill;
-    }
+    if (!this.isHarbor) return this._heightFromD(d);
+    const islet = d < this._mainSdf(x, z) - 0.01;
+    const bw = islet ? 2.0 : HARBOR.beachW * (1 - 0.8 * this._penW(x, z));
+    let h = this._harborBase(d, bw);
+    if (islet) h += 1.1 * smooth01((-d - 2.0) / 1.5) * (0.6 + 0.8 * fbm(x * 0.5, z * 0.5));
+    else h += this._reliefAtD(x, z, d);
+    const qx = HARBOR.quayX, inZ = z > HARBOR.quayZ0 - 0.4 && z < HARBOR.quayZ1 + 0.4;
+    if (inZ && x < qx + 0.05 && x > qx - 6) h = Math.min(h, -1.3);                       // quay: deep at the wall
+    if (inZ && x >= qx + 0.05 && x < qx + 4.5 && d < 0.6) h = DECK;                       // quay top stays level
+    const [tx, tz, ty, tr] = HARBOR.terrace, dt = Math.hypot(x - tx, z - tz);
+    if (dt < tr + 3.2) h += (ty - h) * (1 - smooth01((dt - tr) / 3.2));                   // the huts' shelf
     return h;
   }
 
@@ -731,7 +774,7 @@ export class IslandEntity {
   deckDropAt(wx, wz) { return Math.max(0, DECK - this._heightAt(wx - this.x, wz - this.z)); }
 
   _buildTerrain() {
-    const E = this.isHarbor ? 45 : Math.ceil(Math.max(this.r + 6.5, 17)), STEP = 0.5;
+    const E = this.isHarbor ? 64 : Math.ceil(Math.max(this.r + 6.5, 17)), STEP = this.isHarbor ? 0.6 : 0.5;
     const N = Math.round(2 * E / STEP) + 1;
     const pos = new Float32Array(N * N * 3), col = new Float32Array(N * N * 3);
     const H = new Float32Array(N * N), Dd = new Float32Array(N * N);
@@ -756,6 +799,15 @@ export class IslandEntity {
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     geo.setIndex(idx);
     geo.computeVertexNormals();
+    if (this.isHarbor) {                    // LOW: every other vertex (¼ the triangles), same buffers
+      const lo = [];
+      for (let j = 0; j < N - 2; j += 2) for (let i = 0; i < N - 2; i += 2) {
+        const a = j * N + i, b = a + 2, c = a + 2 * N, d = c + 2;
+        if (H[a] < -2.6 && H[b] < -2.6 && H[c] < -2.6 && H[d] < -2.6) continue;
+        lo.push(a, c, d, a, d, b);
+      }
+      this._tIdx = { high: geo.index, low: new THREE.BufferAttribute(new Uint32Array(lo), 1) };
+    }
     geo.computeBoundingSphere();
     this._tH = H; this._tD = Dd;
     this._tGrid = { E, step: STEP, N };
@@ -767,6 +819,7 @@ export class IslandEntity {
   }
 
   _paintTerrain() {
+    if (this.isHarbor) { this._paintHome(); return; }
     const geo = this._terrain.geometry, pos = geo.attributes.position.array, col = geo.attributes.color.array;
     const nor = geo.attributes.normal.array, H = this._tH;
     const g = GROUND[this._own] || GROUND.neutral;
@@ -814,6 +867,71 @@ export class IslandEntity {
     geo.attributes.color.needsUpdate = true;
   }
 
+  /** HARBOR terrain paint (v5 painted-map palette). Relief + valley factor are cached per vertex. */
+  _paintHome() {
+    const geo = this._terrain.geometry, pos = geo.attributes.position.array, col = geo.attributes.color.array;
+    const nor = geo.attributes.normal.array, H = this._tH, Dd = this._tD;
+    if (!this._tR) {                                      // relief + concavity (valleys) per vertex
+      const N = H.length;
+      this._tR = new Float32Array(N); this._tV = new Float32Array(N);
+      for (let v = 0; v < N; v++) {
+        const x = pos[v * 3], z = pos[v * 3 + 2];
+        this._tR[v] = Dd[v] < -2.5 ? this._reliefAtD(x, z, Dd[v]) : 0;
+      }
+      const g = this._tGrid, R = this._tR, k = 6;
+      for (let j = 0; j < g.N; j++) for (let i = 0; i < g.N; i++) {
+        const v = j * g.N + i;
+        if (R[v] <= 0) continue;
+        const a = R[j * g.N + Math.max(0, i - k)] + R[j * g.N + Math.min(g.N - 1, i + k)]
+                + R[Math.max(0, j - k) * g.N + i] + R[Math.min(g.N - 1, j + k) * g.N + i];
+        this._tV[v] = a / 4 - R[v];                     // > 0 in a valley, < 0 on a crest
+      }
+    }
+    const R = this._tR, V = this._tV, c = new THREE.Color(), t = new THREE.Color();
+    for (let v = 0; v < H.length; v++) {
+      const x = pos[v * 3], z = pos[v * 3 + 2], h = H[v], slope = 1 - nor[v * 3 + 1], d = Dd[v];
+      const n = fbm(x * 0.13 + 3.1, z * 0.13 - 1.7), r = R[v];
+      if (h >= DECK - 0.02 || r > 0.05) {
+        c.copy(HOME.grassDk).lerp(HOME.grass, smooth01(n * 1.7)).lerp(HOME.grassLt, smooth01((n - 0.58) * 3.2) * 0.7);
+        c.lerp(HOME.earth, smooth01((fbm(x * 0.31 - 7, z * 0.31 + 2) - 0.68) * 6) * 0.3);
+        if (r > 0.15) {
+          const hill = smooth01(r / 1.6);
+          const sun = nor[v * 3] * SUN.x + nor[v * 3 + 1] * SUN.y + nor[v * 3 + 2] * SUN.z;
+          c.lerp(HOME.sage, smooth01((r - 3.5) / 3) * 0.55 * smooth01((-V[v] + 0.3) * 2));       // sage on the crests
+          c.lerp(HOME.grassLt, smooth01((sun - 0.8) * 5) * 0.55 * hill);                         // warm light on slopes
+          const jung = smooth01(V[v] * 1.3 + 0.15) * hill * (0.75 + 0.25 * n);
+          c.lerp(HOME.jungle, jung * 0.85).lerp(HOME.jungleDk, smooth01(V[v] - 0.6) * 0.6 * hill);   // jungle valleys
+          const rockW = Math.max(smooth01((slope - 0.36) * 4.5), smooth01((h - (8.2 + 2.6 * n)) / 1.4));
+          if (rockW > 0) {
+            const strata = 0.88 + 0.12 * Math.sin(h * 3.1 + n * 5);
+            t.copy(HOME.rock).lerp(HOME.rockDk, smooth01(n * 1.5 - 0.3)).lerp(HOME.rockLt, smooth01((sun - 0.85) * 6) * 0.6).multiplyScalar(strata);
+            c.lerp(t, rockW);
+          }
+        }
+        const pave = this._paveAt(x, z);
+        if (pave > 0) {
+          const flag = 0.92 + 0.08 * h2(Math.floor(x / 0.8), Math.floor(z / 0.8));
+          c.lerp(t.setHex(0xC9BCA2).multiplyScalar(flag), pave);
+        }
+        const street = townPathAt(this._town, x, z);
+        if (street > 0) c.lerp(t.setHex(0xB09A74).multiplyScalar(0.94 + 0.1 * n), street * 0.85);
+      } else if (h > 0.62) {                                                                   // grassy bank
+        const tb = (DECK - h) / (DECK - 0.62);
+        c.copy(HOME.grass).lerp(HOME.sandDk, smooth01(tb * 1.4 - 0.2));
+      } else if (h > 0.05) {                                                                   // sand
+        c.copy(HOME.sand).lerp(HOME.sandDk, smooth01(n * 1.4 - 0.4) * 0.5);
+        c.lerp(HOME.sandPale, smooth01((0.3 - h) / 0.2) * 0.75);
+        if (d < -2.5 && slope > 0.3) c.lerp(HOME.rock, smooth01((slope - 0.3) * 3) * 0.6);
+      } else if (h > -0.14) {
+        c.copy(HOME.wet).lerp(HOME.sandPale, smooth01((h + 0.14) / 0.19) * 0.5);
+      } else {
+        c.copy(HOME.wet).lerp(HOME.bed, smooth01((-0.14 - h) / 1.5));
+      }
+      col[v * 3] = c.r; col[v * 3 + 1] = c.g; col[v * 3 + 2] = c.b;
+    }
+    geo.attributes.color.needsUpdate = true;
+  }
+
   _inCell(x, z, pad) {
     for (const [cx, cz] of this._cells) if (Math.abs(x - cx) < HALF + pad && Math.abs(z - cz) < HALF + pad) return true;
     return false;
@@ -826,9 +944,9 @@ export class IslandEntity {
     const palms = [], trees = [], bamboo = [], shrubs = [], rocks = [];
     const taken = [];
     const free = (x, z, r) => taken.every(([tx, tz, tr]) => (x - tx) ** 2 + (z - tz) ** 2 > (r + tr) ** 2);
-    const E = this.isHarbor ? 40 : this.r + 4;
-    const forest = this.isHarbor;   // the home port's hills carry a broadleaf forest
-    for (let tries = 0; tries < (this.isHarbor ? 6000 : 1400); tries++) {
+    const E = this.r + 4;
+    const forest = false;
+    for (let tries = 0; tries < (this.isHarbor ? 0 : 1400); tries++) {
       const x = (rnd() * 2 - 1) * E, z = (rnd() * 2 - 1) * E;
       if (!this.isHarbor && Math.hypot(x, z) < 3.4 * this._fortScale) continue;   // fort
       if (this._noDecor.some(([nx, nz, nr]) => (x - nx) ** 2 + (z - nz) ** 2 < nr * nr)) continue;
@@ -848,18 +966,18 @@ export class IslandEntity {
       }
     }
     const cap = (arr, n) => arr.slice(0, n);
-    const perim = this.isHarbor ? 70 : Math.max(8, Math.round(this.r * 1.5));
-    this._decorSets = {
+    const perim = Math.max(8, Math.round(this.r * 1.5));
+    this._decorSets = this.isHarbor ? this._homeDecor(rnd) : {
       palms: cap(palms, asia ? Math.round(perim * 0.55) : perim),
       trees: cap(trees, Math.round(perim * (asia ? 0.6 : 0.45))), bamboo: cap(bamboo, Math.round(perim * 0.45)),
       shrubs: cap(shrubs, perim), rocks: cap(rocks, Math.round(perim * 0.9)),
     };
-    const S = this._decorSets;
-    this._palms  = this._instanced(palmGeometry(), foliageMaterial(true), S.palms, 'palm');
+    const S = this._decorSets, home = this.isHarbor;
+    this._palms  = this._instanced(palmGeometry(home), foliageMaterial(true), S.palms, 'palm');
     this._trees  = this._palms;                       // AT field name kept (instanced vegetation)
-    this._broad  = this._instanced(broadleafGeometry(), foliageMaterial(true), S.trees, 'tree');
+    this._broad  = this._instanced(broadleafGeometry(home), foliageMaterial(true), S.trees, 'tree');
     this._bamboo = this._instanced(bambooGeometry(), foliageMaterial(true), S.bamboo, 'bamboo');
-    this._shrubs = this._instanced(shrubGeometry(), foliageMaterial(true), S.shrubs, 'shrub');
+    this._shrubs = this._instanced(shrubGeometry(home), foliageMaterial(true), S.shrubs, 'shrub');
     this._rocks  = this._instanced(chiselledRock(3 + (this._seed % 5), 1, 14), rockMaterial(true), S.rocks, 'rock');
     // contact shadows under palms, trees and boulders (HIGH)
     const dec = [...S.palms.map(p => [p[0], p[1], p[2], 1.5 * p[3]]), ...S.trees.map(p => [p[0], p[1], p[2], 2.2 * p[3]]),
@@ -871,6 +989,48 @@ export class IslandEntity {
       dm.instanceMatrix.needsUpdate = true; dm.renderOrder = 1;
       this._decals = dm; this.grp.add(dm);
     }
+  }
+
+  /**
+   * HARBOR vegetation: jungle (broadleaf, tinted blue-green in the valleys,
+   * warm olive on the slopes) over the mountains below the rock line, palms
+   * along the beaches and the lowland edge, shrubs, boulders at the waterline.
+   * Lists are [x, y, z, scale, tint?]; LOW draws every other one (see _instanced).
+   */
+  _homeDecor(rnd) {
+    const palms = [], trees = [], shrubs = [], rocks = [], taken = [];
+    const free = (x, z, r) => taken.every(([tx, tz, tr]) => (x - tx) ** 2 + (z - tz) ** 2 > (r + tr) ** 2);
+    const VAL = new THREE.Color(0.74, 0.88, 0.95), SUNC = new THREE.Color(1.12, 1.08, 0.8), MID = new THREE.Color(1, 1, 1);
+    for (let tries = 0; tries < 26000; tries++) {
+      const x = (rnd() * 2 - 1) * 60, z = -56 + rnd() * 106;
+      if (this._noDecor.some(([nx, nz, nr]) => (x - nx) ** 2 + (z - nz) ** 2 < nr * nr)) continue;
+      const d = this._sdf(x, z);
+      if (d > 1.0) continue;
+      const h = this._heightAtD(x, z, d);
+      if (h < -0.6 || this._inCell(x, z, 0.3)) continue;
+      if (this._paveAt(x, z) > 0.2 || harborWaterSDF(x, z) < 2.2 || townPathAt(this._town, x, z) > 0.3) continue;
+      const r = d < -2.5 ? this._reliefAtD(x, z, d) : 0, roll = rnd();
+      if (r > 0.3) {                                                   // mountain jungle
+        const gx = this._heightAt(x + 0.7, z) - this._heightAt(x - 0.7, z), gz = this._heightAt(x, z + 0.7) - this._heightAt(x, z - 0.7);
+        const steep = Math.hypot(gx, gz) / 1.4, rockLine = 8.0 + 2.6 * fbm(x * 0.13 + 3.1, z * 0.13 - 1.7);
+        if (h > rockLine || steep > 1.25) continue;
+        const valley = this._reliefAtD(x + 3.6, z, d) + this._reliefAtD(x - 3.6, z, d) + this._reliefAtD(x, z + 3.6, d) + this._reliefAtD(x, z - 3.6, d);
+        const v = smooth01((valley / 4 - r) * 1.2 + 0.4);
+        if (roll < 0.8 && free(x, z, 0.85)) {
+          const tint = MID.clone().lerp(VAL, v).lerp(SUNC, (1 - v) * smooth01((r - 2) / 4) * 0.8);
+          trees.push([x, h, z, 0.8 + rnd() * 0.45, tint]); taken.push([x, z, 0.85]);
+        } else if (roll < 0.9 && r < 3.5 && free(x, z, 0.9)) { palms.push([x, h, z, 0.85 + rnd() * 0.35]); taken.push([x, z, 0.9]); }
+        else if (free(x, z, 0.5)) { shrubs.push([x, h, z, 0.8 + rnd() * 0.6]); taken.push([x, z, 0.5]); }
+      } else if (h > 0.3) {                                            // beach top, lowland edge, islets
+        const beach = h < DECK - 0.1;
+        if (roll < (beach ? 0.14 : 0.1) && free(x, z, 1.1)) { palms.push([x, h, z, 0.85 + rnd() * 0.4]); taken.push([x, z, 1.1]); }
+        else if (roll > 0.93 && free(x, z, 0.5)) { shrubs.push([x, h, z, 0.6 + rnd() * 0.5]); taken.push([x, z, 0.5]); }
+      } else if (h > -0.55 && h < 0.3 && roll < 0.05 && free(x, z, 0.8)) {   // boulders at the waterline
+        const sc = 0.35 + rnd() * rnd() * 1.2;
+        rocks.push([x, h - sc * 0.3, z, sc]); taken.push([x, z, sc * 0.9]);
+      }
+    }
+    return { palms: palms.slice(0, 120), trees: trees.slice(0, 260), bamboo: [], shrubs: shrubs.slice(0, 130), rocks: rocks.slice(0, 60) };
   }
 
   _instanced(geo, mat, list, kind) {
@@ -896,6 +1056,7 @@ export class IslandEntity {
       } else {
         e.set(0, rnd() * TAU, 0); sc.set(s, s * (0.85 + rnd() * 0.3), s);
       }
+      if (list[src][4]) im.setColorAt(i, list[src][4]);
       q.setFromEuler(e);
       m4.compose(p.set(x, y - (kind === 'rock' ? 0 : 0.05), z), q, sc);
       im.setMatrixAt(i, m4);
@@ -909,10 +1070,10 @@ export class IslandEntity {
     return im;
   }
 
-  // ── HARBOR: the home port wrapped round its bay ───────────────
+  // ── HARBOR: the home port — pirate island with a town peninsula ──
   _planHarbor() {
-    this._quayHalf = HARBOR.quayHalf;
-    this._pierXs = HARBOR.piers.slice();
+    this._quayX = HARBOR.quayX;
+    this._pierZs = HARBOR.piers.slice();
     this._pierLen = HARBOR.pierLen;
     // landmarks snap to solid ground near their wanted spot (the coast is irregular)
     const onLand = (x0, z0, need) => {
@@ -924,28 +1085,48 @@ export class IslandEntity {
       }
       return { x: best[0], z: best[1] };
     };
-    this._lightLocal = onLand(-24.0, 8.0, 2.4);       // west point by the waterfront
-    this._fortLocal  = onLand(23.5, 6.0, 3.2);        // east point commanding the roads
+    this._lightLocal = onLand(-31.5, 16.5, 2.2);     // south-west point over the beaches
+    this._fortLocal  = onLand(30.5, 41.5, 3.6);       // tip of the town peninsula, commanding the roads
     this._noDecor.push([this._fortLocal.x, this._fortLocal.z, 4.6], [this._lightLocal.x, this._lightLocal.z, 3.2]);
     HARBOR.islets.slice(0, 2).forEach(([x, z, r]) => this._noDecor.push([x, z, r + 0.6]));
-    // sea walls along the exposed north-west and north-east shores, set back from the coast
     this._wallArcs = [];
-    for (const [a0, a1] of [[-2.55, -1.55], [1.75, 2.65]]) {
-      const pts = [];
-      for (let a = a0; a <= a1 + 1e-6; a += 0.1) {
-        const sx = Math.sin(a), sz = Math.cos(a);
-        let R = 28; while (R > 8 && harborLandSDF(sx * R, sz * R) > -2.2) R -= 0.25;
-        pts.push([sx * R, sz * R, a]);
-      }
-      this._wallArcs.push({ side: Math.sign(a0), pts });
-      pts.forEach(([x, z]) => this._noDecor.push([x, z, 2.1]));
-    }
     this._planRim();
-    this._town = planHarborTown(this);              // decorative town off the build grid (World/HarborTown.js)
-    // berths: both sides of every finger pier, two ships deep, bows to the mouth
-    const q = HARBOR.quayZ;
-    for (const px of this._pierXs) for (const sd of [-1, 1]) for (const bz of [q + 3.8, q + 9.0])
-      this.berths.push({ x: this.x + px + sd * 2.0, z: this.z + bz, angle: 0 });
+    this._planBoardwalk();
+    this._town = planHarborTown(this);              // decorative town on the peninsula (World/HarborTown.js)
+    // berths: both sides of every pier, two ships deep, bows west to the bay mouth
+    const qx = this._quayX;
+    for (const pz of this._pierZs) for (const sd of [-1, 1]) for (const bx of [qx - 3.8, qx - 9.0])
+      this.berths.push({ x: this.x + bx, z: this.z + pz + sd * 2.0, angle: -Math.PI / 2 });
+  }
+
+  /**
+   * Zig-zag timber boardwalk/stair from the lowland up the ridge flank to a
+   * shelf with stilt huts and a lookout (v5, the reference's mountain stair).
+   */
+  _planBoardwalk() {
+    const [tx, tz, ty, tr] = HARBOR.terrace, z0 = HARBOR.lowland[2] + 0.3;
+    const corners = [[tx, z0], [tx - 4.2, z0 - 1.6], [tx + 3.6, z0 - 3.2], [tx - 4.0, z0 - 4.9], [tx + 2.6, tz + tr + 0.2], [tx + 0.6, tz + tr - 1.3]];
+    let prev = -Infinity;
+    const pts = corners.map(([x, z], i) => {
+      let y = Math.max(this._heightAt(x, z) + 0.25, prev + 0.4);
+      if (i === 0) y = DECK + 0.1;
+      if (i === corners.length - 1) y = ty + 0.1;
+      prev = y;
+      return { x, z, y };
+    });
+    for (let i = 1; i < pts.length - 1; i++)       // spread the climb evenly, never below the slope
+      pts[i].y = Math.max(this._heightAt(pts[i].x, pts[i].z) + 0.2, DECK + (ty - DECK) * (i / (pts.length - 1)));
+    const huts = [
+      { x: tx - 2.2, z: tz + 0.4, ry: 0.3, s: 1.0 }, { x: tx + 2.1, z: tz - 0.3, ry: -0.4, s: 0.9 },
+      { x: tx - 0.4, z: tz - 2.3, ry: 0.05, s: 1.05 },
+      { x: pts[2].x + 1.6, z: pts[2].z - 0.4, ry: -0.5, s: 0.8, stilt: true },   // a hut at a switchback
+    ];
+    const look = { x: tx + 2.4, z: tz - 3.0 };
+    look.y = this._heightAt(look.x, look.z);
+    this._board = { pts, huts, look };
+    for (let i = 0; i < pts.length - 1; i++) for (let t = 0; t <= 1; t += 0.2)
+      this._noDecor.push([pts[i].x + (pts[i + 1].x - pts[i].x) * t, pts[i].z + (pts[i + 1].z - pts[i].z) * t, 1.3]);
+    this._noDecor.push([tx, tz, tr + 0.8], [look.x, look.z, 1.6], [huts[3].x, huts[3].z, 1.6]);
   }
 
   /**
@@ -964,72 +1145,68 @@ export class IslandEntity {
       for (let i = 0; i < 5; i++) { const v = f(x, z), [gx, gz] = grad(x, z); x -= v * gx; z -= v * gz; }
       return [x, z];
     };
-    let R = 44; while (R > 4 && f(0, -R) > 0) R -= 0.2;
+    let R = 62; while (R > 4 && f(0, -R) > 0) R -= 0.2;
     let [x, z] = proj(0, -R);
     const out = [], a0 = Math.atan2(x, z);
     let swept = 0, prevA = a0;
-    for (let i = 0; i < 4000 && swept < TAU - step / 30; i++) {
+    for (let i = 0; i < 6000 && Math.abs(swept) < TAU - step / 60; i++) {
       const [nx, nz] = grad(x, z);
       out.push({ x, z, nx, nz });
       [x, z] = proj(x - nz * step, z + nx * step);
       const a = Math.atan2(x, z);
       let da = a - prevA; if (da > Math.PI) da -= TAU; if (da < -Math.PI) da += TAU;
-      swept += Math.abs(da); prevA = a;
+      swept += da; prevA = a;
     }
     return out;
   }
 
-  // AW rev 4 (user art pass): what rings the grass plateau. Rock masses at the
-  // cliff foot and on the corners, a pirate timber palisade along the cliff
-  // top, plank revetments on piles + a boardwalk on the flanks either side of
-  // the quay, stairs up, lanterns, and a beached wreck reused as a shed.
+  // v5: what rings the island. Rock skirts where the mountains meet the sea,
+  // boulder groups on the points, sea-carved arches on the beaches, a timber
+  // palisade + plank revetment and boardwalk round the town peninsula, stairs
+  // up from it, lanterns, and a beached wreck on the south-west beach.
   _planRim() {
-    const q = HARBOR.quayZ, qh = this._quayHalf;
+    const qx = this._quayX;
     const rnd = makePrng(7331);
     const lh = this._lightLocal, ft = this._fortLocal;
-    const inWall = (x, z) => { const a = Math.atan2(x, z); return (a > -2.62 && a < -1.48) || (a > 1.68 && a < 2.72); };
-    const inQuay = (x, z) => Math.abs(x) < qh + 1.3 && z > q - 3.5;
-    const flank = (x, z) => z > -3.5 && Math.abs(Math.atan2(x, z)) < 1.62 && !inQuay(x, z);
+    const inQuay = (x, z) => x < qx + 1.3 && x > qx - 4 && z > HARBOR.quayZ0 - 1.5 && z < HARBOR.quayZ1 + 1.5;
+    const onPen = (x, z) => harborPenAxis(x, z) < HARBOR.pen[4] + 2.5 && z > 4;
     const near = (x, z, p, r) => (x - p.x) ** 2 + (z - p.z) ** 2 < r * r;
-    const foot = this._traceCoast(0.25, 0.7), top = this._traceCoast(-0.75, 0.7);
-    // beached wreck on the east flank, bow up the beach
-    const beach = this._traceCoast(1.1, 0.5);
+    const foot = this._traceCoast(0.25, 0.7), top = this._traceCoast(-2.6, 0.7);
+    // beached wreck on the south-west beach, bow up the sand
+    const beach = this._traceCoast(-1.2, 0.5);
     let wb = beach[0];
-    for (const p of beach) if (p.x > 0 && Math.abs(Math.atan2(p.x, p.z) - 1.19) < Math.abs(Math.atan2(wb.x, wb.z) - 1.19)) wb = p;
-    this._wreck = { x: wb.x + wb.nx * 0.9, z: wb.z + wb.nz * 0.9, ry: Math.atan2(-wb.nx, -wb.nz) - 0.35 };
+    for (const p of beach) if (Math.hypot(p.x + 18, p.z - 15) < Math.hypot(wb.x + 18, wb.z - 15)) wb = p;
+    this._wreck = { x: wb.x, z: wb.z, ry: Math.atan2(-wb.nx, -wb.nz) + 0.9 };
     this._noDecor.push([this._wreck.x, this._wreck.z, 4.2]);
     const nearWreck = (x, z, r) => near(x, z, this._wreck, r);
+    // how mountainous the land just inside the coast is
+    const steepAt = (p) => this._reliefAtD(p.x - p.nx * 6, p.z - p.nz * 6, -6.2);
 
     const rocks = [], rocks2 = [];                       // [x, y, z, r, sy]  (primary = LOW too)
     const revet = [], walk = [], fence = [];
     foot.forEach((p, i) => {
       if (inQuay(p.x, p.z)) return;
-      if (flank(p.x, p.z) && !nearWreck(p.x, p.z, 3.4)) { revet.push(p); if (!nearWreck(p.x, p.z, 4.6)) walk.push(p); return; }
-      const r = (i % 2 ? 0.7 : 0.95) + rnd() * 0.6;      // continuous rock skirt (~0.7 spacing)
-      (i % 2 ? rocks2 : rocks).push([p.x + p.nx * (0.25 + (i % 2) * 0.35), 0.05 + r * 0.25, p.z + p.nz * (0.25 + (i % 2) * 0.35), r, 1.05 + rnd() * 0.5]);
-      if (i % 2 === 0 && rnd() < 0.6) {
-        const r2 = 0.5 + rnd() * 0.4;
-        rocks2.push([p.x - p.nx * 0.55 + p.nz * 0.4, DECK - 0.35, p.z - p.nz * 0.55 - p.nx * 0.4, r2, 0.9 + rnd() * 0.4]);
+      if (onPen(p.x, p.z)) {
+        if (!near(p.x, p.z, ft, 4.4)) { revet.push(p); walk.push(p); }
+        return;
       }
+      if (steepAt(p) < 1.2 && i % 9) return;             // beaches stay open (a stray boulder now and then)
+      const r = (i % 2 ? 0.7 : 0.95) + rnd() * 0.6;
+      (i % 2 ? rocks2 : rocks).push([p.x + p.nx * (0.25 + (i % 2) * 0.35), 0.05 + r * 0.25, p.z + p.nz * (0.25 + (i % 2) * 0.35), r, 1.05 + rnd() * 0.5]);
     });
     top.forEach(p => {
-      if (inQuay(p.x, p.z) || inWall(p.x, p.z)) return;
-      if (near(p.x, p.z, lh, 3.0) || near(p.x, p.z, ft, 4.2) || nearWreck(p.x, p.z, 3.0)) return;
+      if (!onPen(p.x, p.z) || inQuay(p.x, p.z) || p.x < qx + 1) return;
+      if (near(p.x, p.z, ft, 4.4)) return;
       fence.push(p);
     });
-    // big boulder groups where the quay cut meets the coast and on the outer points
+    // boulder groups on the outer points (local maxima of the coast radius), away from the town
     const groups = [];
-    for (const sx of [-1, 1]) {
-      let best = null;
-      for (const p of foot) if (Math.sign(p.x) === sx && Math.abs(p.x) > qh + 2.2 && p.z > 4 && (!best || p.z > best.z)) best = p;
-      if (best && !(sx > 0 && nearWreck(best.x, best.z, 3.5))) groups.push([best.x + best.nx * 0.6, best.z + best.nz * 0.6, 1.25]);
-    }
     const Rs = foot.map(p => Math.hypot(p.x, p.z));
     foot.forEach((p, i) => {
-      if (inQuay(p.x, p.z) || flank(p.x, p.z)) return;
+      if (inQuay(p.x, p.z) || onPen(p.x, p.z) || nearWreck(p.x, p.z, 5) || near(p.x, p.z, lh, 3.5)) return;
       let peak = true;
-      for (let j = -6; j <= 6 && peak; j++) if (j && Rs[(i + j + foot.length) % foot.length] > Rs[i]) peak = false;
-      if (peak && groups.every(g => Math.hypot(g[0] - p.x, g[1] - p.z) > 9)) groups.push([p.x + p.nx * 0.4, p.z + p.nz * 0.4, 1.0]);
+      for (let j = -8; j <= 8 && peak; j++) if (j && Rs[(i + j + foot.length) % foot.length] > Rs[i]) peak = false;
+      if (peak && groups.every(g => Math.hypot(g[0] - p.x, g[1] - p.z) > 12)) groups.push([p.x + p.nx * 0.4, p.z + p.nz * 0.4, 1.0]);
     });
     for (const [gx, gz, s] of groups) {
       for (let k = 0; k < 5; k++) {
@@ -1037,20 +1214,29 @@ export class IslandEntity {
         (k < 3 ? rocks : rocks2).push([gx + Math.sin(a) * d, 0.1 + r * 0.3, gz + Math.cos(a) * d, r, 1.1 + rnd() * 0.5]);
       }
     }
-    // stairs from the boardwalk up to the plateau: two per flank
+    // sea-carved arches standing in the shallows of the wide beaches (HIGH only, baked `hi`)
+    const arches = [];
+    const shore = this._traceCoast(0.6, 1.0);
+    for (let i = 0; i < shore.length && arches.length < 7; i++) {
+      const p = shore[i];
+      if (onPen(p.x, p.z) || inQuay(p.x, p.z) || nearWreck(p.x, p.z, 7) || near(p.x, p.z, lh, 5)) continue;
+      if (harborWaterSDF(p.x, p.z) < 8 || steepAt(p) > 1.5) continue;
+      if (arches.some(a => Math.hypot(a.x - p.x, a.z - p.z) < 11)) continue;
+      if (groups.some(g => Math.hypot(g[0] - p.x, g[1] - p.z) < 4)) continue;
+      arches.push({ x: p.x, z: p.z, ry: Math.atan2(-p.nx, -p.nz) + (rnd() - 0.5) * 0.6, s: 1.3 + rnd() * 0.7, seed: i });
+    }
+    // stairs from the peninsula boardwalk up to the town: two
     const stairs = [];
-    for (const sx of [-1, 1]) {
-      const side = walk.filter(p => Math.sign(p.x) === sx);
-      for (const t of [0.3, 0.75]) {
-        const p = side[Math.floor(side.length * t)];
-        if (p && !near(p.x, p.z, lh, 3.2) && !near(p.x, p.z, ft, 4.4)) stairs.push(p);
-      }
+    for (const t of [0.3, 0.7]) {
+      const p = walk[Math.floor(walk.length * t)];
+      if (p && !near(p.x, p.z, ft, 4.6)) stairs.push(p);
     }
     const clear = (r) => (p) => stairs.every(s => (p.x - s.x) ** 2 + (p.z - s.z) ** 2 > r * r);
-    this._rim = { rocks, rocks2, revet: revet.filter(clear(0.75)), walk, fence: fence.filter(clear(1.7)), stairs };
+    this._rim = { rocks, rocks2, revet: revet.filter(clear(0.75)), walk, fence: fence.filter(clear(1.7)), stairs, arches };
     for (const [x, , z, r] of rocks.concat(rocks2)) this._noDecor.push([x, z, r + 0.4]);
     for (const p of fence) this._noDecor.push([p.x, p.z, 0.9]);
     for (const p of revet) this._noDecor.push([p.x, p.z, 1.0]);
+    for (const a of arches) this._noDecor.push([a.x, a.z, 2.6 * a.s]);
   }
 
   /** Timber + wreck dressing of the rim into the harbor ModelKit. */
@@ -1150,6 +1336,76 @@ export class IslandEntity {
       put((x, y, z) => k.box('matte', s, s * 0.9, s, x, y, z, faces(P.plankLt, P.wood), { ry: W.ry + lx, hi, jit: 0.12 }), lx, this._heightAt(...at(lx, lz)) - 0.05, lz);
     put((x, y, z) => k.cyl('matte', 0.18, 0.16, 0.46, 8, x, y, z, [P.timber, P.wood, P.timber], { hi }), -1.55, this._heightAt(...at(-1.55, 2.6)) - 0.05, 2.6);
     put((x, y, z) => lantern(x, z, y, Math.sin(W.ry), Math.cos(W.ry)), -0.9, this._heightAt(...at(-0.9, 2.7)) - 0.05, 2.7);
+    this._dressBoardwalk(k, lantern);
+    // sea-carved sandstone arches with tumbled blocks at their feet (HIGH only)
+    const SANDST = [0xD7C29E, 0xC8B08A, 0xE2D2B2];
+    for (const a of R.arches || []) {
+      const s = a.s, cs = Math.cos(a.ry), sn = Math.sin(a.ry), y0 = this._heightAt(a.x, a.z) - 0.35;
+      k.torus('matte', 1.25 * s, 0.34, a.x, y0, a.z, SANDST[a.seed % 3], { ry: a.ry, arc: Math.PI, rs: 6, ts: 9, hi: true, jit: 0.16 });
+      for (const sd of [-1, 1]) {
+        const lx = a.x + cs * sd * 1.25 * s, lz = a.z - sn * sd * 1.25 * s;
+        k.rock('matte', 0.62 * s, lx, y0 + 0.15 * s, lz, SANDST[(a.seed + 1) % 3], 60 + a.seed % 7, { sy: 1.25, hi: true, jit: 0.12 });
+      }
+      k.rock('matte', 0.5 * s, a.x - sn * 0.3, y0 + 1.42 * s, a.z - cs * 0.3, SANDST[(a.seed + 2) % 3], 70 + a.seed % 5, { sy: 0.55, sx: 1.6, ry: a.ry, hi: true, jit: 0.12 });
+      k.rock('matte', 0.35 * s, a.x + cs * 2.4 * s + sn * 0.8, y0 + 0.1, a.z - sn * 2.4 * s + cs * 0.8, SANDST[a.seed % 3], 80 + a.seed % 5, { sy: 0.8, hi: true });
+    }
+  }
+
+  /** The mountain stair: zig-zag boardwalk on posts, landings, stilt huts and a lookout. */
+  _dressBoardwalk(k, lantern) {
+    const B = this._board;
+    if (!B) return;
+    const tread = faces(P.plank, P.plankLt), W = 1.15;
+    const post = (x, y, z, top) => {
+      const g = this._heightAt(x, z) - 0.2;
+      if (top - g > 0.05) k.box('matte', 0.11, top - g, 0.11, x, g, z, P.timberDk, { jit: 0.1 });
+    };
+    for (let i = 0; i < B.pts.length - 1; i++) {
+      const a = B.pts[i], b = B.pts[i + 1], dx = b.x - a.x, dz = b.z - a.z, L = Math.hypot(dx, dz);
+      const ry = Math.atan2(-dz, dx), ux = dx / L, uz = dz / L, nx = -uz, nz = ux;
+      const n = Math.max(2, Math.round(L / 0.42));
+      for (let j = 0; j < n; j++) {                     // treads, each at least clear of the slope
+        const t = (j + 0.5) / n, x = a.x + dx * t, z = a.z + dz * t;
+        const y = Math.max(a.y + (b.y - a.y) * t, this._heightAt(x, z) + 0.12);
+        k.box('matte', L / n + 0.02, 0.09, W, x, y - 0.09, z, tread, { ry, jit: 0.12 });
+      }
+      for (let t = 0; t <= 1.001; t += 1 / Math.max(1, Math.round(L / 1.6))) {     // posts + rails
+        const x = a.x + dx * t, z = a.z + dz * t, y = a.y + (b.y - a.y) * t;
+        for (const sd of [-1, 1]) {
+          post(x + nx * sd * W * 0.5, y, z + nz * sd * W * 0.5, y + (sd > 0 ? 0.85 : 0));
+        }
+      }
+      for (const sd of [-1, 1])
+        k.strut('matte', a.x + nx * sd * W * 0.5, a.y + 0.82, a.z + nz * sd * W * 0.5, b.x + nx * sd * W * 0.5, b.y + 0.82, b.z + nz * sd * W * 0.5, 0.07, P.timber, { hi: true });
+      // landing at every switchback
+      k.box('matte', 1.7, 0.12, 1.7, b.x, b.y - 0.12, b.z, tread, { ry, jit: 0.1 });
+      for (const [ox, oz] of [[-0.75, -0.75], [0.75, -0.75], [-0.75, 0.75], [0.75, 0.75]]) post(b.x + ox, b.y - 0.1, b.z + oz, b.y - 0.1);
+      if (i % 2 === 1) lantern(b.x + 0.8, b.z + 0.8, b.y, 0.7, 0.7);
+    }
+    // stilt huts: plank walls, thatch gable, posts down to the slope
+    for (const h of B.huts) {
+      const s = h.s, g = this._heightAt(h.x, h.z), fl = (h.stilt ? Math.max(g + 0.9, B.pts[2].y) : Math.max(g, HARBOR.terrace[2]) + 0.35);
+      const cs = Math.cos(h.ry), sn = Math.sin(h.ry);
+      for (const [u, v] of [[-0.8, -0.65], [0.8, -0.65], [-0.8, 0.65], [0.8, 0.65]]) post(h.x + (u * cs + v * sn) * s, fl, h.z + (-u * sn + v * cs) * s, fl);
+      k.box('matte', 2.0 * s, 0.12, 1.7 * s, h.x, fl - 0.12, h.z, tread, { ry: h.ry });
+      k.box('matte', 1.5 * s, 1.0 * s, 1.2 * s, h.x, fl, h.z, faces(0x8A6A48, P.plank), { ry: h.ry, jit: 0.16 });
+      k.gable('matte', 1.9 * s, 0.85 * s, 1.6 * s, h.x, fl + 1.0 * s, h.z, P.thatch, 0x8A6A48, { ry: h.ry + Math.PI / 2, jit: 0.12 });
+      k.box('matte', 0.4 * s, 0.7 * s, 0.05, h.x + sn * 0.61 * s, fl, h.z + cs * 0.61 * s, P.timberDk, { ry: h.ry });
+      k.box('glow', 0.22, 0.18, 0.05, h.x + sn * 0.62 * s + cs * 0.45 * s, fl + 0.55 * s, h.z + cs * 0.62 * s - sn * 0.45 * s, P.window, { ry: h.ry, hi: true });
+    }
+    // lookout: four posts, braced, a railed platform and a thatch cap with a flag
+    const L = B.look, y0 = L.y - 0.3, Ht = 4.2;
+    for (const [ox, oz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) {
+      k.strut('matte', L.x + ox * 1.3, y0, L.z + oz * 1.3, L.x + ox, y0 + Ht + 1.2, L.z + oz, 0.14, P.timberDk);
+    }
+    for (const yy of [y0 + 1.4, y0 + 2.8]) for (const [ax, az, bx, bz] of [[-1, -1, 1, -1], [1, -1, 1, 1], [1, 1, -1, 1], [-1, 1, -1, -1]])
+      k.strut('matte', L.x + ax * 0.68, yy, L.z + az * 0.68, L.x + bx * 0.68, yy + 0.9, L.z + bz * 0.68, 0.06, P.timber, { hi: true });
+    k.box('matte', 1.8, 0.14, 1.8, L.x, y0 + Ht, L.z, tread);
+    for (const [ox, oz, w, d] of [[0, -0.85, 1.8, 0.06], [0, 0.85, 1.8, 0.06], [-0.85, 0, 0.06, 1.8], [0.85, 0, 0.06, 1.8]])
+      k.box('matte', w, 0.5, d, L.x + ox, y0 + Ht + 0.14, L.z + oz, P.timber, { jit: 0.12 });
+    k.cone('matte', 1.35, 0.9, 4, L.x, y0 + Ht + 1.25, L.z, P.thatch, { ry: Math.PI / 4, jit: 0.12 });
+    k.cyl('matte', 0.03, 0.03, 1.1, 4, L.x, y0 + Ht + 2.1, L.z, P.timberDk, { hi: true });
+    k.box('matte', 0.55, 0.32, 0.02, L.x + 0.29, y0 + Ht + 2.85, L.z, 0x1E1E1E, { hi: true });
   }
 
   /** Rock masses round the rim (instanced, rock shader; LOW draws the primary set only). */
@@ -1158,9 +1414,9 @@ export class IslandEntity {
     // a few outcrops on the steep hill flanks outside the build grid
     const rnd = makePrng(4141);
     let extra = 0;
-    for (let tries = 0; tries < 900 && extra < 22; tries++) {
-      const x = (rnd() * 2 - 1) * 30, z = (rnd() * 2 - 1) * 30, h = this._heightAt(x, z);
-      if (h < DECK + 0.9 || this._inCell(x, z, 0.8)) continue;
+    for (let tries = 0; tries < 2600 && extra < 40; tries++) {
+      const x = (rnd() * 2 - 1) * 58, z = -56 + rnd() * 50, h = this._heightAt(x, z);
+      if (h < 5.0 || this._inCell(x, z, 0.8)) continue;
       if (this._town.lots.some(l => (x - l.x) ** 2 + (z - l.z) ** 2 < (l.r + 1.2) ** 2)) continue;
       const gx = this._heightAt(x + 0.6, z) - this._heightAt(x - 0.6, z), gz = this._heightAt(x, z + 0.6) - this._heightAt(x, z - 0.6);
       if (Math.hypot(gx, gz) < 0.55) continue;
@@ -1173,7 +1429,7 @@ export class IslandEntity {
     list.forEach(([x, y, z, r, sy], i) => {
       e.set((rnd() - 0.5) * 0.5, rnd() * TAU, (rnd() - 0.5) * 0.5);
       sc.set(r * (0.9 + rnd() * 0.35), r * sy, r * (0.9 + rnd() * 0.35));
-      col.setHSL(0.08 + rnd() * 0.03, 0.04 + rnd() * 0.05, 0.47 + rnd() * 0.1);
+      col.setHSL(0.075 + rnd() * 0.03, 0.1 + rnd() * 0.07, 0.5 + rnd() * 0.1);     // warm grey-brown
       im.setColorAt(i, col);
       m4.compose(p.set(x, y, z), q.setFromEuler(e), sc);
       im.setMatrixAt(i, m4);
@@ -1186,19 +1442,22 @@ export class IslandEntity {
     this.grp.add(im);
   }
 
-  /** 0..1 flagstone paving weight (the quay plaza) at local x,z. */
+  /** 0..1 flagstone paving weight (the quay apron on the peninsula's west face) at local x,z. */
   _paveAt(x, z) {
     if (!this.isHarbor) return 0;
-    const q = HARBOR.quayZ, qh = this._quayHalf;
-    if (z > q + 0.05) return 0;
-    return smooth01((qh + 0.8 - Math.abs(x)) / 0.9) * smooth01((z - (q - 3.7)) / 0.7);
+    const qx = this._quayX;
+    if (x < qx - 0.05) return 0;
+    return smooth01((qx + 3.7 - x) / 0.7) * smooth01((z - (HARBOR.quayZ0 - 0.8)) / 0.9) * smooth01((HARBOR.quayZ1 + 0.8 - z) / 0.9);
   }
 
   _buildHarborMesh() {
     const tiers = {};
     const build = (tier) => tiers[tier] || (tiers[tier] = cached('harbor:' + tier, () => {
       const k = new ModelKit(), hi = true;
-      const q = HARBOR.quayZ, qh = this._quayHalf, D = DECK;
+      // the quay + piers are authored in a quay frame (quay line z = q along x, water +z) and
+      // turned onto the peninsula's west face afterwards (water → -x)
+      const q = 0, qh = (HARBOR.quayZ1 - HARBOR.quayZ0) / 2, D = DECK, zc = (HARBOR.quayZ0 + HARBOR.quayZ1) / 2;
+      const p0 = k.parts.length;
       // stone quay wall with coping, square pier-heads and garitas at both ends
       k.box('matte', qh * 2 + 0.3, D + 1.45, 0.62, 0, -1.45, q - 0.27, faces(P.stone, P.stoneLt), { jit: 0.07 });
       k.box('matte', qh * 2 + 0.5, 0.1, 0.78, 0, D - 0.04, q - 0.27, P.stoneLt);
@@ -1207,7 +1466,7 @@ export class IslandEntity {
         garita(k, sx * (qh + 0.55), D + 0.25, q - 0.1, 0.95, P.stone);
       }
       // finger piers: ramp down from the quay, decking, pilings, bollards, end lanterns
-      for (const px of this._pierXs) {
+      for (const px of this._pierZs.map(z => z - zc)) {
         const L = this._pierLen, y = 1.0;
         k.box('matte', 1.5, 0.12, 1.3, px, (y + D) / 2 - 0.08, q + 0.62, faces(P.plank, P.plankLt), { rx: Math.atan2(D - y, 1.3), c: true });
         k.box('matte', 1.5, 0.12, L - 1.25, px, y - 0.12, q + 1.25 + (L - 1.25) / 2, faces(P.plank, P.plankLt), { jit: 0.12 });
@@ -1223,7 +1482,7 @@ export class IslandEntity {
         k.box('glow', 0.13, 0.17, 0.13, px + 0.36, y + 1.03, q + L - 0.2, P.window);
       }
       // quay lamps between the piers
-      for (const lx of [-9.6, -3.2, 3.2, 9.6].filter(x => Math.abs(x) < qh - 0.3)) {
+      for (const lx of [-9.4, -3.0, 3.5, 9.6].filter(x => Math.abs(x) < qh - 0.3)) {
         k.box('gloss', 0.07, 1.4, 0.07, lx, D, q - 0.75, P.iron);
         k.box('gloss', 0.3, 0.05, 0.05, lx + 0.12, D + 1.38, q - 0.75, P.iron);
         k.box('glow', 0.15, 0.2, 0.15, lx + 0.24, D + 1.12, q - 0.75, P.window);
@@ -1246,6 +1505,8 @@ export class IslandEntity {
       k.strut('matte', 1.4, D + 1.3, q - 1.0, 1.4, D + 2.05, q + 1.0, 0.08, P.timber);
       k.box('matte', 0.02, 0.85, 0.02, 1.4, D + 1.15, q + 1.55, P.rope);
       k.box('matte', 0.42, 0.32, 0.42, 1.4, D + 0.85, q + 1.55, faces(P.plankLt, P.wood), { hi });
+      const turn = new THREE.Matrix4().makeRotationY(-Math.PI / 2).setPosition(this._quayX, 0, zc);
+      for (let i = p0; i < k.parts.length; i++) k.parts[i].m.premultiply(turn);
       this._dressRim(k);
       dressHarborTown(k, this._town);
       // outer sea walls with bastions and domed garitas
@@ -1308,16 +1569,16 @@ export class IslandEntity {
   // SDF samples, biggest first, plus one per islet. World coordinates.
   _buildColliders() {
     const cand = [];
-    for (let z = -32; z <= 30; z += 2.5) for (let x = -32; x <= 32; x += 2.5) {
+    for (let z = -60; z <= 52; z += 2.5) for (let x = -60; x <= 60; x += 2.5) {
       const d = harborMainSDF(x, z);
-      if (d < -1.4) cand.push([x, z, Math.min(-d, 8)]);
+      if (d < -1.4) cand.push([x, z, Math.min(-d, 9)]);
     }
     cand.sort((a, b) => b[2] - a[2]);
     const pick = [];
     for (const c of cand) {
       if (pick.some(p => Math.hypot(c[0] - p[0], c[1] - p[1]) < p[2] * 0.82)) continue;
       pick.push(c);
-      if (pick.length >= 34) break;
+      if (pick.length >= 120) break;
     }
     for (const [ix, iz, ir] of HARBOR.islets) pick.push([ix, iz, ir + 0.3]);
     if (this._wreck) pick.push([this._wreck.x, this._wreck.z, 2.3]);
@@ -1448,10 +1709,12 @@ export class IslandEntity {
   _applyQuality() {
     const hi = _quality === 'high';
     if (this._terrain) this._terrain.material = terrainMaterial(hi);
+    if (this._tIdx) this._terrain.geometry.setIndex(this._tIdx[hi ? 'high' : 'low']);
+    const lowK = this.isHarbor ? 0.36 : 0.5;          // the home island's jungle thins harder on LOW
     for (const im of [this._palms, this._broad, this._bamboo, this._shrubs]) {
       if (!im) continue;
       im.material = foliageMaterial(hi);
-      im.count = hi ? im.userData.fullCount : Math.ceil(im.userData.fullCount / 2);
+      im.count = hi ? im.userData.fullCount : Math.ceil(im.userData.fullCount * lowK);
     }
     if (this._shrubs) this._shrubs.visible = hi;
     if (this._rocks) {

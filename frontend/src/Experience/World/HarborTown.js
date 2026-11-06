@@ -2,9 +2,9 @@ import * as THREE from 'three';
 // ── HARBOR TOWN (decorative district of the home port) ────────────
 // Art pass 2: the home island read as an empty lawn with three starter
 // buildings. This module plans and dresses a decorative town that lives
-// ONLY off the 16×16 build grid: house clusters on the flanks and the north
-// ridge between the grid and the cliff-top palisade, a market by the west
-// quay corner, awning stalls on the quay strip between the piers, crates /
+// ONLY off the 16×16 build grid (v5: on the town peninsula east of the quay
+// and the east lowland): house clusters along a high street, a market where
+// the arm leaves the mainland, awning stalls on the quay apron between the piers, crates /
 // barrels / carts, dirt paths with stone steps up the hills, and chimney smoke.
 //
 // Cost: everything is baked into the island's harbor ModelKit (one draw call
@@ -34,18 +34,19 @@ const AWNINGS = [[0xB8402F, P.canvas], [0x2F5E8A, P.canvas], [0xD99A2B, 0x8E3E2A
  * grid (|x|,|z| ≤ 19.2 is the grid square); the planner rejects every lot that
  * would touch a valid cell, the water, the rim or a landmark anyway.
  */
-const HUBS = [
-  [-22.6, 1.0, 7, 2.6, 'market'],   // west flank by the quay corner: market square
-  [-22.8, -9.5, 6, 2.8],            // west flank behind the sea wall
-  [22.4, -1.5, 7, 2.6],             // east flank between the wall end and the fort
-  [21.8, -12.0, 6, 2.6],            // east flank behind the sea wall
-  [-6.0, -23.0, 8, 3.2],            // north ridge (skyline behind the grid)
-  [6.5, -23.2, 8, 3.2],
-  [-15.5, -20.8, 4, 2.2],
-  [15.0, -20.6, 4, 2.2],
-];
+const HUBS = [                       // v5: the town fills the peninsula east of the quay
+  [28.6, 4.5, 6, 2.4, 'market'],    // market square where the arm leaves the mainland
+  [30.2, 12.5, 7, 2.6],
+  [30.6, 21.0, 7, 2.6],
+  [30.4, 29.5, 6, 2.4],
+  [23.5, -5.5, 5, 2.4],             // east lowland, behind the grid's east edge
+  [33.5, 0.5, 5, 2.2],
+]
 
 const MAX_LOTS = 70;               // decorative houses cap (HIGH and LOW draw the same shells)
+const HIGH_ST_X = HARBOR.quayX + 4.6;   // the street behind the quay apron
+/** Houses on the arm face the high street; the rest face the island centre. */
+const facing = (x, z) => z > 3 ? (x > HIGH_ST_X ? -Math.PI / 2 : Math.PI / 2) : Math.atan2(-x, -z);
 const KIND_SIZE = {                 // half-extent footprint [w/2, d/2]
   cottage: [0.85, 0.7], tall: [0.9, 0.8], shed: [0.75, 0.6], warehouse: [1.35, 0.8], stall: [0.75, 0.55],
 };
@@ -104,7 +105,7 @@ export function planHarborTown(isl) {
         : roll < 0.42 ? 'cottage' : roll < 0.62 ? 'tall' : roll < 0.84 ? 'shed' : 'warehouse';
       const [hw, hd] = KIND_SIZE[kind];
       // face the island centre (where the town looks over the harbor), snapped a little toward the hub street
-      const ry = Math.atan2(-x, -z) + (rnd() - 0.5) * 0.5;
+      const ry = facing(x, z) + (rnd() - 0.5) * 0.3;
       const r = Math.hypot(hw, hd) + 0.1;
       const s = site(x, z, hw + 0.15, hd + 0.15, ry, r);
       if (!s) continue;
@@ -121,11 +122,9 @@ export function planHarborTown(isl) {
       }
     }
     if (!hubLots.length) continue;
-    // a dirt street from the hub to the nearest point of the grid edge (the town meets the yard)
+    // a dirt lane from the hub to the high street behind the quay
     const cx = hubLots.reduce((s, l) => s + l.x, 0) / hubLots.length, cz = hubLots.reduce((s, l) => s + l.z, 0) / hubLots.length;
-    const ex = Math.max(-19.6, Math.min(19.6, cx)), ez = Math.max(-19.6, Math.min(7.6, cz));
-    const gx = Math.abs(cx) > 19.6 ? Math.sign(cx) * 19.6 : ex, gz = cz < -19.6 ? -19.6 : ez;
-    paths.push([[cx, cz], [gx, gz]]);
+    paths.push([[cx, cz], [cz > 4 ? HIGH_ST_X : Math.min(cx, 21), cz > 4 ? cz : Math.max(cz, -2)]]);
     if (tag === 'market') {      // market square props: crates, barrels, a cart
       for (let i = 0; i < 6; i++) {
         const a = rnd() * TAU, d = 0.6 + rnd() * 1.4, px = cx + Math.sin(a) * d, pz = cz + Math.cos(a) * d;
@@ -134,13 +133,12 @@ export function planHarborTown(isl) {
       }
     }
   }
-  // infill: every other level spot in the ring between the grid and the rim gets a small house/shed
+  // infill: every other level spot on the peninsula and the east lowland gets a small house/shed
   for (let tries = 0; tries < 5000 && lots.length < MAX_LOTS; tries++) {
-    const x = (rnd() * 2 - 1) * 30, z = -30 + rnd() * 37;
-    if (Math.max(Math.abs(x), Math.abs(z)) < 19.3 && z > -19.3) continue;      // inside the grid square
+    const x = 19.3 + rnd() * 20, z = -12 + rnd() * 54;
     const roll = rnd(), kind = roll < 0.5 ? 'cottage' : roll < 0.8 ? 'shed' : 'tall';
     const [hw, hd] = KIND_SIZE[kind];
-    const ry = Math.atan2(-x, -z) + (rnd() - 0.5) * 0.6, r = Math.hypot(hw, hd) + 0.1;
+    const ry = facing(x, z) + (rnd() - 0.5) * 0.4, r = Math.hypot(hw, hd) + 0.1;
     const st = site(x, z, hw + 0.12, hd + 0.12, ry, r);
     if (!st) continue;
     lots.push({ hub: 'fill', kind, x, z, ry, r, hw, hd, floor: st.hi + 0.04, base: st.lo - 0.35, seed: rnd(),
@@ -151,11 +149,13 @@ export function planHarborTown(isl) {
       if (!isl._inCell(px, pz, 0.3) && harborLandSDF(px, pz) < -1.6) props.push([px, isl._heightAt(px, pz), pz, Math.floor(rnd() * 4), rnd() * TAU]);
     }
   }
-  // quay-strip stalls between the piers (the strip in front of the grid, clear of lamps and crates)
-  const q = HARBOR.quayZ;
-  for (const sx of [-11.3, -4.8, 4.8, 11.3]) {
-    stalls.push({ kind: 'stall', x: sx, z: q - 0.62, ry: Math.PI, hw: 0.7, hd: 0.36, floor: D, base: D - 0.05,
-                  awning: AWNINGS[(Math.abs(sx * 3) | 0) % AWNINGS.length], seed: Math.abs(sx) * 0.07, quay: true });
+  // the high street: from the lowland up the peninsula behind the quay apron
+  paths.push([[20.0, -2.0], [HIGH_ST_X, 5.0], [HIGH_ST_X, HARBOR.quayZ1 + 1.5]]);
+  // quay-apron stalls between the piers (the apron is turned onto the peninsula's west face)
+  const zc = (HARBOR.quayZ0 + HARBOR.quayZ1) / 2;
+  for (const a of [-8.0, -1.6, 5.0, 10.4]) {
+    stalls.push({ kind: 'stall', x: HARBOR.quayX + 0.62, z: zc + a, ry: Math.PI / 2, hw: 0.7, hd: 0.36, floor: D, base: D - 0.05,
+                  awning: AWNINGS[(Math.abs(a * 3) | 0) % AWNINGS.length], seed: Math.abs(a) * 0.07 + 0.1, quay: true });
   }
   // paths: steps where they climb, keep-outs for vegetation along them
   for (const pl of paths) {
