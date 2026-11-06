@@ -1,17 +1,17 @@
-// ── WORLD CHART (AW-S06) — a period world map, orders card, fleet picker ─
-// Full-screen modal. An early-modern "New Chart of the World" drawn as
-// inline SVG: hand-traced coastlines (worldCoasts.js) in an equirectangular
-// projection (WORLD), rhumb lines from two compass roses, a cartouche, sea
-// creatures, sea-region washes and the dotted route between missions.
-// Mission nodes are real <button>s laid over the map at mission.chart {x,y}
-// (0..1 of the map); a node that falls on land is nudged to the nearest sea.
-// Narrow/portrait screens keep the map at a usable height and pan it
-// sideways (drag or swipe) instead of shrinking it to a strip.
+// ── WORLD CHART (AW-S06) — a campaign sea-chart, orders card, fleet picker ─
+// Full-screen modal. A stylised early-modern sea chart drawn as inline SVG:
+// not an atlas but a campaign map — five sea zones (REGIONS, in campaign
+// order) side by side along a winding sea-road, each with its own inked
+// landmarks (chartArt.js), title cartouche, faction colours and renown
+// seal. Mission nodes are real <button>s laid over the map at
+// mission.chart {x,y} (0..1 of the map); zones at REGIONS[].chart
+// {x,y,w,h}. Narrow/portrait screens keep the map at a usable height and
+// pan it sideways (drag or swipe) instead of shrinking it to a strip.
 //
-// Data is read defensively at render time: REGIONS (with optional
-// chart:{x,y,w,h} box — otherwise derived from their missions), MISSIONS
-// (optional `faction`), PATROL, OPEN_WAR, FINAL_MISSION, HOME, and
-// FACTIONS / SEAS from data/factions.js.
+// Data is read defensively at render time: REGIONS (chart box optional —
+// otherwise derived from their missions), MISSIONS (optional `faction`),
+// PATROL, OPEN_WAR, FINAL_MISSION, HOME, and FACTIONS / SEAS from
+// data/factions.js.
 //
 //   const chart = new WorldChart(ctx); chart.open(); chart.openBriefing('reef_2');
 //
@@ -21,10 +21,9 @@
 import * as CAMPAIGN from '../../data/campaign.js';
 import * as FACT from '../../data/factions.js';
 import { RANKS } from '../../data/harbor.js';
-import { makePrng } from '../../data/islandShapes.js';
 import * as CAMP from '../Campaign.js';
 import { sailableShips, fleetCap, fleetCapBreakdown, tickRoster, hullOf } from '../Shipyard.js';
-import { LANDS, HOLES, ISLANDS, ISLETS } from './worldCoasts.js';
+import { ChartInk, zoneArt, boundary, waves } from './chartArt.js';
 import {
   ms, hullName, rankName, regionName, regionDesc, missionName, missionDesc, isleName, className, factionName,
   fmtNum, fmtClock, capBreakdownText, doctrineName, doctrineDesc, doctrineWhy, fitProfileName,
@@ -39,39 +38,13 @@ import {
   pushModal, popModal, focusFirst, patchKeyed, setText, reducedMotion,
 } from './dom.js';
 
-/**
- * Map projection: a stylised early-modern sheet — piecewise-linear in
- * longitude and latitude, so the Caribbean and the Asian seas (where the
- * campaign is fought) get more room than the open Pacific or inner Africa.
- * Knots are [degrees, chart 0..1]. Canvas is W × H px.
- */
-export const WORLD = Object.freeze({
-  W: 1800, H: 1000,
-  lon: [[-100, 0], [-90, 0.018], [-58, 0.23], [-18, 0.37], [52, 0.625], [92, 0.785], [126, 0.985], [135, 1]],
-  lat: [[58, 0], [42, 0.15], [25, 0.32], [8, 0.53], [-12, 0.74], [-42, 1]],
-});
-
-function knots(table, v) {
-  const n = table.length;
-  const asc = table[n - 1][0] > table[0][0];
-  for (let i = 0; i < n - 1; i++) {
-    const [a, fa] = table[i], [b, fb] = table[i + 1];
-    if (asc ? v <= b || i === n - 2 : v >= b || i === n - 2) {
-      return fa + ((v - a) / (b - a)) * (fb - fa);
-    }
-  }
-  return table[n - 1][1];
-}
-
-/** Chart coordinates (0..1) for a longitude/latitude — use this to place missions. */
-export function lonLatToChart(lon, lat) {
-  return { x: knots(WORLD.lon, lon), y: knots(WORLD.lat, lat) };
-}
+/** Chart canvas in px (the SVG viewBox); data positions are 0..1 of it. */
+export const WORLD = Object.freeze({ W: 1800, H: 1000 });
 
 /** Fleet-picker warning threshold (spec: ships under 40 % hull). */
 const LOW_HP = 0.4;
 const OBJ_ICON = { sink_all: 'swords', destroy_forts: 'castle', survive: 'hourglass', capture: 'flag' };
-const DEFAULT_HOME = lonLatToChart(-76.85, 17.95);            // a free harbour in the Antilles
+const DEFAULT_HOME = { x: 0.05, y: 0.86 };
 const WASHES = ['#5f9e8a', '#c9a24a', '#b0605a', '#6a86a8', '#8a7ab0', '#7f9a4e'];
 const { W: CW, H: CH } = WORLD;
 
@@ -111,94 +84,12 @@ function campaignProgress(p) {
   return { won, total: ms_.length, stars, maxStars: ms_.length * 3, complete: !!(fin && p.campaign.won[fin]) };
 }
 
-// ── coast geometry (projected once) ─────────────────────────────────
-function smoothPath(pts) {
-  const n = pts.length;
-  let d = `M${r1(pts[0][0])} ${r1(pts[0][1])}`;
-  for (let i = 0; i < n; i++) {
-    const p0 = pts[(i - 1 + n) % n], p1 = pts[i], p2 = pts[(i + 1) % n], p3 = pts[(i + 2) % n];
-    d += `C${r1(p1[0] + (p2[0] - p0[0]) / 6)} ${r1(p1[1] + (p2[1] - p0[1]) / 6)} `
-      + `${r1(p2[0] - (p3[0] - p1[0]) / 6)} ${r1(p2[1] - (p3[1] - p1[1]) / 6)} ${r1(p2[0])} ${r1(p2[1])}`;
-  }
-  return d + 'Z';
+/** Canvas px of a chart point (0..1, clamped). */
+function nodePx(c) {
+  return { x: Math.max(0, Math.min(1, c.x)) * CW, y: Math.max(0, Math.min(1, c.y)) * CH };
 }
 
-let _coast = null;
-function coast() {
-  if (_coast) return _coast;
-  const P = ([lon, lat]) => { const c = lonLatToChart(lon, lat); return [c.x * CW, c.y * CH]; };
-  const rnd = makePrng(1714);
-  const polys = [];
-  let d = '';
-  const add = (str, wob) => {
-    const raw = str.trim().split(/\s+/).map((t) => t.split(',').map(Number)).map(P);
-    polys.push(raw);
-    const pts = [];
-    for (let i = 0; i < raw.length; i++) {
-      const a = raw[i], b = raw[(i + 1) % raw.length];
-      pts.push(a);
-      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
-      if (L > 12) {
-        const n = Math.min(4, Math.floor(L / 12));
-        for (let k = 1; k <= n; k++) {
-          const t = k / (n + 1), j = (rnd() - 0.5) * wob * 2;
-          pts.push([a[0] + dx * t - (dy / L) * j, a[1] + dy * t + (dx / L) * j]);
-        }
-      }
-    }
-    d += smoothPath(pts);
-  };
-  Object.values(LANDS).forEach((s) => add(s, 1.7));
-  Object.values(HOLES).forEach((s) => add(s, 1.2));
-  Object.values(ISLANDS).forEach((s) => add(s, 0.7));
-  for (const [lon, lat, r] of ISLETS) {
-    if (!(r > 0)) continue;
-    const [x, y] = P([lon, lat]);
-    const rr = Math.max(1.8, r * 8.5);
-    d += `M${r1(x - rr)} ${r1(y)}a${r1(rr)} ${r1(rr * 0.8)} 0 1 0 ${r1(rr * 2)} 0a${r1(rr)} ${r1(rr * 0.8)} 0 1 0 ${r1(-rr * 2)} 0Z`;
-  }
-  _coast = { d, polys, P };
-  return _coast;
-}
-
-/** Even-odd point-in-land test in canvas px. */
-function onLand(x, y) {
-  let inside = false;
-  for (const poly of coast().polys) {
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-  }
-  return inside;
-}
-
-/** Nearest sea point to (x,y) in canvas px (unchanged when already at sea). */
-function seaPoint(x, y) {
-  if (!onLand(x, y)) return [x, y];
-  for (let r = 7; r <= 260; r += 7) {
-    for (let k = 0; k < 20; k++) {
-      const a = (k / 20) * Math.PI * 2;
-      const nx = x + Math.cos(a) * r, ny = y + Math.sin(a) * r;
-      if (nx > 26 && nx < CW - 26 && ny > 26 && ny < CH - 26 && !onLand(nx, ny)) return [nx, ny];
-    }
-  }
-  return [x, y];
-}
-
-const _snap = new Map();
-/** Canvas position of a chart point, snapped to the sea for sea nodes. */
-function nodePx(c, key, sea = true) {
-  const k = `${key}|${c.x}|${c.y}|${sea}`;
-  if (_snap.has(k)) return _snap.get(k);
-  const x = Math.max(0, Math.min(1, c.x)) * CW, y = Math.max(0, Math.min(1, c.y)) * CH;
-  const out = sea ? seaPoint(x, y) : [x, y];
-  const v = { x: out[0], y: out[1] };
-  _snap.set(k, v);
-  return v;
-}
-
-/** Region washes: explicit chart box, else the padded bounds of its missions. */
+/** Sea zones: explicit chart box {x,y,w,h}, else the padded bounds of its missions. */
 function regionGeo(p) {
   const out = [];
   regionsAll().forEach((r, i) => {
@@ -206,35 +97,40 @@ function regionGeo(p) {
     const b = r.chart && r.chart.w ? r.chart : r.box && r.box.w ? r.box : null;
     if (b) box = { x0: b.x * CW, y0: b.y * CH, x1: (b.x + b.w) * CW, y1: (b.y + b.h) * CH };
     else {
-      const pts = missionsAll().filter((m) => m.region === r.id).map((m) => nodePx(m.chart, m.id));
+      const pts = missionsAll().filter((m) => m.region === r.id).map((m) => nodePx(m.chart));
       if (!pts.length) return;
-      const pad = 62;
+      const pad = 90;
       box = {
         x0: Math.min(...pts.map((q) => q.x)) - pad, x1: Math.max(...pts.map((q) => q.x)) + pad,
-        y0: Math.min(...pts.map((q) => q.y)) - pad, y1: Math.max(...pts.map((q) => q.y)) + pad,
+        y0: Math.min(...pts.map((q) => q.y)) - pad * 2, y1: Math.max(...pts.map((q) => q.y)) + pad,
       };
-      const minW = 190, minH = 150;
-      if (box.x1 - box.x0 < minW) { const c = (box.x0 + box.x1) / 2; box.x0 = c - minW / 2; box.x1 = c + minW / 2; }
-      if (box.y1 - box.y0 < minH) { const c = (box.y0 + box.y1) / 2; box.y0 = c - minH / 2; box.y1 = c + minH / 2; }
     }
+    box.w = box.x1 - box.x0; box.h = box.y1 - box.y0;
     const rf = regionFull(r);
     const fac = factionsAll()[rf?.factions?.[0]];
     out.push({
       r: rf, box, open: CAMP.regionUnlocked(p, r.id),
       col: r.col || fac?.css || WASHES[i % WASHES.length],
-      label: { x: (box.x0 + box.x1) / 2, y: Math.max(34, box.y0 + 14) },
+      label: { x: (box.x0 + box.x1) / 2, y: Math.max(30, box.y0 + 4) },
     });
   });
   return out;
 }
 
-/** Quadratic route between two px points with a gentle bend. */
-function routeD(a, b, bend) {
+/** Quadratic route between two px points with a gentle bend: path + sample points. */
+function routeQ(a, b, bend) {
   const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
   const cx = (a.x + b.x) / 2 - (dy / len) * len * bend, cy = (a.y + b.y) / 2 + (dx / len) * len * bend;
-  return `M${r1(a.x)} ${r1(a.y)}Q${r1(cx)} ${r1(cy)} ${r1(b.x)} ${r1(b.y)}`;
+  const pts = [];
+  const n = Math.max(2, Math.ceil(len / 22));
+  for (let i = 1; i < n; i++) {
+    const t = i / n, u = 1 - t;
+    pts.push({ x: u * u * a.x + 2 * u * t * cx + t * t * b.x, y: u * u * a.y + 2 * u * t * cy + t * t * b.y });
+  }
+  return { d: `M${r1(a.x)} ${r1(a.y)}Q${r1(cx)} ${r1(cy)} ${r1(b.x)} ${r1(b.y)}`, pts };
 }
 
+// ── chart ornaments ─────────────────────────────────────────────────
 // ── chart ornaments ─────────────────────────────────────────────────
 function rose(cx, cy, R) {
   let ticks = '';
@@ -259,22 +155,6 @@ function rose(cx, cy, R) {
     + `<circle class="wc-rose-ring2" r="${r1(R * 0.74)}"/><path class="wc-rose-tick" d="${ticks}"/>${pts}`
     + `<circle class="wc-rose-hub" r="${r1(R * 0.07)}"/>`
     + `<path class="wc-rose-fleur" d="M0 ${r1(-R * 1.08)}c${r1(R * 0.06)} ${r1(-R * 0.1)} ${r1(R * 0.13)} ${r1(-R * 0.12)} ${r1(R * 0.14)} ${r1(-R * 0.22)}c${r1(-R * 0.08)} ${r1(R * 0.02)} ${r1(-R * 0.11)} ${r1(-R * 0.05)} ${r1(-R * 0.14)} ${r1(-R * 0.16)}c${r1(-R * 0.03)} ${r1(R * 0.11)} ${r1(-R * 0.06)} ${r1(R * 0.18)} ${r1(-R * 0.14)} ${r1(R * 0.16)}c${r1(R * 0.01)} ${r1(R * 0.1)} ${r1(R * 0.08)} ${r1(R * 0.12)} ${r1(R * 0.14)} ${r1(R * 0.22)}z"/></g>`;
-}
-
-function cartouche(cx, cy, w, h) {
-  const x = cx - w / 2, y = cy - h / 2;
-  let bar = '';
-  const segW = (w * 0.5) / 5, bx = (w - segW * 5) / 2 - 16, by = h * 0.75;
-  for (let i = 0; i < 5; i++) bar += `<rect x="${r1(bx + i * segW)}" y="${r1(by)}" width="${r1(segW)}" height="5" class="${i % 2 ? 'wc-sb-l' : 'wc-sb-d'}"/>`;
-  const nums = [0, 100, 200, 300, 400, 500].map((n, i) => `<text x="${r1(bx + i * segW)}" y="${r1(by + 17)}" class="wc-sb-n">${n}</text>`).join('');
-  const scroll = (sx) => `<path class="wc-cart-scroll" d="M${sx} 10c${sx ? 14 : -14} 4 ${sx ? 14 : -14} 18 0 22c${sx ? 10 : -10} 6 ${sx ? 10 : -10} 20 0 26"/>`;
-  return `<g class="wc-cart" transform="translate(${r1(x)} ${r1(y)})">`
-    + `<rect class="wc-cart-bg" width="${w}" height="${h}" rx="4"/><rect class="wc-cart-in" x="7" y="7" width="${w - 14}" height="${h - 14}"/>`
-    + `<g transform="translate(0 ${r1(h / 2 - 34)})">${scroll(0)}</g><g transform="translate(${w} ${r1(h / 2 - 34)})">${scroll(0)}</g>`
-    + `<path class="wc-cart-orn" d="M7 22Q22 22 22 7M${w - 7} 22Q${w - 22} 22 ${w - 22} 7M7 ${h - 22}Q22 ${h - 22} 22 ${h - 7}M${w - 7} ${h - 22}Q${w - 22} ${h - 22} ${w - 22} ${h - 7}"/>`
-    + `<text class="wc-cart-t" x="${w / 2}" y="${r1(h * 0.38)}">${esc(ms('wc_cartoucheW'))}</text>`
-    + `<text class="wc-cart-s" x="${w / 2}" y="${r1(h * 0.57)}">${esc(ms('wc_cartoucheWSub'))}</text>`
-    + `${bar}${nums}<text class="wc-sb-u" x="${r1(bx + segW * 5 + 22)}" y="${r1(by + 6)}">${esc(ms('wc_leagues'))}</text></g>`;
 }
 
 function neatline() {
@@ -315,90 +195,120 @@ function whale(x, y, s) {
     + '<path class="wc-b-spout" d="M30 20C26 10 31 4 28 -4M34 19C37 8 43 5 47 -1M26 21C20 12 15 9 11 4"/></g>';
 }
 
-/** Pick the first candidate (chart 0..1) that keeps `gap` px away from every node. */
-function placeAt(cands, nodes, gap, needSea = true) {
-  for (const c of cands) {
-    const x = c.x * CW, y = c.y * CH;
-    if (needSea && onLand(x, y)) continue;
-    if (nodes.every((n) => Math.hypot(n.x - x, n.y - y) > gap)) return { x, y };
-  }
-  return null;
-}
+/** Region title band (the HTML cartouche) in canvas px — kept clear of art. */
+const TAG_W = 300, TAG_H = 118;
 
-const LL = (lon, lat) => lonLatToChart(lon, lat);
-const LAND_LABELS = [
-  ['lbl_america', -88, 41, 1], ['lbl_newspain', -101.5, 24.5, 0.62], ['lbl_brasil', -52, -10, 1], ['lbl_africa', 20, 9, 1.15],
-  ['lbl_europa', 14, 50.5, 0.9], ['lbl_arabia', 45.5, 22.5, 0.75], ['lbl_persia', 56, 31.5, 0.7], ['lbl_india', 78.5, 22, 0.85],
-  ['lbl_asia', 92, 42, 1.1], ['lbl_china', 110, 30, 0.85], ['lbl_holland', 124, -25, 0.8],
-];
-const SEA_LABELS = [
-  ['sea_north', [LL(-42, 40), LL(-50, 34)]], ['sea_atlantic', [LL(-34, 14), LL(-28, 4), LL(-40, 22)]],
-  ['sea_ethiopic', [LL(-10, -24), LL(-2, -30)]], ['sea_indian', [LL(76, -14), LL(66, -20), LL(84, -6)]],
-  ['sea_pacific', [LL(-92, -10), LL(-95, 2)]],
-];
+/**
+ * Collision test for chart art: is a circle (x, y, r) clear of every node
+ * (medallion, flag and label below it), every route and every zone title?
+ */
+function makeFree(nodeList, routePts, tags) {
+  return (x, y, r) => {
+    if (x - r < 28 || x + r > CW - 28 || y - r < 28 || y + r > CH - 28) return false;
+    for (const n of nodeList) {
+      if (Math.hypot(x - n.x, y - n.y) < r + 46) return false;
+      if (x + r > n.x - 98 && x - r < n.x + 98 && y + r > n.y + 24 && y - r < n.y + 100) return false;
+    }
+    for (const q of routePts) if (Math.hypot(x - q.x, y - q.y) < r + 13) return false;
+    for (const t of tags) if (x + r > t.x - TAG_W / 2 && x - r < t.x + TAG_W / 2 && y - r < t.y + TAG_H && y + r > t.y) return false;
+    return true;
+  };
+}
 
 /** Build the chart SVG (static per profile progress + language). */
 function chartSvg(p, nodes) {
-  const c = coast();
   const regs = regionGeo(p);
   const prog = campaignProgress(p);
   const nodeList = Object.values(nodes);
 
-  // region washes
-  const tints = regs.map((g, i) => {
-    const cx = (g.box.x0 + g.box.x1) / 2, cy = (g.box.y0 + g.box.y1) / 2;
-    const rx = ((g.box.x1 - g.box.x0) / 2) * 1.12, ry = ((g.box.y1 - g.box.y0) / 2) * 1.16;
-    return `<ellipse cx="${r1(cx)}" cy="${r1(cy)}" rx="${r1(rx)}" ry="${r1(ry)}" fill="url(#wc-rg${i})"/>`
-      + (g.open ? '' : `<ellipse cx="${r1(cx)}" cy="${r1(cy)}" rx="${r1(rx * 0.86)}" ry="${r1(ry * 0.86)}" class="wc-lockwash"/>`);
-  }).join('');
+  // zone washes (a soft wash per sea; locked seas greyed and hatched)
   const grads = regs.map((g, i) => {
     const col = g.open ? g.col : '#6b5a46';
-    return `<radialGradient id="wc-rg${i}"><stop offset="0" stop-color="${col}" stop-opacity=".30"/><stop offset=".62" stop-color="${col}" stop-opacity=".15"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></radialGradient>`;
+    return `<radialGradient id="wc-rg${i}" cx="50%" cy="55%" r="62%"><stop offset="0" stop-color="${col}" stop-opacity="${g.open ? 0.22 : 0.16}"/><stop offset=".7" stop-color="${col}" stop-opacity="${g.open ? 0.11 : 0.1}"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></radialGradient>`;
   }).join('');
+  const tints = regs.map((g, i) => {
+    const { x0, y0, w, h } = g.box;
+    return `<rect x="${r1(x0)}" y="${r1(y0)}" width="${r1(w)}" height="${r1(h)}" fill="url(#wc-rg${i})"/>`
+      + (g.open ? '' : `<rect x="${r1(x0 + 8)}" y="${r1(y0 + 8)}" width="${r1(w - 16)}" height="${r1(h - 16)}" rx="30" class="wc-lockwash"/>`);
+  }).join('');
+  const bounds = regs.slice(1).map((g, i) => boundary((regs[i].box.x1 + g.box.x0) / 2, 150, CH - 40, 77 + i)).join('');
 
-  // dotted route
+  // dotted routes along `requires` (+ the sea-road band under them)
   const home = nodes.home;
   const won = (id) => id === 'home' || !!p.campaign.won[id];
-  let route = '', k = 0;
+  let route = '', road = '', k = 0;
+  const routePts = [];
   for (const m of missionsAll()) {
     const reqs = (m.requires || []).filter((id) => nodes[id]);
     const st = CAMP.missionState(p, m);
     const from = reqs.length ? reqs : ['home'];
     for (const r of from) {
       const state = st === 'won' && won(r) ? 'done' : st === 'open' ? 'open' : 'locked';
-      route += `<path class="wc-route is-${state}" d="${routeD(nodes[r], nodes[m.id], (k++ % 2 ? 1 : -1) * 0.1)}"/>`;
+      const q = routeQ(nodes[r], nodes[m.id], (k++ % 2 ? 1 : -1) * 0.08);
+      route += `<path class="wc-route is-${state}" d="${q.d}"/>`;
+      road += q.d;
+      routePts.push(...q.pts);
     }
   }
-  if (nodes.patrol) route += `<path class="wc-route is-patrol" d="${routeD(home, nodes.patrol, 0.12)}"/>`;
+  if (nodes.patrol) {
+    const q = routeQ(home, nodes.patrol, 0.12);
+    route += `<path class="wc-route is-patrol" d="${q.d}"/>`;
+    routePts.push(...q.pts);
+  }
 
-  // ornaments, avoiding nodes
-  const rose1 = placeAt([LL(-27, -17), LL(-33, -26), LL(-20, -8), LL(-38, 28)], nodeList, 130) || { x: 0.31 * CW, y: 0.76 * CH };
-  const rose2 = placeAt([LL(84, -30), LL(70, -32), LL(92, -22), LL(62, -28)], nodeList, 110);
-  const cart = placeAt([LL(-31, 50.5), LL(-62, -34), LL(52, -37)], nodeList, 150, false) || { x: 0.3 * CW, y: 0.075 * CH };
-  const beast1 = placeAt([LL(-9, -33), LL(-20, -36), LL(2, -38), LL(-45, 5)], nodeList, 120);
-  const beast2 = placeAt([LL(58, -32), LL(96, -34), LL(66, -6), LL(100, -18)], nodeList, 110);
-  const ship1 = placeAt([LL(-48, 26), LL(-38, 33), LL(-24, 20)], nodeList, 90);
-  const ship2 = placeAt([LL(127, 17), LL(122, 3), LL(129, 26)], nodeList, 90);
+  const tags = regs.map((g) => g.label);
+  const ink = new ChartInk(makeFree(nodeList, routePts, tags));
+  const dot = (cands, r) => ink.pick(cands.map(([u, v]) => [u * CW, v * CH]), r);
+
+  // each zone's landmarks first, then ornaments in the open water left
+  regs.forEach((g) => zoneArt(g.r.id, g.box, ink, { home: g.r.id === regs[0]?.r.id ? home : null }));
+  // ornaments in the open water that the zones left
+  const rose1 = dot([[0.262, 0.742], [0.31, 0.45], [0.5, 0.25], [0.56, 0.86], [0.6, 0.45], [0.42, 0.9], [0.77, 0.6], [0.5, 0.17]], 50);
+  if (rose1) ink.placed.push({ x: rose1[0], y: rose1[1], r: 54 });
+  const beast1 = dot([[0.31, 0.66], [0.27, 0.44], [0.4, 0.62], [0.33, 0.12]], 52);
+  if (beast1) ink.placed.push({ x: beast1[0], y: beast1[1], r: 60 });
+  const beast2 = dot([[0.53, 0.42], [0.47, 0.6], [0.57, 0.23]], 46);
+  if (beast2) ink.placed.push({ x: beast2[0], y: beast2[1], r: 52 });
+  const ship1 = dot([[0.3, 0.38], [0.25, 0.35], [0.28, 0.66], [0.38, 0.54]], 30);
+  if (ship1) ink.placed.push({ x: ship1[0], y: ship1[1], r: 34 });
+  const ship2 = dot([[0.95, 0.78], [0.83, 0.62], [0.92, 0.42], [0.96, 0.92]], 30);
+  if (ship2) ink.placed.push({ x: ship2[0], y: ship2[1], r: 34 });
+
+  ink.flush();
+  // a little open water swell everywhere that is still empty
+  for (let i = 0; i < 26; i++) {
+    const x = 60 + ((i * 397) % 1680), y = 170 + ((i * 263) % 780);
+    ink.put(x, y, 16, waves(x, y, 1));
+  }
+
   const lines = [];
-  for (const rr of [rose1, rose2].filter(Boolean)) {
+  if (rose1) {
+    const [rx, ry] = rose1;
     for (let i = 0; i < 32; i++) {
       const a = (i / 32) * Math.PI * 2;
-      lines.push(`<path class="wc-rhumb${i % 4 ? '' : ' is-major'}" d="M${r1(rr.x)} ${r1(rr.y)}L${r1(rr.x + Math.cos(a) * 2600)} ${r1(rr.y + Math.sin(a) * 2600)}"/>`);
+      lines.push(`<path class="wc-rhumb${i % 4 ? '' : ' is-major'}" d="M${r1(rx)} ${r1(ry)}L${r1(rx + Math.cos(a) * 2200)} ${r1(ry + Math.sin(a) * 2200)}"/>`);
     }
   }
-  const landLbl = LAND_LABELS.map(([key, lon, lat, sz]) => {
-    const q = LL(lon, lat), x = q.x * CW, y = q.y * CH;
-    if (nodeList.some((n) => Math.hypot(n.x - x, n.y - y) < 70)) return '';
-    return `<text class="wc-land-lbl" x="${r1(x)}" y="${r1(y)}" style="font-size:${r1(26 * sz)}px">${esc(ms(key))}</text>`;
-  }).join('');
-  const seaLbl = SEA_LABELS.map(([key, cands]) => {
-    const at = placeAt(cands, nodeList, 120);
-    return at ? `<text class="wc-sea-lbl" x="${r1(at.x)}" y="${r1(at.y)}">${esc(ms(key))}</text>` : '';
+  // sea names, set vertically in open water
+  const seaLbl = [['atlantic', 'sea_atlantic'], ['indian', 'sea_indian'], ['southchina', 'sea_pacific']].map(([id, key]) => {
+    const g = regs.find((x) => x.r.id === id);
+    if (!g) return '';
+    for (const u of [0.5, 0.82, 0.18, 0.66, 0.34]) {
+      const x = g.box.x0 + u * g.box.w;
+      for (const v of [0.5, 0.42, 0.6]) {
+        const y = g.box.y0 + v * g.box.h;
+        if ([-90, -45, 0, 45, 90].every((o) => ink.free(x, y + o, 16))) {
+          ink.placed.push({ x, y, r: 60 });
+          return `<text class="wc-sea-lbl" transform="translate(${r1(x)} ${r1(y)}) rotate(-90)">${esc(ms(key))}</text>`;
+        }
+      }
+    }
+    return '';
   }).join('');
   const sketch = (pt, hullId, style, s) => {
     if (!pt) return '';
     const w = 74 * s, h = w * 0.625;
-    return `<svg class="wc-sketch" x="${r1(pt.x - w / 2)}" y="${r1(pt.y - h / 2)}" width="${r1(w)}" height="${r1(h)}" viewBox="0 -3 80 50">${hullSvg(hullId, '', style).replace(/^<svg[^>]*>|<\/svg>$/g, '')}</svg>`;
+    return `<svg class="wc-sketch" x="${r1(pt[0] - w / 2)}" y="${r1(pt[1] - h / 2)}" width="${r1(w)}" height="${r1(h)}" viewBox="0 -3 80 50">${hullSvg(hullId, '', style).replace(/^<svg[^>]*>|<\/svg>$/g, '')}</svg>`;
   };
   // the final battle wears a laurel once the campaign is won
   const fin = CAMPAIGN.FINAL_MISSION && nodes[CAMPAIGN.FINAL_MISSION];
@@ -410,33 +320,21 @@ function chartSvg(p, nodes) {
 <defs>
   <radialGradient id="wc-paper" cx="48%" cy="44%" r="78%"><stop offset="0" stop-color="#f6ecd2"/><stop offset=".58" stop-color="#ecdcb2"/><stop offset="1" stop-color="#d6b981"/></radialGradient>
   <radialGradient id="wc-burn" cx="50%" cy="50%" r="72%"><stop offset=".62" stop-color="#5a3510" stop-opacity="0"/><stop offset=".88" stop-color="#5a3510" stop-opacity=".2"/><stop offset="1" stop-color="#2e1804" stop-opacity=".58"/></radialGradient>
-  <radialGradient id="wc-seawash" cx="55%" cy="55%" r="75%"><stop offset="0" stop-color="#6f9da0" stop-opacity=".13"/><stop offset="1" stop-color="#6f9da0" stop-opacity=".05"/></radialGradient>
   ${grads}
   <pattern id="wc-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(38)"><path d="M0 0V6" stroke="#5a3f22" stroke-width="1" opacity=".5"/></pattern>
-  <pattern id="wc-lockhatch" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(-40)"><path d="M0 0V11" stroke="#3a2613" stroke-width="1.6" opacity=".22"/></pattern>
-  <path id="wc-landp" d="${c.d}" fill-rule="evenodd"/>
-  <clipPath id="wc-landclip"><use href="#wc-landp" clip-rule="evenodd"/></clipPath>
-  ${[[9, 2], [18, 1.6], [29, 1.3]].map(([d, w], i) => `<mask id="wc-ring${i}" maskUnits="userSpaceOnUse" x="-400" y="-400" width="${CW + 800}" height="${CH + 800}">`
-    + `<rect x="-400" y="-400" width="${CW + 800}" height="${CH + 800}" fill="#fff"/><use href="#wc-landp" fill="#000" stroke="#000" stroke-width="${2 * d - w}" stroke-linejoin="round"/></mask>`).join('')}
+  <pattern id="wc-lockhatch" width="11" height="11" patternUnits="userSpaceOnUse" patternTransform="rotate(-40)"><path d="M0 0V11" stroke="#3a2613" stroke-width="1.6" opacity=".2"/></pattern>
 </defs>
 <rect width="${CW}" height="${CH}" fill="url(#wc-paper)"/>
-<rect width="${CW}" height="${CH}" fill="url(#wc-seawash)"/>
-<g class="wc-rhumbs">${lines.join('')}</g>
 <g class="wc-tints">${tints}</g>
-<use href="#wc-landp" class="wc-shallow" stroke-width="40"/>
-<use href="#wc-landp" class="wc-shallow" stroke-width="18"/>
-${[[9, 2], [18, 1.6], [29, 1.3]].map(([d, w], i) => `<use href="#wc-landp" class="wc-ring" stroke-width="${2 * d + w}" mask="url(#wc-ring${i})" style="opacity:${[0.5, 0.32, 0.18][i]}"/>`).join('')}
-<use href="#wc-landp" class="wc-land"/>
-<use href="#wc-landp" class="wc-land-hatch" fill="url(#wc-hatch)"/>
-<g clip-path="url(#wc-landclip)"><use href="#wc-landp" class="wc-land-edge" stroke-width="14"/></g>
-<use href="#wc-landp" class="wc-coast"/>
-<g class="wc-landlbls">${landLbl}</g>
+<g class="wc-rhumbs">${lines.join('')}</g>
+<g class="wc-bounds">${bounds}</g>
+<path class="wc-road" d="${road}"/>
+${ink.svg()}
 <g class="wc-sealbls">${seaLbl}</g>
 <g class="wc-routes">${route}</g>
-${sketch(ship1, 'galleon', 'european', 1)}${sketch(ship2, 'frigate', 'junk', 0.95)}
-${beast1 ? serpent(beast1.x, beast1.y, 0.9) : ''}${beast2 ? whale(beast2.x, beast2.y, 0.85) : ''}
-${rose(rose1.x, rose1.y, 70)}${rose2 ? rose(rose2.x, rose2.y, 50) : ''}
-${cartouche(cart.x, cart.y, 330, 112)}
+${sketch(ship1, 'galleon', 'european', 1)}${sketch(ship2, 'junk', 'junk', 1)}
+${beast1 ? serpent(beast1[0], beast1[1], 0.75) : ''}${beast2 ? whale(beast2[0], beast2[1], 0.7) : ''}
+${rose1 ? rose(rose1[0], rose1[1], 46) : ''}
 ${crown}
 <rect width="${CW}" height="${CH}" fill="url(#wc-burn)" class="wc-burn"/>
 ${neatline()}
@@ -685,7 +583,8 @@ export class WorldChart {
     if (st.width < 10 || st.height < 10) return;
     const pad = st.width < 600 ? 6 : 14;
     const fit = Math.min((st.width - pad * 2) / CW, (st.height - pad * 2) / CH);
-    const minH = Math.min(st.height - pad * 2, 540);
+    // portrait phones: let the map take the full height and pan sideways
+    const minH = Math.min(st.height - pad * 2, st.width < st.height ? 760 : 540);
     const s = CH * fit < minH ? minH / CH : fit;
     const mw = Math.floor(CW * s), mh = Math.floor(CH * s);
     const map = this._f.map;
@@ -754,14 +653,14 @@ export class WorldChart {
     setText(f.ready, ms('wc_ready', sailableShips(p).length));
   }
 
-  /** Canvas px of every node (missions snapped to sea; home stays put). */
+  /** Canvas px of every node. */
   _nodePositions() {
     const nodes = {};
-    for (const m of missionsAll()) nodes[m.id] = nodePx(m.chart, m.id);
+    for (const m of missionsAll()) nodes[m.id] = nodePx(m.chart);
     const pd = patrolDef(), wd = warDef();
-    if (pd?.chart) nodes[pd.id] = nodePx(pd.chart, pd.id);
-    if (wd?.chart) nodes[wd.id] = nodePx(wd.chart, wd.id);
-    nodes.home = nodePx(homeChart(), 'home', false);
+    if (pd?.chart) nodes[pd.id] = nodePx(pd.chart);
+    if (wd?.chart) nodes[wd.id] = nodePx(wd.chart);
+    nodes.home = nodePx(homeChart());
     return nodes;
   }
 
@@ -818,7 +717,7 @@ export class WorldChart {
       html: (it) => {
         if (it.region) {
           const g = it.region;
-          return `<div class="wc-rtag ${g.open ? '' : 'is-locked'}" style="left:${pctX(g.label.x)};top:${pctY(g.label.y)}" title="${esc(regionDesc(g.r) || regionName(g.r))}">`
+          return `<div class="wc-rtag ${g.open ? '' : 'is-locked'}" style="left:${pctX(g.label.x)};top:${pctY(g.label.y)};max-width:${pctX(g.box.w - 16)};--wc-zc:${g.col}" title="${esc(regionDesc(g.r) || regionName(g.r))}">`
             + `<span class="wc-rtag-nm">${esc(regionName(g.r))}</span>`
             + (it.flags.length ? `<span class="wc-rtag-flags">${it.flags.map((fa) => `<span title="${esc(factionName(fa))}">${flagSvg(fa)}</span>`).join('')}</span>` : '')
             + (g.open ? '' : `<span class="wc-rlock">${icon('lock')}${esc(ms('wc_regionLock', g.r.minRenown))}</span>`) + '</div>';
