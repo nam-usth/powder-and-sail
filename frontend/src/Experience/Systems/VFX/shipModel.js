@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ENV } from './env.js';
 import { FACTIONS, factionOf } from '../../../data/factions.js';
+import { gfx } from '../../Render/GfxQuality.js';
 
 // ── Procedural sailing ships ───────────────────────────────────────
 // Technical-art module behind ShipEntity.buildShipMesh(). A ship is built
@@ -75,9 +76,11 @@ export function resolveLivery(team, faction) {
   };
 }
 
-const PAL = {
-  copper: 0x8c5b3e, boot: 0xd6cfbb, hull: 0x2c231c, wale: 0x120e0b,
-  bulwarkIn: 0x7e3426, rail: 0x3d2d21, deckA: 0xa9875c, deckB: 0x977550, hatch: 0x4a3828,
+// ships2: warm honey/brown planking + dark tarred wales (art reference: chunky,
+// readable hulls with warm wood tones and dark wales)
+const PAL0 = {
+  copper: 0x8c5b3e, boot: 0xcdbf9f, hull: 0x8a5530, wale: 0x1b120b,
+  bulwarkIn: 0x8a3a26, rail: 0x3a2617, deckA: 0xc89c62, deckB: 0xb88d56, hatch: 0x5a3f27,
   mast: 0x6f5135, yard: 0x584029, top: 0x4b3726, gold: 0xc79a3c, port: 0x0b0806,
   window: 0xffc06a, lanternBody: 0x2a2018, gun: 0x18181a, carriage: 0x5a3e26,
 };
@@ -230,10 +233,11 @@ const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t 
 
 /** Indexed triangle soup with per-vertex colour + glow; quads auto-orient to their normals. */
 class GeoBuilder {
-  constructor() { this.p = []; this.n = []; this.c = []; this.g = []; this.i = []; }
+  constructor() { this.p = []; this.n = []; this.c = []; this.g = []; this.i = []; this.pk = []; this.plank = 0; }
+  /** Vertex; `this.plank` (0 none · 1 hull strakes · 2 deck planks) tags it for the plank shader. */
   v(x, y, z, nx, ny, nz, col, glow = 0) {
     const k = this.p.length / 3;
-    this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(col.r, col.g, col.b); this.g.push(glow);
+    this.p.push(x, y, z); this.n.push(nx, ny, nz); this.c.push(col.r, col.g, col.b); this.g.push(glow); this.pk.push(this.plank);
     return k;
   }
   tri(a, b, c) {
@@ -301,6 +305,7 @@ class GeoBuilder {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
     g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
     g.setAttribute('aGlow', new THREE.Float32BufferAttribute(this.g, 1));
+    g.setAttribute('aPlank', new THREE.Float32BufferAttribute(this.pk, 1));
     g.setIndex(this.i);
     g.computeBoundingSphere();
     return g;
@@ -310,6 +315,8 @@ class GeoBuilder {
 // ── Hull frame: parametric surface P(t, s) ────────────────────────
 // t: 0 stern → 1 bow · s: 0 keel → 1 gunwale (starboard, x ≥ 0)
 const FREEBOARD_PAD = 0.12;   // keeps decks clear of the swell at RTS zoom
+const SHEER_K = 1.25;         // ships2: a touch more sheer so the silhouette reads as a ship, not a box
+const TUMBLE_ADD = 0.035;     // ships2: extra tumblehome (topsides lean in above the bilge)
 function hullFrame(bp) {
   const L = bp.L, B = bp.B, F = bp.F + FREEBOARD_PAD, D = bp.D;
   const tm = 0.48;
@@ -317,7 +324,7 @@ function hullFrame(bp) {
   const castleH = t => (bp.qd ? bp.qd.h * step(t, bp.qd.t, false) : 0)
                      + (bp.poop ? bp.poop.h * step(t, bp.poop.t, false) : 0)
                      + (bp.fc ? bp.fc.h * step(t, bp.fc.t, true) : 0);
-  const sheer = t => bp.sheerB * Math.pow(Math.max(0, (t - 0.5) / 0.5), 1.8) + bp.sheerS * Math.pow(Math.max(0, (0.5 - t) / 0.5), 1.8);
+  const sheer = t => SHEER_K * bp.sheerB * Math.pow(Math.max(0, (t - 0.5) / 0.5), 1.8) + SHEER_K * bp.sheerS * Math.pow(Math.max(0, (0.5 - t) / 0.5), 1.8);
   const yG = t => F + sheer(t) + castleH(t);
   const yK = t => {
     let k = 1;
@@ -334,7 +341,7 @@ function hullFrame(bp) {
     const k = yK(t), g = yG(t);
     const sMax = clamp((0.12 - k) / (g - k), 0.25, 0.85);
     let w = Math.pow(Math.sin(Math.min(s / sMax, 1) * Math.PI / 2), bp.full);
-    if (s > sMax) { const u = (s - sMax) / (1 - sMax); w *= 1 - bp.tumble * u * u; }
+    if (s > sMax) { const u = (s - sMax) / (1 - sMax); w *= 1 - (bp.tumble + TUMBLE_ADD) * u * u; }
     return w;
   };
   const P = (t, s, out) => {
@@ -361,8 +368,13 @@ function surfNormal(H, t, s, out) {
 }
 
 // ── Hull + spars geometry ─────────────────────────────────────────
-function buildHull(bp, tier, paintHex, forceGild = false) {
+// ships2: planking by hull family — honey oak (european), red-brown junk
+// timber, dark teak (dhow), weathered brown (prau)
+const HULL_WOOD = { european: 0x8a5530, junk: 0x6e2f1c, dhow: 0x7a4f2c, prau: 0x76522f };
+
+function buildHull(bp, tier, paintHex, forceGild = false, family = 'european') {
   const H = hullFrame(bp);
+  const PAL = { ...PAL0, hull: HULL_WOOD[family] ?? PAL0.hull };
   const gb = new GeoBuilder();
   const gild = tier >= 3 || forceGild;
   const paint = C(paintHex);
@@ -388,20 +400,25 @@ function buildHull(bp, tier, paintHex, forceGild = false) {
     out.push([-0.03, PAL.copper, 0]);
     out.push([0.05, PAL.boot, 0]);
     if (nd) {
+      // per gun deck: dark tarred wale · painted gun strake (faction colour) · thin wale
       for (let i = 0; i < nd; i++) {
         const yc = bandAt(i, t);
-        out.push([yc - bh / 2 - 0.035, PAL.hull, 0]);
-        out.push([yc - bh / 2, gild && i === nd - 1 ? PAL.gold : PAL.wale, 0]);
+        out.push([yc - bh / 2 - 0.065, PAL.hull, 0]);
+        out.push([yc - bh / 2, PAL.wale, 0]);
         out.push([yc + bh / 2, paintHex, 0]);
+        out.push([yc + bh / 2 + 0.03, gild && i === nd - 1 ? PAL.gold : PAL.wale, 0]);
       }
     } else {
       const yc = H.F - 0.17 + H.sheer(t);
-      out.push([yc - 0.045, PAL.hull, 0]);
-      out.push([yc + 0.045, paintHex, 0]);
+      out.push([yc - 0.07, PAL.hull, 0]);
+      out.push([yc - 0.03, PAL.wale, 0]);
+      out.push([yc + 0.06, paintHex, 0]);
     }
-    if (gild) { out.push([H.yG(t) - 0.075, PAL.hull, 0]); out.push([H.yG(t) - 0.05, PAL.gold, 0]); }
-    out.push([H.yG(t) - 0.03, PAL.hull, 0]);
-    out.push([H.yG(t), gild ? PAL.gold : PAL.rail, 0]);
+    // sheer strake + rail: a painted (faction) band under a gilded or tarred cap
+    out.push([H.yG(t) - 0.10, PAL.hull, 0]);
+    if (gild) out.push([H.yG(t) - 0.08, PAL.gold, 0]);
+    out.push([H.yG(t) - 0.03, paintHex, 0]);
+    out.push([H.yG(t), gild ? PAL.gold : PAL.wale, 0]);
     // clamp + monotone
     const k = H.yK(t), g = H.yG(t);
     let prev = k;
@@ -416,7 +433,9 @@ function buildHull(bp, tier, paintHex, forceGild = false) {
   for (const side of [1, -1]) {
     for (let sIdx = 0; sIdx < nStrips; sIdx++) {
       const rows = sIdx === 0 ? 6 : 2;
-      const col = C(lv0[sIdx + 1][1] === paintHex ? paintHex : lv0[sIdx + 1][1]);
+      const hex = lv0[sIdx + 1][1];
+      const col = C(hex);
+      gb.plank = (hex === PAL.hull || hex === paintHex) ? 1 : 0;
       const grid = [];
       for (let ti = 0; ti < T.length; ti++) {
         const t = T[ti];
@@ -436,7 +455,9 @@ function buildHull(bp, tier, paintHex, forceGild = false) {
     }
   }
 
-  // transom (flat stern face) — rows across port↔starboard
+  gb.plank = 0;
+  // transom (flat stern face) — rows across port↔starboard; ships2: the upper
+  // counter is painted in the faction colour with a gilded (crown) or tarred frame
   {
     const t = 0, lv = levelsAt(t);
     const n = new THREE.Vector3(0, 0.15, -1).normalize();
@@ -447,7 +468,10 @@ function buildHull(bp, tier, paintHex, forceGild = false) {
     for (let k = 0; k < ks; k++) {
       const a = pts[k], b = pts[k + 1];
       const yMid = (a[1] + b[1]) / 2;
-      const col = C(yMid < -0.03 ? PAL.copper : yMid < 0.05 ? PAL.boot : yMid > yDeck0 + 0.02 && gild ? PAL.gold : PAL.hull);
+      const col = C(yMid < -0.03 ? PAL.copper : yMid < 0.05 ? PAL.boot
+        : yMid > yDeck0 + 0.02 ? (gild ? PAL.gold : PAL.wale)
+        : yMid > yDeck0 - 0.30 ? paintHex
+        : yMid > yDeck0 - 0.36 ? (gild ? PAL.gold : PAL.wale) : PAL.hull);
       const i0 = gb.v(a[0], a[1], a[2], n.x, n.y, n.z, col), i1 = gb.v(-a[0], a[1], a[2], n.x, n.y, n.z, col);
       const i2 = gb.v(-b[0], b[1], b[2], n.x, n.y, n.z, col), i3 = gb.v(b[0], b[1], b[2], n.x, n.y, n.z, col);
       gb.quad(i0, i1, i2, i3);
@@ -472,6 +496,7 @@ function buildHull(bp, tier, paintHex, forceGild = false) {
   const deckY = t => H.yG(t) - bulw;
   const inner = (t, y) => { H.P(t, H.sOf(t, y), P); return Math.max(0, P.x - thick); };
   const LANES = 6;
+  gb.plank = 2;
   for (let ti = 0; ti < T.length - 1; ti++) {
     const t0 = T[ti], t1 = T[ti + 1];
     const y0 = deckY(t0), y1 = deckY(t1);
@@ -487,6 +512,7 @@ function buildHull(bp, tier, paintHex, forceGild = false) {
               new THREE.Vector3(x1 * f1, y1, z1), new THREE.Vector3(x1 * f0, y1, z1), up, col);
     }
   }
+  gb.plank = 0;
   for (const side of [1, -1]) {
     const inRows = [], capRows = [];
     for (let ti = 0; ti < T.length; ti++) {
@@ -636,18 +662,25 @@ function buildHull(bp, tier, paintHex, forceGild = false) {
     H.P(0, 1, P);
     const zl = P.z + 0.02;
     const lanternAt = (x) => {
-      gb.box(x, g0 + 0.09, zl, 0.035, 0.18, 0.035, C(PAL.lanternBody));
-      gb.box(x, g0 + 0.22, zl, 0.085, 0.12, 0.085, C(PAL.window), 1);
-      gb.box(x, g0 + 0.30, zl, 0.10, 0.03, 0.10, gild ? C(PAL.gold) : C(PAL.lanternBody));
-      lanterns.push([x, g0 + 0.22, zl]);
+      gb.box(x, g0 + 0.10, zl, 0.04, 0.20, 0.04, C(PAL.lanternBody));
+      gb.box(x, g0 + 0.26, zl, 0.12, 0.16, 0.12, C(PAL.window), 1);
+      gb.box(x, g0 + 0.36, zl, 0.14, 0.04, 0.14, gild ? C(PAL.gold) : C(PAL.lanternBody));
+      gb.box(x, g0 + 0.40, zl, 0.06, 0.04, 0.06, gild ? C(PAL.gold) : C(PAL.lanternBody));
+      lanterns.push([x, g0 + 0.26, zl]);
     };
     lanternAt(0);
     if (tier >= 3) { lanternAt(xT * 0.8); lanternAt(-xT * 0.8); }
   }
-  // figurehead (tier ≥ 4)
-  if (tier >= 4) {
+  // bow trim: headrails + figurehead in the faction paint (gilded on crown
+  // ships and from tier IV) — no figurehead on a junk's flat transom bow
+  if (!bp.bowTrans && (tier >= 2 || gild)) {
+    const trim = C(gild || tier >= 4 ? PAL.gold : paintHex);
     H.P(1, 0.92, P);
-    gb.box(0, P.y - 0.05, P.z + 0.06, 0.08, 0.16, 0.16, C(PAL.gold));
+    gb.box(0, P.y - 0.05, P.z + 0.07, 0.09, 0.18, 0.20, trim);
+    H.P(0.93, 0.85, _a);
+    for (const side of [1, -1]) {
+      gb.cyl(new THREE.Vector3(side * _a.x * 0.9, _a.y, _a.z), new THREE.Vector3(0, P.y - 0.02, P.z + 0.12), 0.022, 0.018, trim, 4);
+    }
   }
 
   // spars: masts, tops, yards, gaffs, booms, bowsprit
@@ -662,7 +695,7 @@ function mastAxis(m) { const r = m.rake ?? 0.05; return new THREE.Vector3(0, Mat
 /** Masts + spars into the hull builder; returns attachment points for sails/rigging. */
 function buildSpars(gb, bp, H, deckY) {
   const out = { masts: [], bowsprit: null };
-  const wood = C(PAL.mast), yardC = C(PAL.yard), topC = C(PAL.top);
+  const wood = C(PAL0.mast), yardC = C(PAL0.yard), topC = C(PAL0.top);
   const P = new THREE.Vector3();
   for (const m of bp.masts) {
     const t = 0.5 + m.z, yd = deckY(t);
@@ -922,6 +955,8 @@ attribute vec4 aKind;   // kind, amplitude, seed, trim
 varying vec2 vUv;
 varying vec4 vKind;
 varying vec3 vNormalV;
+varying vec3 vViewP;
+varying float vBelly;
 float sailE(float kind, vec2 uv, float seed){
   float t = uTime;
   if (kind < 0.5) {
@@ -954,7 +989,9 @@ void main(){
   vec3 N = cross(du, dv);
   N = dot(N, N) > 1e-10 ? normalize(N) : vec3(1.0, 0.0, 0.0);
   vNormalV = normalize(normalMatrix * N);
+  vBelly = aKind.x > 1.5 && aKind.x < 3.5 ? 0.0 : clamp(e, 0.0, 1.0);
   vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+  vViewP = mvPosition.xyz;
   gl_Position = projectionMatrix * mvPosition;
   #include <fog_vertex>
 }`;
@@ -969,6 +1006,8 @@ uniform float uFlagStyle, uDamage, uPatched, uEmblem;
 varying vec2 vUv;
 varying vec4 vKind;
 varying vec3 vNormalV;
+varying vec3 vViewP;
+varying float vBelly;
 float sHash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 float sNoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
   return mix(mix(sHash(i), sHash(i + vec2(1.0, 0.0)), f.x), mix(sHash(i + vec2(0.0, 1.0)), sHash(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -1031,24 +1070,36 @@ void main(){
       float r = sHash(cell + vKind.z * 7.0);
       base *= mix(1.0, mix(0.72, 1.45, fract(r * 7.3)), step(0.6, r));
     }
-    if (kind > 3.5) {                                                   // junk: dark battens, mat-weave panels
+    if (kind > 3.5) {                                                   // junk: dark ribs, mat-weave panels
       float bd = abs(fract(vUv.y * 6.0 + 0.5) - 0.5);
-      base *= 0.82 + 0.18 * sNoise(vUv * vec2(40.0, 6.0));
-      base = mix(base, vec3(0.13, 0.09, 0.06), 1.0 - smoothstep(0.03, 0.07, bd));
+      base *= 0.86 + 0.14 * sNoise(vUv * vec2(40.0, 6.0));
+#ifndef SAIL_LOW
+      base *= 0.86 + 0.14 * smoothstep(0.0, 0.45, bd);                   // each panel bellies between ribs
+#endif
+      base = mix(base, vec3(0.16, 0.10, 0.06), 1.0 - smoothstep(0.035, 0.075, bd));
     } else {
-      float seam = abs(fract(vUv.x * 7.0) - 0.5);
-      base *= 1.0 - 0.09 * smoothstep(0.40, 0.5, seam);               // canvas cloths
-      if (vKind.w > 0.5) {
-        if (uEmblem > 0.5 && uEmblem < 1.5) base = mix(base, uFlagB, saltire(vUv, 0.05) * 0.92);
-        else if (uEmblem > 1.5) base = mix(base, vec3(0.70, 0.10, 0.10), crossPattee(vUv) * 0.95);
+      // ships2: plain cream canvas — faction colour only where period-appropriate
+      // (pirate black/patched, Spanish saltire / Portuguese cross on the square sails)
+      if (kind < 0.5 || vKind.w > 0.5) {
+        if (uEmblem > 0.5 && uEmblem < 1.5) base = mix(base, uFlagB, saltire(vUv, 0.075) * 0.92);
+        else if (uEmblem > 1.5) base = mix(base, vec3(0.72, 0.10, 0.10), crossPattee(vUv) * 0.95);
       }
-      // livery: a broad band at the foot of the courses + a head band on every square sail,
-      // so the faction reads at the default battle zoom (art pass 2; shader-only, no cost)
-      float band = step(0.04, vUv.y) * step(vUv.y, 0.20) * vKind.w
-                 + step(0.83, vUv.y) * step(vUv.y, 0.90) * (1.0 - step(0.5, kind));
-      base = mix(base, uTrim, clamp(band, 0.0, 1.0) * 0.92);
+#ifndef SAIL_LOW
+      float sw = max(fwidth(vUv.x * 7.0), 0.02);
+      float seam = abs(fract(vUv.x * 7.0) - 0.5);
+      base *= 1.0 - 0.10 * smoothstep(0.5 - sw * 1.5, 0.5, seam) * (1.0 - smoothstep(0.25, 0.5, sw)); // canvas cloths
+      if (kind < 0.5) {                                                 // reef bands with their points
+        float rb = min(abs(vUv.y - 0.70), abs(vUv.y - 0.80));
+        float rw = max(fwidth(vUv.y), 0.006);
+        float pts = step(0.5, fract(vUv.x * 14.0)) * 0.5 + 0.5;
+        base *= 1.0 - 0.14 * pts * (1.0 - smoothstep(rw * 0.6, rw * 1.6, rb));
+      }
+      float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
+      base *= 0.86 + 0.14 * smoothstep(0.0, 0.05, edge);               // bolt-rope / tabling
+      base *= 0.90 + 0.12 * vBelly;                                     // soft shade into the belly folds
+#endif
     }
-    base *= 0.90 + 0.10 * vUv.y;                                        // weathered foot
+    base *= 0.88 + 0.12 * vUv.y;                                        // weathered foot
     float n = sNoise(vUv * vec2(7.0, 9.0) + vKind.z * 17.0);
     if (uDamage > 0.08 && n < uDamage * 0.42 - 0.06) discard;           // shot holes
     base *= 1.0 - uDamage * 0.6 * smoothstep(0.35, 0.85, sNoise(vUv * 3.0 + 4.0 + vKind.z * 5.0));
@@ -1064,7 +1115,12 @@ void main(){
   #endif
   #if NUM_DIR_LIGHTS > 0
     float ndl = dot(N, directionalLights[0].direction);
-    irr += directionalLights[0].color * (max(ndl, 0.0) + max(-ndl, 0.0) * 0.42);   // light through the cloth
+    irr += directionalLights[0].color * (max(ndl, 0.0) * 0.92 + max(-ndl, 0.0) * 0.42);   // light through the cloth
+  #ifndef SAIL_LOW
+    // translucency: looking toward the sun through the canvas → a warm glow
+    float toSun = max(dot(normalize(vViewP), directionalLights[0].direction), 0.0);
+    if (kind < 1.5 || kind > 3.5) irr += directionalLights[0].color * vec3(1.0, 0.93, 0.80) * max(-ndl, 0.0) * (0.08 + 0.40 * toSun * toSun);
+  #endif
   #endif
   #if NUM_DIR_LIGHTS > 1
     irr += directionalLights[1].color * max(dot(N, directionalLights[1].direction), 0.0) * 0.6;
@@ -1083,11 +1139,32 @@ function makeSailMaterial(lv) {
     uFlagStyle: { value: lv.pattern }, uPatched: { value: lv.patched }, uEmblem: { value: lv.emblem },
   }]);
   uniforms.uTime = SAIL_TIME;                 // shared clock (merge() would have copied it)
-  return new THREE.ShaderMaterial({
+  const m = new THREE.ShaderMaterial({
     uniforms, vertexShader: SAIL_VERT, fragmentShader: SAIL_FRAG,
     side: THREE.DoubleSide, lights: true, fog: true,
+    defines: gfx.high ? {} : { SAIL_LOW: '' },
   });
+  m.extensions.derivatives = true;
+  _sailMats.add(m);
+  m.addEventListener('dispose', () => _sailMats.delete(m));
+  return m;
 }
+
+// ── GFX tier (ships2) ──────────────────────────────────────────────
+// HIGH: cloth seams, reef bands, belly shading, sun translucency + rigging.
+// LOW : flat-shaded canvas (SAIL_LOW define, one more program variant) and no
+//       rigging lines (the shared line material is hidden → no draw call).
+const _sailMats = new Set();
+function applyShipGfx() {
+  if (_rigMat) _rigMat.visible = gfx.high;
+  for (const m of _sailMats) {
+    const low = 'SAIL_LOW' in m.defines;
+    if (low === !gfx.high) continue;
+    if (gfx.high) delete m.defines.SAIL_LOW; else m.defines.SAIL_LOW = '';
+    m.needsUpdate = true;
+  }
+}
+gfx?.on?.('change.shipModel', applyShipGfx);
 
 const HULL_GLOW_FRAG = /* glsl */`#include <emissivemap_fragment>
   #if NUM_DIR_LIGHTS > 0
@@ -1098,17 +1175,44 @@ const HULL_GLOW_FRAG = /* glsl */`#include <emissivemap_fragment>
   float _night = 1.0 - clamp((_sunL - 0.35) / 0.9, 0.0, 1.0);
   totalEmissiveRadiance += vGlow * vec3(1.0, 0.62, 0.26) * (0.30 + 1.7 * _night);`;
 
+// ships2: planking. Hull strakes (aPlank 1) run fore-and-aft in rows of
+// ~0.1 units with staggered butt joints; deck planks (aPlank 2) run along the
+// ship. Seams and per-plank tone fade out by screen-space derivative, so the
+// default zoom sees a calm warm tone and the close-up sees the wood. A soft
+// waterline AO darkens the lowest topsides.
+const HULL_PLANK_FRAG = /* glsl */`#include <color_fragment>
+  {
+    float _aaFade = 1.0;
+    if (vPlank > 0.5) {
+      float _deck = step(1.5, vPlank);
+      float _c = mix(vHullP.y * 10.0, vHullP.x * 9.0 + 0.5, _deck);
+      float _row = floor(_c);
+      float _f = fract(_c);
+      float _w = fwidth(_c);
+      _aaFade = 1.0 - smoothstep(0.18, 0.45, _w);
+      float _seam = 1.0 - smoothstep(0.0, max(_w, 0.04) * 1.2, min(_f, 1.0 - _f));
+      float _along = vHullP.z * 0.55 + fract(_row * 0.618) * 3.0;
+      float _plankId = _row * 7.31 + floor(_along);
+      float _butt = 1.0 - smoothstep(0.0, max(fwidth(_along), 0.01) * 1.5, min(fract(_along), 1.0 - fract(_along)));
+      float _tone = fract(sin(_plankId * 12.9898) * 43758.5453);
+      diffuseColor.rgb *= 1.0 - _aaFade * (0.30 * max(_seam, _butt * 0.7) + 0.12 * (_tone - 0.5));
+    }
+    diffuseColor.rgb *= 0.80 + 0.20 * smoothstep(-0.05, 0.45, vHullP.y);
+  }`;
+
 function makeHullMaterial() {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0.0 });
+  m.extensions = { derivatives: true };
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aGlow;\nvarying float vGlow;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
+      .replace('#include <common>', '#include <common>\nattribute float aGlow;\nattribute float aPlank;\nvarying float vGlow;\nvarying float vPlank;\nvarying vec3 vHullP;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;\nvPlank = aPlank;\nvHullP = position;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vGlow;')
+      .replace('#include <common>', '#include <common>\nvarying float vGlow;\nvarying float vPlank;\nvarying vec3 vHullP;')
+      .replace('#include <color_fragment>', HULL_PLANK_FRAG)
       .replace('#include <emissivemap_fragment>', HULL_GLOW_FRAG);
   };
-  m.customProgramCacheKey = () => 'iow_hull_glow_v1';
+  m.customProgramCacheKey = () => 'iow_hull_glow_v2';
   m.userData.baseHex = 0xffffff;
   return m;
 }
@@ -1116,7 +1220,11 @@ function makeHullMaterial() {
 // shared, never disposed per ship
 let _rigMat = null, _glowGeo = null, _glowMat = null;
 function rigMaterial() {
-  if (!_rigMat) { _rigMat = new THREE.LineBasicMaterial({ color: 0x2a2119, transparent: true, opacity: 0.8 }); _rigMat.userData.shared = true; }
+  if (!_rigMat) {
+    _rigMat = new THREE.LineBasicMaterial({ color: 0x2a2119, transparent: true, opacity: 0.8 });
+    _rigMat.userData.shared = true;
+    _rigMat.visible = gfx.high;
+  }
   return _rigMat;
 }
 function lanternGlow() {
@@ -1155,12 +1263,13 @@ function lanternGlow() {
 
 // ── Cache + public builder ─────────────────────────────────────────
 const _cache = new Map();
+const TIER_SCALE = [0.92, 0.97, 1.0, 1.05, 1.10];
 
 function partsFor(id, bp, tier, col, gild) {
   const key = `${id}|${tier}|${col}|${gild ? 1 : 0}`;
   let parts = _cache.get(key);
   if (parts) return parts;
-  const hp = buildHull(bp, tier, col, gild);
+  const hp = buildHull(bp, tier, col, gild, id.split('_')[0] in HULL_WOOD ? id.split('_')[0] : 'european');
   const sails = buildSails(bp, tier, hp);
   const rig = buildRigging(bp, hp);
   [hp.geo, sails, rig].forEach(g => { g.userData.shared = true; });
@@ -1189,12 +1298,14 @@ function partsFor(id, bp, tier, col, gild) {
  * @returns {THREE.Group}
  */
 export function buildProceduralShip(o = {}) {
-  const sc = o.sc || 1;
   const lv = resolveLivery(o.team, o.faction);
   const style = o.style || lv.style;
   // hull strake: the faction's livery colour; the player keeps its hull's own paint
   const col = lv.id === 'player' && o.col != null ? o.col : lv.paint;
   const { id, bp, tier } = resolveBlueprint({ ...o, style });
+  // ships2: visual size step per hull class (rate I cutter … V ship of the line)
+  // on top of cfg.sc, so a sloop and a two-decker no longer look the same size
+  const sc = (o.sc || 1) * (TIER_SCALE[bp.tier - 1] ?? 1);
   const parts = partsFor(id, bp, tier, col, lv.gild);
   const g = new THREE.Group();
   g.name = `ship:${id}`;
