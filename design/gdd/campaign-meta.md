@@ -31,6 +31,20 @@ with histories, ranks earned through renown.
    legalised saves fall back along the gun's research line
    (`CANNON_DOWNGRADE`) to the best known gun. v1 saves are granted the techs
    of every tier-legal gun already mounted (no one loses equipment).
+4c. **Fleet doctrines** (quick-equip; `data/doctrines.js`, `Meta/Doctrine.js`).
+   A doctrine is a per-slot gun preference list (optionally per hull class).
+   `fitDoctrine(id, {hull, tier}, known)` takes, per slot, the first listed gun
+   the hull may mount AND has researched; when the tier-allowed favourite is
+   unresearched the slot falls back down its research line (reported, so the
+   UI can say "research X"). Unknown id → no change. Applied from the Loadout
+   panel doctrine bar (this ship / selected / whole fleet, harbor only), the
+   Shipyard "Refit whole fleet" chooser, or per ship in the World Chart
+   briefing — on Set Sail `applySailDoctrines(profile, {uid: id})` refits only
+   the chosen ships ("keep" = unchanged). The choice is remembered on the
+   roster ship (`doctrine`); a manual slot edit clears it. The briefing's
+   "Quartermaster advises" hint is derived from mission data only
+   (`suggestDoctrines`: forts → siege, prize → crippler/long range, heavy
+   hulls → anti-heavy, mostly light → anti-light, else line of battle).
 5. Fleet cap for battle = `FLEET_CAP_BASE + (shipyard level − 1) + Σ barracks bonus`
    (barracks Lv 1/3/5/7 → +1 each), max `FLEET_CAP_MAX`. A Barracks needs a
    Research Lab at Lv 2 — the UI must say so: `Shipyard.fleetCapBreakdown(profile)`
@@ -63,8 +77,11 @@ with histories, ranks earned through renown.
 Profile (storage), data/harbor.js, data/campaign.js, Harbor (buildings), Sea Battle (results).
 
 ## Tuning Knobs
-All in `data/harbor.js` (hull catalog, timers, costs, ranks) and `data/campaign.js`.
+All in `data/harbor.js` (hull catalog, timers, costs, ranks), `data/campaign.js`
+and `data/doctrines.js` (doctrine gun lists, briefing hint thresholds `DOCTRINE_HINT`).
 
 ## Acceptance Criteria
 Covered by `test/12_Meta.test.js` (Node-runnable): build/repair/salvage timers,
-battle result application, unlock rules, offline accrual, migration.
+battle result application, unlock rules, offline accrual, migration,
+fleet doctrines (tier + research respected with fallback; Set Sail refits only
+the chosen ships; unknown doctrine = keep).

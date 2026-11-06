@@ -1664,3 +1664,10 @@ body.meta-modal-open #float-text-layer { display: none !important; }
 #cmd-card .cmd-btn { height: 30px !important; }
 /* QA-009: long faction names ("Armada of the Spanish Crown") are shown whole on desktop */
 .vs-bar .vs-name { max-width: min(320px, 22vw) !important; }
+
+/* ── Fleet doctrine bar (Loadout, harbor) ── */
+#lp .lp2-doc-bar { background: rgba(255,248,226,.4) !important; border: 1px solid rgba(58,37,15,.45) !important; box-shadow: inset 0 0 0 3px rgba(255,248,226,.35), inset 0 0 0 4px rgba(58,37,15,.18); }
+#lp .lp2-doc-lbl { font: 400 14px/1 var(--pd-f-head) !important; letter-spacing: .03em !important; text-transform: none !important; color: var(--pd-ink) !important; }
+#lp .lp2-doc-sel { font: 400 14px/1.1 var(--pd-f-head) !important; color: var(--pd-ink) !important; background: rgba(255,250,234,.85) !important; border: 1px solid rgba(58,37,15,.55) !important; padding: 4px 6px !important; }
+#lp .lp2-doc-desc { font: italic 400 13px/1.2 var(--pd-f-fell, Georgia, serif) !important; color: var(--pd-ink-2) !important; }
+#lp .lp2-doc-btn { font-size: 12.5px !important; padding: 4px 8px !important; }

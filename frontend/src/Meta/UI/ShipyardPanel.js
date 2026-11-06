@@ -15,7 +15,9 @@ import {
   shipyardLevel, shipyardSlots, fleetCap, fleetCapBreakdown, rosterCap, tickRoster, hullOf, canBuild, startBuild,
   repairQuote, startRepair, salvageQuote, startSalvage, rushQuote, rush, scrapShip, mountedGuns,
 } from '../Shipyard.js';
-import { ms, hullName, className, fmtNum, fmtClock, roman, capBreakdownText } from './strings.js';
+import { ms, hullName, className, fmtNum, fmtClock, roman, capBreakdownText, doctrineName, doctrineDesc, refitSummary } from './strings.js';
+import { DOCTRINES, DOCTRINE_BY_ID } from '../../data/doctrines.js';
+import { applyDoctrineToRoster } from '../Doctrine.js';
 import { icon, resIcon, hullSvg, tierBadge, tierOf } from './icons.js';
 import {
   esc, el, domId, call, nowOf, emitMetaChanged, ensureMetaCss, revealWhenStyled,
@@ -135,6 +137,11 @@ export class ShipyardPanel {
     <div class="sy-body" data-f="body">
       <section class="sy-col sy-roster" data-f="colR">
         <h3 class="mx-sec"><span class="mx-caps" data-f="rosterH"></span><small data-f="rosterN"></small></h3>
+        <div class="sy-refit" data-f="refit">
+          <label class="sy-refit-l"><span data-f="refitL"></span>
+            <select class="mx-select sy-refit-sel" data-f="refitSel"></select></label>
+          <button type="button" class="mx-btn sm" data-act="refit" data-f="refitBtn">${icon('cannon')}<span data-f="refitBtnL"></span></button>
+        </div>
         <div class="sy-list" data-f="list"></div>
       </section>
       <section class="sy-col sy-cat" data-f="colB">
@@ -164,6 +171,15 @@ export class ShipyardPanel {
     f.x.setAttribute('aria-label', ms('close')); f.x.title = ms('close') + ' (Esc)';
     setText(f.tabR, ms('sy_tab_roster')); setText(f.tabB, ms('sy_tab_build'));
     setText(f.rosterH, ms('sy_roster')); setText(f.catH, ms('sy_catalogue'));
+    // Fleet doctrine refit (data/doctrines.js)
+    setText(f.refitL, ms('doc_refitFleet'));
+    setText(f.refitBtnL, ms('doc_fleet'));
+    const keep = f.refitSel.value;
+    f.refitSel.innerHTML = `<option value="">${esc(ms('doc_choose'))}</option>`
+      + DOCTRINES.map((d) => `<option value="${d.id}" title="${esc(doctrineDesc(d.id))}">${d.icon} ${esc(doctrineName(d.id))}</option>`).join('');
+    f.refitSel.value = keep;
+    f.refitSel.title = keep ? doctrineDesc(keep) : '';
+    if (!f.refitSel._wired) { f.refitSel._wired = true; f.refitSel.addEventListener('change', () => { f.refitSel.title = f.refitSel.value ? doctrineDesc(f.refitSel.value) : ''; }); }
     this._setTab(this._tab, false);
   }
 
@@ -235,7 +251,7 @@ export class ShipyardPanel {
     const isLast = p.fleet.length <= 1;
     patchKeyed(f.list, p.fleet, {
       key: (s) => s.uid,
-      sig: (s) => [lang, uiStatus(s), s.nm, s.hullId, JSON.stringify(s.loadout || {}), s.battles || 0, s.sinks || 0,
+      sig: (s) => [lang, uiStatus(s), s.nm, s.hullId, JSON.stringify(s.loadout || {}), s.doctrine || '', s.battles || 0, s.sinks || 0,
         this._confirm === s.uid, s.status === 'ready' && (s.hpFrac ?? 1) < 0.999, isLast].join('|'),
       html: (s) => this._shipHtml(s, p, isLast),
       after: (node, s) => this._liveShip(node, s, p, now),
@@ -313,13 +329,26 @@ export class ShipyardPanel {
   <div class="sy-well sv-well wl-${st}">${hullSvg(h.id)}<span class="sy-well-badge">${icon(badge)}</span></div>
   <div class="sy-main">
     <div class="sy-ship-head"><h4 class="sy-nm">${esc(s.nm)}</h4>${tierBadge(h.tier)}<span class="mx-tag tag-${st}">${esc(ms('st_' + st))}</span></div>
-    <div class="sy-cls">${esc(hullName(h))} · ${esc(className(h.hull))}${meterLbl ? ` · <em>${esc(meterLbl)}</em>` : ''}</div>
+    <div class="sy-cls">${esc(hullName(h))} · ${esc(className(h.hull))}${meterLbl ? ` · <em>${esc(meterLbl)}</em>` : ''}${DOCTRINE_BY_ID.has(s.doctrine) ? ` · <span class="sy-doc" title="${esc(doctrineDesc(s.doctrine))}">${DOCTRINE_BY_ID.get(s.doctrine).icon} ${esc(doctrineName(s.doctrine))}</span>` : ''}</div>
     ${meter}
     <div class="sy-guns">${guns}</div>
     <div class="sy-rec">${icon('swords')}<span>${esc(ms('sy_battles', s.battles || 0))}</span>${icon('skull')}<span>${esc(ms('sy_sinks', s.sinks || 0))}</span></div>
   </div>
   <div class="sy-acts">${acts}</div>
 </article>`;
+  }
+
+  /** Refit every roster ship to the chosen doctrine (Meta/Doctrine.applyDoctrineToRoster). */
+  _refit() {
+    const id = this._f.refitSel.value;
+    if (!DOCTRINE_BY_ID.has(id)) { call(this.ctx, 'toast', ms('doc_pickFirst'), 'info'); this._f.refitSel.focus(); return; }
+    const p = this.ctx.getProfile();
+    const r = applyDoctrineToRoster(p, id);
+    if (!r.ships) return;
+    this._committed();
+    call(this.ctx, 'toast', refitSummary(r), r.fallbacks.length ? 'info' : 'good');
+    call(this.ctx, 'sfx', 'ui_click');
+    this._render();
   }
 
   /** Live values inside a ship card (HP, countdowns, quotes, affordability). */
@@ -465,6 +494,7 @@ export class ShipyardPanel {
       case 'close': this.close(); break;
       case 'tab': this._setTab(b.dataset.tab); break;
       case 'build': this._build(b.dataset.hull); break;
+      case 'refit': this._refit(); break;
       case 'repair': this._act(uid, startRepair, 't_repair', 'coin'); break;
       case 'salvage': this._act(uid, startSalvage, 't_salvage', 'coin'); break;
       case 'rush': this._act(uid, rush, 't_rush', 'coin'); break;

@@ -22,6 +22,8 @@ import { fleetCapBreakdown, buildingRequirements, labLevel, buildBlockers } from
 import { BUILDINGS } from '../frontend/src/data/buildings.js';
 import { comebackRate } from '../frontend/src/Experience/Systems/Naval/CommanderSystem.js';
 import { MissionSystem, enemyAi } from '../frontend/src/Experience/Systems/Match/MissionSystem.js';
+import { fitDoctrine, fitDoctrineReport, applyDoctrineToRoster, applySailDoctrines, suggestDoctrines, groupFallbacks } from '../frontend/src/Meta/Doctrine.js';
+import { DOCTRINES } from '../frontend/src/data/doctrines.js';
 
 const T0 = 1_700_000_000_000;
 const memBackend = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), m }; };
@@ -386,6 +388,57 @@ suite('Meta · Gameplay pass (first two hours)', () => {
       if (m.timeLimit) assert(m.timeLimit > (m.parTime || 0), m.id + ' time limit above par');
       for (const e of all) if (e.ai?.tactic) assert(['engage', 'kite', 'guard', 'hold', 'patrol'].includes(e.ai.tactic), m.id + ' tactic');
     }
+  });
+});
+
+suite('Meta · Fleet doctrines', () => {
+  const ALL_GUNS = CANNONS.map(c => cannonTechId(c.id)).filter(Boolean);
+  test('every doctrine fits every hull class and tier with legal guns (tier + research)', () => {
+    for (const d of DOCTRINES) for (const h of Object.values(HULLS)) for (const known of [[], ALL_GUNS, ['gun_long9']]) {
+      const lo = fitDoctrine(d.id, { hull: h.hull, tier: h.tier }, known);
+      const slots = Object.keys(lo);
+      assertEqual(slots.length, { light: 2, standard: 3, heavy: 4 }[h.hull], `${d.id} ${h.id} slots`);
+      for (const sl of slots) assert(canMountCannon(CANNON_BY_ID.get(lo[sl]), { hullTier: h.tier }, known), `${d.id} ${h.id} ${sl}=${lo[sl]}`);
+    }
+  });
+  test('fitDoctrine picks the best researched gun allowed by tier, else falls back down the line', () => {
+    const war = { hull: 'heavy', tier: 5 };
+    assertEqual(fitDoctrine('antiheavy', war, ALL_GUNS).L, 'cannon_royal', 'tier V + researched → Cannon Royal');
+    assertEqual(fitDoctrine('antiheavy', { hull: 'heavy', tier: 3 }, ALL_GUNS).L, 'demi_can', 'tier III hull caps at demi-cannon');
+    const r = fitDoctrineReport('longrange', { hull: 'standard', tier: 3 }, ['gun_long9']);
+    assertEqual(r.loadout.B, 'long9', 'Long 12 unresearched → Long 9');
+    assert(r.fallbacks.some(f => f.slot === 'B' && f.want === 'long12' && f.got === 'long9'), 'fallback reported');
+    const none = fitDoctrineReport('siege', war, []);
+    assert(Object.values(none.loadout).every(id => STARTER_CANNONS.includes(id)), 'nothing researched → tier-I guns ' + JSON.stringify(none.loadout));
+    assertEqual(fitDoctrineReport('siege', war, ALL_GUNS).fallbacks.length, 0, 'fully researched → no fallbacks');
+    assertEqual(fitDoctrine('nope', war, ALL_GUNS), null, 'unknown doctrine → null');
+    assertEqual(groupFallbacks(none.fallbacks)[0].n >= 1, true, 'grouped');
+  });
+  test('Set Sail doctrines change only the chosen ships; keep / unknown leave guns alone; choice is remembered', () => {
+    const p = newProfile(T0);
+    p.harbor.researched = [...ALL_GUNS];
+    const [a, b, c] = p.fleet;
+    const before = s => JSON.stringify(s.loadout);
+    const bB = before(b), bC = before(c);
+    b.doctrine = 'siege';
+    const r = applySailDoctrines(p, { [a.uid]: 'antilight', [b.uid]: 'keep', [c.uid]: 'no_such_doctrine' });
+    assertEqual(r.ships, 1, 'one ship refit');
+    assertEqual(JSON.stringify(a.loadout), JSON.stringify(fitDoctrine('antilight', { hull: HULLS[a.hullId].hull, tier: HULLS[a.hullId].tier }, ALL_GUNS)));
+    assertEqual(a.doctrine, 'antilight', 'remembered');
+    assertEqual(before(b), bB, 'keep → guns unchanged'); assertEqual(b.doctrine, undefined, 'keep clears the remembered doctrine');
+    assertEqual(before(c), bC, 'unknown → unchanged'); assertEqual(c.doctrine, undefined);
+    const w = applyDoctrineToRoster(p, 'crippler');
+    assertEqual(w.ships, 3, 'whole fleet');
+    assert(p.fleet.every(s => s.doctrine === 'crippler'), 'whole fleet remembered');
+  });
+  test('briefing hint reads the mission: forts → siege, prize → crippler/long range, heavies → anti-heavy', () => {
+    const ids = m => suggestDoctrines(m).map(x => x.id);
+    assert(ids({ objective: { type: 'destroy_forts' }, islands: [{ own: 'enemy' }], enemies: [] }).includes('siege'));
+    assert(ids({ objective: { type: 'sink_target' }, enemies: [{ hull: 'brigantine' }] }).includes('crippler'));
+    assert(ids({ objective: { type: 'sink_all' }, enemies: [{ hull: 'galleon' }, { hull: 'brig' }] }).includes('antiheavy'));
+    assertEqual(ids({ objective: { type: 'sink_all' }, enemies: [{ hull: 'sloop' }, { hull: 'cutter' }] })[0], 'antilight');
+    assertEqual(ids({ objective: { type: 'sink_all' }, enemies: [{ hull: 'brig' }] })[0], 'broadside', 'no special threat → line of battle');
+    for (const m of MISSIONS) assert(suggestDoctrines(m).length >= 1, m.id);
   });
 });
 

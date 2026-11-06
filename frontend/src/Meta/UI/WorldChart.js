@@ -15,7 +15,7 @@
 //
 //   const chart = new WorldChart(ctx); chart.open(); chart.openBriefing('reef_2');
 //
-// ctx: { getProfile, save, now, toast, sfx?, onSetSail({missionId, shipUids, seed}),
+// ctx: { getProfile, save, now, toast, sfx?, onSetSail({missionId, shipUids, seed, doctrines:{uid:doctrineId}}),
 //        onOpenWar(), onProfileChanged? }
 
 import * as CAMPAIGN from '../../data/campaign.js';
@@ -27,8 +27,10 @@ import { sailableShips, fleetCap, fleetCapBreakdown, tickRoster, hullOf } from '
 import { LANDS, HOLES, ISLANDS, ISLETS } from './worldCoasts.js';
 import {
   ms, hullName, rankName, regionName, regionDesc, missionName, missionDesc, isleName, className, factionName,
-  fmtNum, fmtClock, capBreakdownText,
+  fmtNum, fmtClock, capBreakdownText, doctrineName, doctrineDesc, doctrineWhy,
 } from './strings.js';
+import { DOCTRINES, DOCTRINE_BY_ID, DOCTRINE_KEEP } from '../../data/doctrines.js';
+import { suggestDoctrines } from '../Doctrine.js';
 import { icon, resIcon, hullSvg, rankBadge, tierBadge, starIcon, flagSvg, laurel } from './icons.js';
 import { showHowToWin } from './HowToWin.js';
 import {
@@ -460,6 +462,13 @@ function lockReason(p, m) {
   return missing.length ? ms('wc_requires', missing.join(', ')) : '';
 }
 
+/** <option>s for a doctrine <select>: keep + every doctrine (+ a blank "mixed" row). */
+function docOptions(cur, mixed = false) {
+  return (mixed ? `<option value="">—</option>` : '')
+    + `<option value="${DOCTRINE_KEEP}" ${cur === DOCTRINE_KEEP ? 'selected' : ''}>${esc(ms('doc_keep'))}</option>`
+    + DOCTRINES.map((d) => `<option value="${d.id}" ${cur === d.id ? 'selected' : ''}>${d.icon} ${esc(doctrineName(d.id))}</option>`).join('');
+}
+
 function starsRow(n, cls = '') {
   return `<span class="mx-stars ${cls}" aria-label="${n}/3">${[0, 1, 2].map((i) => starIcon(i < n ? 'on' : 'off')).join('')}</span>`;
 }
@@ -474,6 +483,7 @@ export class WorldChart {
     this._modal = null;
     this._brief = null;            // node id of the open orders card
     this._sel = new Set();
+    this._docs = {};              // uid → doctrine id | "keep" (pre-sail picker)
     this._seed = 0;
     this._svgSig = '';
     this._sailing = false;
@@ -550,6 +560,8 @@ export class WorldChart {
       const cap = fleetCap(p);
       const ships = [...sailableShips(p)].sort((a, b) => (b.hpFrac ?? 1) - (a.hpFrac ?? 1));
       this._sel = new Set(ships.slice(0, cap).map((s) => s.uid));
+      // pre-sail doctrine per ship: the one it last sailed with (profile.fleet[i].doctrine)
+      this._docs = Object.fromEntries(p.fleet.map((s) => [s.uid, DOCTRINE_BY_ID.has(s.doctrine) ? s.doctrine : DOCTRINE_KEEP]));
     }
     this._sailing = false;
     this._root.classList.add('has-brief');
@@ -911,6 +923,9 @@ export class WorldChart {
   </section>
   <section class="wc-bsec wc-fleet" ${lock ? 'hidden' : ''}>
     <h4 class="mx-sec sm"><span>${esc(ms('wc_fleet'))}</span><small data-f2="selN"></small></h4>
+    ${this._docHintHtml(m)}
+    <label class="wc-docall"><span>${esc(ms('doc_bar'))} · ${esc(ms('doc_all'))}</span>
+      <select class="mx-select wc-docsel" data-doc="all" data-f2="docAll">${docOptions('', true)}</select></label>
     <div class="wc-picks" data-f2="picks"></div>
     <p class="wc-note wc-capnote" data-f2="capNote"></p>
     <p class="wc-note" data-f2="yard" hidden></p>
@@ -920,6 +935,24 @@ export class WorldChart {
   ${lock ? `<p class="wc-block">${icon('lock')}<span>${esc(lock)}</span></p>` : '<p class="wc-block" data-f2="why" hidden></p>'}
   <button type="button" class="mx-btn primary big wc-sail" data-act="sail" data-fk="sail" ${lock ? 'disabled' : ''}>${esc(ms('wc_setSail'))}</button>
 </footer>`;
+  }
+
+  /** Briefing hint: doctrines that suit this mission (Meta/Doctrine.suggestDoctrines). */
+  _docHintHtml(m) {
+    const hints = suggestDoctrines(m);
+    if (!hints.length) return '';
+    return `<div class="wc-dochint" data-f2="docHint"><b>${esc(ms('doc_hint'))}:</b>${hints.map((h) => {
+      const d = DOCTRINE_BY_ID.get(h.id);
+      return `<button type="button" class="wc-dochip" data-act="dochint" data-doc="${esc(h.id)}" title="${esc(ms('doc_hintTip') + ' — ' + doctrineDesc(h.id))}">${d?.icon || ''} ${esc(doctrineName(h.id))} <small>(${esc(doctrineWhy(h))})</small></button>`;
+    }).join('')}</div>`;
+  }
+
+  /** Give every sailable ship one doctrine (the "All ships" control / hint chips). */
+  _setAllDocs(id, p) {
+    if (id !== DOCTRINE_KEEP && !DOCTRINE_BY_ID.has(id)) return;
+    for (const s of sailableShips(p)) this._docs[s.uid] = id;
+    call(this.ctx, 'sfx', 'ui_click');
+    this._renderPicker(p);
   }
 
   _renderPicker(p) {
@@ -940,7 +973,7 @@ export class WorldChart {
       if (picks.querySelector('.wc-empty')) picks.textContent = '';
       patchKeyed(picks, ships, {
         key: (s) => s.uid,
-        sig: (s) => [lang, s.nm, s.hullId, this._sel.has(s.uid), full, Math.round((s.hpFrac ?? 1) * 100)].join('|'),
+        sig: (s) => [lang, s.nm, s.hullId, this._sel.has(s.uid), full, Math.round((s.hpFrac ?? 1) * 100), this._docs?.[s.uid] || DOCTRINE_KEEP].join('|'),
         html: (s) => {
           const h = hullOf(s), on = this._sel.has(s.uid), off = !on && full;
           const pct = Math.round((s.hpFrac ?? 1) * 100), low = (s.hpFrac ?? 1) < LOW_HP;
@@ -951,11 +984,18 @@ export class WorldChart {
   <span class="wc-pick-ic sv-well wl-ready">${hullSvg(h.id)}</span>
   <span class="wc-pick-main"><span class="wc-pick-nm"><b>${esc(s.nm)}</b>${tierBadge(h.tier)}</span><small>${esc(hullName(h))}</small></span>
   <span class="wc-pick-hp"><span class="mx-bar hp" data-lvl="${pct < 40 ? 'low' : pct < 70 ? 'mid' : 'ok'}"><i style="width:${pct}%"></i></span><b>${pct}%</b>${low ? `<span class="wc-low">${icon('warn')}${esc(ms('wc_lowHp'))}</span>` : ''}</span>
+  <span class="wc-pick-doc"><select class="mx-select wc-docsel" data-uid="${uid}" data-fk="doc:${uid}" aria-label="${esc(ms('doc_bar') + ' — ' + s.nm)}" title="${esc(doctrineDesc(this._docs?.[s.uid]) || ms('doc_keep'))}">${docOptions(this._docs?.[s.uid] || DOCTRINE_KEEP)}</select></span>
 </label>`;
         },
       });
     }
     setText(host.querySelector('[data-f2="selN"]'), ms('wc_sel', this._sel.size, cap));
+    const all = host.querySelector('[data-f2="docAll"]');
+    if (all) {                                     // shows the shared doctrine, or blank when mixed
+      const ids = [...this._sel].map((u) => this._docs?.[u] || DOCTRINE_KEEP);
+      const same = ids.length && ids.every((x) => x === ids[0]) ? ids[0] : '';
+      if (all.value !== same) all.value = same;
+    }
     const capNote = host.querySelector('[data-f2="capNote"]');
     if (capNote) setText(capNote, `${ms('sy_fleetcap')} ${cap}: ${capBreakdownText(fleetCapBreakdown(p)).line}`);
     const yard = host.querySelector('[data-f2="yard"]');
@@ -1011,11 +1051,20 @@ export class WorldChart {
       call(this.ctx, 'onOpenWar');
       return;
     }
+    if (act === 'dochint') { this._setAllDocs(b.dataset.doc, this.ctx.getProfile()); return; }
     if (act === 'sail') this._sail();
   }
 
   _onChange(e) {
     const c = e.target;
+    if (c.matches?.('.wc-docsel')) {
+      const p = this.ctx.getProfile();
+      if (c.dataset.doc === 'all') { if (c.value) this._setAllDocs(c.value, p); return; }
+      this._docs[c.dataset.uid] = c.value || DOCTRINE_KEEP;
+      call(this.ctx, 'sfx', 'ui_click');
+      this._renderPicker(p);
+      return;
+    }
     if (!c.matches?.('.wc-chk')) return;
     const p = this.ctx.getProfile();
     const uid = c.dataset.uid;
@@ -1040,7 +1089,7 @@ export class WorldChart {
     this._sailing = true;
     this._renderPicker(p);
     call(this.ctx, 'sfx', 'set_sail');
-    const order = { missionId: id, shipUids };
+    const order = { missionId: id, shipUids, doctrines: Object.fromEntries(shipUids.map((u) => [u, this._docs?.[u] || DOCTRINE_KEEP])) };
     if (id === patrolDef()?.id) order.seed = this._seed;
     call(this.ctx, 'onSetSail', order);
   }

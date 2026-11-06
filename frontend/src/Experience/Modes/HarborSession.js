@@ -10,6 +10,10 @@ import { saveProfile }              from '../../Meta/Profile.js';
 import { applyOffline, harborCostMult } from '../../Meta/HarborEconomy.js';
 import { tickRoster }               from '../../Meta/Shipyard.js';
 import { abandonPendingBattle }     from '../../Meta/Campaign.js';
+import { applySailDoctrines }       from '../../Meta/Doctrine.js';
+import { applySpeed }               from '../World/ShipEntity.js';
+import { CANNON_BY_ID }             from '../../data/cannons.js';
+import { bus }                      from '../EventBus.js';
 import { gotoMode }                 from '../../Meta/ModeRouter.js';
 import { serializeBuildings, restoreBuildings } from './HarborPersistence.js';
 import { shipSpec }                 from './shipSpec.js';
@@ -100,6 +104,8 @@ export class HarborSession {
     music.play('harbor'); music.ambience('harbor');
     this._flush();
     this._bindLifecycle();
+    // Loadout panel doctrine bar refit live ships → persist + refresh the yard
+    bus.on('harbor:refit', () => { if (this._leaving) return; this._flush(); this.ui?.shipyard?.refresh?.(); });
     this._mountUI();
   }
 
@@ -140,6 +146,7 @@ export class HarborSession {
       if (!rs || !ship.alive) return;
       rs.hpFrac = Math.max(0.05, Math.min(1, ship.hp / ship.maxHp));
       rs.loadout = { ...ship.loadout };
+      if ('doctrine' in ship) { if (ship.doctrine) rs.doctrine = ship.doctrine; else delete rs.doctrine; }
       rs.upgrades = { ...(st.shipUpgrades[idx] || rs.upgrades) };
     });
     return p;
@@ -151,6 +158,20 @@ export class HarborSession {
     st.resWood = this.profile.res.wood;
     st.resGold = this.profile.res.gold;
     this.reconcileShips();
+    // Fleet doctrine refit from the Shipyard: roster loadouts → moored ships
+    for (const ship of st.playerShips) {
+      const rs = this.profile.fleet.find(x => x.uid === ship.uid);
+      if (!rs?.loadout || !ship.alive) continue;
+      ship.doctrine = rs.doctrine || null;
+      if (JSON.stringify(rs.loadout) === JSON.stringify(ship.loadout)) continue;
+      Object.keys(ship.loadout).forEach(sl => {
+        if (!(sl in rs.loadout)) return;
+        ship.loadout[sl] = rs.loadout[sl];
+        const cn = CANNON_BY_ID.get(rs.loadout[sl]);
+        if (cn) ship.slotTimers[sl] = cn.rof;
+      });
+      applySpeed(ship); this.game._overlay?.build?.(ship);
+    }
   }
 
   /** Make the moored ships match the roster's afloat ships. */
@@ -179,9 +200,14 @@ export class HarborSession {
   }
 
   // ── leaving ─────────────────────────────────────────────────
-  setSail({ missionId, shipUids, seed }) {
+  setSail({ missionId, shipUids, seed, doctrines }) {
     if (!shipUids?.length) return;
     this._flush();
+    // Pre-sail picker: chosen doctrines refit the sailing roster ships (Meta/Doctrine)
+    if (doctrines) {
+      const sailing = new Set(shipUids);
+      applySailDoctrines(this.profile, Object.fromEntries(Object.entries(doctrines).filter(([u]) => sailing.has(u))));
+    }
     this.profile.battle = { missionId, shipUids: [...shipUids], seed: seed ?? null, startedAt: this.now(), started: false };
     saveProfile(this.store, this.profile, this.now());
     this._leaving = true;

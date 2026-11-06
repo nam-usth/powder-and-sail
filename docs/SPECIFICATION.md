@@ -383,6 +383,14 @@ Biết sẵn từ đầu: swivel, carronade, falconet.
 - Tab Upgrades: 3 nâng cấp tàu (bảng §4.2), trả bằng tài nguyên hiện có, lưu theo tàu.
 - Loadout/upgrades của tàu được ghi vào profile (Harbor: mỗi lần lưu; Battle: khi kết thúc trận).
 
+**Học thuyết hạm đội (Fleet doctrine)** — trang bị nhanh một chạm (`data/doctrines.js`, resolver thuần `Meta/Doctrine.js`):
+- 6 học thuyết, mỗi cái là danh sách pháo ưu tiên theo slot (L/R/B/S), có thể ghi đè theo class thân (`byHull`): **Line of Battle** `broadside` (bordée toàn diện + pháo đuổi), **Long Guns** `longrange` (pháo tầm 40), **Siege Train** `siege` (súng cối + pháo nặng đánh pháo đài; thân light mang súng cối ở L), **Heavy Metal** `antiheavy` (demi-cannon / cannon royal / 32-pdr), **Grape & Swivel** `antilight` (grapeshot / carronade / falconet), **Dismasting** `crippler` (chain shot một mạn, mạn kia kết liễu).
+- `fitDoctrine(id, {hull, tier}, known)`: mỗi slot lấy pháo **đầu tiên** trong danh sách vừa tier thân **và** đã nghiên cứu. Nếu pháo được ưu tiên (vừa tier) chưa nghiên cứu → slot đó "lùi" (fallback) theo dòng `CANNON_DOWNGRADE`, luôn kết thúc ở pháo bậc I. Id lạ → `null` (không đổi gì). Lắp pháo vẫn miễn phí.
+- **Harbor · Loadout (L):** thanh "Fleet doctrine" ở đầu tab Cannons (chỉ ở Harbor): chọn học thuyết, rồi "Apply to: This ship / Selected / Whole fleet". Cập nhật ngay tàu đang neo (loadout, slotTimers, tốc độ, vòng cung bắn) và lưu profile; toast tóm tắt, vd. "Refit 3 ships · 2 slots fell back to Swivel Gun (research Long 9)". Sửa tay một slot / preset → bỏ ghi nhớ học thuyết của tàu.
+- **Shipyard (Y):** đầu cột "Your fleet" có "Refit whole fleet: [học thuyết] [Whole fleet]" → áp cho mọi tàu trong roster (trừ wreck), tàu đang neo đổi pháo ngay; thẻ tàu hiện tên học thuyết đang dùng.
+- **Hải đồ · briefing:** mỗi tàu được chọn có dropdown học thuyết (mặc định "Keep current fit", hoặc học thuyết lần trước — `profile.fleet[i].doctrine`), cộng một dropdown "All ships". Dòng "Quartermaster advises" suy ra từ data nhiệm vụ (`suggestDoctrines`): pháo đài địch / `destroy_forts` → Siege Train; `sink_target` → Dismasting + Long Guns; có thân heavy → Heavy Metal; ≥ 60% thân light → Grape & Swivel; không có gì đặc biệt → Line of Battle (tối đa 3 gợi ý). Click chip gợi ý = đặt cho mọi tàu.
+- **Set Sail:** `onSetSail({missionId, shipUids, seed, doctrines:{uid: id}})` → `HarborSession.setSail` gọi `applySailDoctrines(profile, doctrines)` **trước** khi lưu trận: chỉ tàu được chọn với học thuyết hợp lệ đổi pháo; "keep" giữ nguyên (và xoá học thuyết đã nhớ); id lạ bị bỏ qua.
+
 ---
 
 ## 7. Hải đồ & chiến dịch
@@ -694,6 +702,9 @@ Chuẩn bị: DevTools → Application → Local Storage. "Profile mới" = xoá
 | T33 | Nhấn Q nhiều lần ở mỗi chế độ | Chip GFX đổi HIGH/LOW; LOW: không bóng, không phản chiếu biển, ít khói; lựa chọn giữ sau tải lại |
 | T34 | Settings → Tiếng Việt | Harbor Bar, Shipyard, Hải đồ, kết quả hiển thị tiếng Việt; tên phe trên versus bar tiếng Việt |
 | T35 | Thắng `storm_3` lần đầu (dùng profile đã chỉnh) | Băng rôn hoàn thành chiến dịch; `campaign.completedAt` được ghi |
+| T36 | Harbor, đã nghiên cứu Long 9 + Demi-culverin: L → thanh Fleet doctrine → "Dismasting" → Whole fleet | Toast "Refit 3 ships · …"; Brigantine: L Chain Shot chỉ khi đã nghiên cứu Bar & Chain Shot, nếu chưa → Falconet và toast báo "fell back … (research Chain Shot)"; tải lại trang → pháo giữ nguyên |
+| T37 | Shipyard → "Refit whole fleet: Siege Train" → Whole fleet | Mọi thẻ tàu đổi pháo + nhãn "Siege Train"; tàu neo ở bến đổi vòng cung bắn ngay; Sloop tier I chỉ có falconet |
+| T38 | Hải đồ → briefing `reef_2` | Dòng "Quartermaster advises: Siege Train (1 enemy fort) …"; mỗi tàu được chọn có dropdown học thuyết; đặt tàu 2 = Siege Train, tàu 1 = Keep → Set Sail → trong trận tàu 2 mang fit Siege Train, tàu 1 giữ pháo cũ; lần sau mở briefing tàu 2 đã chọn sẵn Siege Train |
 
 ---
 

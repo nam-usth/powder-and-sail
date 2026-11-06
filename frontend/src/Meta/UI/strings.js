@@ -12,6 +12,10 @@ import { getLang } from '../../i18n.js';
 import { UI2 } from './strings.ui2.js';
 import { FR } from './strings.fr.js';
 import { JA } from './strings.ja.js';
+import { DOC } from './strings.doctrine.js';
+import { DOCTRINE_BY_ID } from '../../data/doctrines.js';
+import { CANNON_BY_ID } from '../../data/cannons.js';
+import { groupFallbacks } from '../Doctrine.js';
 import { TECH_TREE } from '../../data/upgrades.js';
 
 const plural = (n, one, many) => (n === 1 ? one : many);
@@ -426,6 +430,7 @@ Object.assign(MS.en, UI2.en);
 Object.assign(MS.vi, UI2.vi);
 MS.fr = FR;
 MS.ja = JA;
+for (const l of ['en', 'vi', 'fr', 'ja']) Object.assign(MS[l], DOC[l]);
 
 /** Active language code, tolerant of i18n not being initialised (Node tests). */
 function lang() {
@@ -525,4 +530,27 @@ export function capBreakdownText(b, researchName = (id) => TECH_TREE.find((t) =>
   const line = b.capped ? `${partsStr} · ${ms('capb_max', b.max)}`
     : next.length ? `${partsStr} · ${ms('capb_next')}: ${next.join(' / ')}` : partsStr;
   return { parts: partsStr, next, line };
+}
+
+// ── Fleet doctrines ──────────────────────────────────────────────
+/** Localised doctrine name (falls back to data/doctrines.js nm). */
+export const doctrineName = (id) => dataName('doc_nm_' + id, DOCTRINE_BY_ID.get(id)?.nm || id);
+/** Localised doctrine description. */
+export const doctrineDesc = (id) => dataName('doc_desc_' + id, DOCTRINE_BY_ID.get(id)?.desc || '');
+/** Why the briefing suggests a doctrine ({why, n} from Meta/Doctrine.suggestDoctrines). */
+export const doctrineWhy = (h) => ms('doc_why_' + h.why, h.n ?? 1);
+/**
+ * One-line refit summary for a toast:
+ * "Refit 5 ships · 2 slots fell back to Swivel Gun (research Long 9)".
+ * @param {{ships:number, fallbacks:object[]}} r Meta/Doctrine apply result
+ */
+export function refitSummary(r) {
+  const parts = [ms('doc_refit', r.ships)];
+  const g = groupFallbacks(r.fallbacks);
+  if (!g.length) parts.push(ms('doc_asOrdered'));
+  else {
+    const nm = (id) => CANNON_BY_ID.get(id)?.nm || id;
+    parts.push(ms('doc_fell', g[0].n, nm(g[0].got), nm(g[0].want)) + (g.length > 1 ? ` ${ms('doc_fellMore', g.slice(1).reduce((a, x) => a + x.n, 0))}` : ''));
+  }
+  return parts.join(' · ');
 }

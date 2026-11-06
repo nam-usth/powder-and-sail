@@ -4,6 +4,10 @@ import { UPGRADE_DEFS, TECH_TREE } from '../../data/upgrades.js';
 import { applySpeed, calcSpeedMult } from '../World/ShipEntity.js';
 import { PanelManager } from './PanelManager.js';
 import { T } from '../../i18n.js';
+import { DOCTRINES } from '../../data/doctrines.js';
+import { fitDoctrineReport } from '../../Meta/Doctrine.js';
+import { ms, doctrineName, doctrineDesc, refitSummary } from '../../Meta/UI/strings.js';
+import { toasts } from './ToastQueue.js';
 
 // ── Helpers ───────────────────────────────────────────────────────
 const colHex = n => '#' + (n & 0xffffff).toString(16).padStart(6, '0');
@@ -220,7 +224,7 @@ export class LoadoutPanel {
     if (!body || !this._ship) return;
     const s = this._ship;
 
-    body.innerHTML = `
+    body.innerHTML = `${this._doctrineBarHtml()}
       <!-- ① Stats bar -->
       <div class="lp2-stats">
         <div class="lp2-dps-wrap">
@@ -273,9 +277,84 @@ export class LoadoutPanel {
       });
     });
 
+    this._wireDoctrineBar(body);
     this._buildScene();
     this._buildCannonGrid();
     this._syncAll();
+  }
+
+  // ── Fleet doctrine bar (harbor only; data/doctrines.js + Meta/Doctrine.js) ─
+  _doctrineBarHtml() {
+    if (this._state.mode !== 'harbor') return '';
+    const cur = this._ship?.doctrine || this._doctrine || '';
+    const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+    return `
+      <div class="lp2-doc-bar" id="lp2-doc-bar">
+        <label class="lp2-doc-pick"><span class="lp2-doc-lbl">${esc(ms('doc_bar'))}</span>
+          <select class="lp2-doc-sel" id="lp2-doc-sel">
+            <option value="">${esc(ms('doc_choose'))}</option>
+            ${DOCTRINES.map(d => `<option value="${d.id}" ${d.id === cur ? 'selected' : ''}>${d.icon} ${esc(doctrineName(d.id))}</option>`).join('')}
+          </select></label>
+        <div class="lp2-doc-desc" id="lp2-doc-desc">${cur ? esc(doctrineDesc(cur)) : ''}</div>
+        <div class="lp2-doc-scope">
+          <span class="lp2-scope-lbl">${esc(ms('doc_applyTo'))}</span>
+          <button class="lp2-scope-btn lp2-doc-btn" data-dscope="ship">${esc(ms('doc_this'))}</button>
+          <button class="lp2-scope-btn lp2-doc-btn" data-dscope="sel">${esc(ms('doc_sel'))}</button>
+          <button class="lp2-scope-btn lp2-doc-btn" data-dscope="fleet">${esc(ms('doc_fleet'))}</button>
+        </div>
+      </div>`;
+  }
+
+  _wireDoctrineBar(body) {
+    const sel = body.querySelector('#lp2-doc-sel');
+    if (!sel) return;
+    sel.addEventListener('change', () => {
+      this._doctrine = sel.value || null;
+      const d = body.querySelector('#lp2-doc-desc');
+      if (d) d.textContent = sel.value ? doctrineDesc(sel.value) : '';
+    });
+    body.querySelectorAll('.lp2-doc-btn').forEach(btn => btn.addEventListener('click', () => {
+      const id = sel.value;
+      if (!id) { this._flashHint(ms('doc_pickFirst')); return; }
+      const st = this._state, scope = btn.dataset.dscope;
+      const ships = scope === 'ship' ? [this._ship].filter(x => x?.alive)
+        : scope === 'sel' ? (st.selection || []).filter(x => x.alive && st.playerShips.includes(x))
+        : st.playerShips.filter(x => x.alive);
+      if (!ships.length) { this._flashHint(ms('doc_noSel')); return; }
+      this.applyDoctrine(id, ships);
+    }));
+  }
+
+  /**
+   * Refit live ships to a doctrine: best known gun allowed by tier per slot.
+   * Updates loadout + slot timers + speed + arc overlay, then asks the
+   * HarborSession (bus 'harbor:refit') to persist the roster.
+   * @returns {{ships:number, fallbacks:object[]}}
+   */
+  applyDoctrine(id, ships) {
+    const res = { ships: 0, fallbacks: [] };
+    const known = this._known();
+    ships.forEach(ship => {
+      const r = fitDoctrineReport(id, { hull: ship.hull, tier: ship.hullTier || 5 }, known);
+      if (!r) return;
+      Object.keys(ship.loadout).forEach(sl => { if (sl in r.loadout) ship.loadout[sl] = r.loadout[sl]; });
+      (HULL_SLOTS[ship.hull] || []).forEach(sl => {
+        const cn = CANNON_BY_ID.get(ship.loadout[sl]);
+        if (cn) ship.slotTimers[sl] = cn.rof;
+      });
+      ship.doctrine = id;
+      applySpeed(ship); this._overlay.build(ship);
+      res.ships++; res.fallbacks.push(...r.fallbacks);
+    });
+    this._doctrine = id;
+    this._picked = null; this._syncAll();
+    if (res.ships) {
+      const msg = refitSummary(res);
+      this._flashHint(msg);
+      toasts.show(msg, 3600, res.fallbacks.length ? 'warn' : 'success');
+      this._bus.emit('harbor:refit', { doctrine: id, ships: res.ships });
+    }
+    return res;
   }
 
   // ── Ship scene (CSS Grid: bow / port · ship · stbd / stern) ───
@@ -352,6 +431,7 @@ export class LoadoutPanel {
         (HULL_SLOTS[s.hull]||[]).forEach(sl => {
           if (!s.loadout[sl]) { s.loadout[sl] = cn.id; s.slotTimers[sl] = cn.rof; }
         });
+        s.doctrine = null;
         applySpeed(s); this._overlay.build(s);
         this._picked = null; this._syncAll();
         this._flashHint(T.hintFilled(cn.nm));
@@ -452,10 +532,12 @@ export class LoadoutPanel {
       if (!this._canMount(cn, s)) { this._picked = null; this._syncAll(); return; }
       s.loadout[slotId] = this._picked;
       if (cn) s.slotTimers[slotId] = cn.rof;
+      s.doctrine = null;
       applySpeed(s); this._overlay.build(s);
       this._syncAll();
     } else {
       s.loadout[slotId] = null;
+      s.doctrine = null;
       applySpeed(s); this._overlay.build(s);
       this._syncAll();
     }
@@ -510,6 +592,7 @@ export class LoadoutPanel {
         if (lo[sl] && !ok(lo[sl])) lo[sl] = fallbackCannon(lo[sl], ok) || 'swivel';
       });
       Object.assign(ship.loadout, lo);
+      ship.doctrine = null;
       (HULL_SLOTS[ship.hull]||[]).forEach(sl => {
         const cn = CANNON_BY_ID.get(ship.loadout[sl]);
         if (cn) ship.slotTimers[sl] = cn.rof;
