@@ -59,3 +59,11 @@ island edges. Taken ideas: grey rock cliffs ring the grass plateau; timber
 palisades, plank revetments on piles and boardwalks run along the cliff edges;
 wooden stairs/ramps down to stone quays; lanterns on posts; stone towers on the
 points; a beached wreck reused as a building; big boulder groups at the corners.
+
+# Pirate island map — `pirate-island-map-reference.webp`
+User-provided painted map (reference only, never copy). Ideas for the home
+island: a big irregular island with a mountain ridge of rocky peaks, jungle
+valleys and palms, wide sand beaches with sea-carved rock arches, the town on
+a peninsula with its own piers and ships, a zig-zag timber boardwalk/stair
+climbing the mountain to huts and a lookout, a wreck on the shore, small
+sister islets around, deep blue water with soft cloud shadows.
