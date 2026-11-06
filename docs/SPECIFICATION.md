@@ -391,6 +391,14 @@ Biết sẵn từ đầu: swivel, carronade, falconet.
 - **Hải đồ · briefing:** mỗi tàu được chọn có dropdown học thuyết (mặc định "Keep current fit", hoặc học thuyết lần trước — `profile.fleet[i].doctrine`), cộng một dropdown "All ships". Dòng "Quartermaster advises" suy ra từ data nhiệm vụ (`suggestDoctrines`): pháo đài địch / `destroy_forts` → Siege Train; `sink_target` → Dismasting + Long Guns; có thân heavy → Heavy Metal; ≥ 60% thân light → Grape & Swivel; không có gì đặc biệt → Line of Battle (tối đa 3 gợi ý). Click chip gợi ý = đặt cho mọi tàu.
 - **Set Sail:** `onSetSail({missionId, shipUids, seed, doctrines:{uid: id}})` → `HarborSession.setSail` gọi `applySailDoctrines(profile, doctrines)` **trước** khi lưu trận: chỉ tàu được chọn với học thuyết hợp lệ đổi pháo; "keep" giữ nguyên (và xoá học thuyết đã nhớ); id lạ bị bỏ qua.
 
+**Hồ sơ trang bị hạm đội (Fleet fit profiles)** — 2 cấu hình pháo đã lưu để chuyển qua lại (`Meta/FitProfiles.js`, thuần; hằng số `FIT_PROFILE_SLOTS = 2`, `FIT_PROFILE_NAME_MAX = 20` trong `data/harbor.js`):
+- `profile.fitProfiles = [{name, savedAt, fits:{uid: loadout}, doctrineOf?:{uid: id}}] × 2`, tên mặc định "Profile I"/"Profile II" (VI hiển thị "Hồ sơ I/II"), đổi tên được (✎, ≤ 20 ký tự, bỏ ký tự điều khiển, để trống → tên mặc định, luôn escape khi hiển thị). Save cũ → `migrate` thêm 2 ô trống.
+- `saveFitProfile(profile, slot, uids?)`: chụp loadout hiện tại của mọi tàu không phải wreck (hoặc một nhóm; lưu nhóm thì gộp vào ô).
+- `applyFitProfile(profile, slot, uids?, known)` → `{changed, skipped, fellBack, loaded}`: tàu có fit đã lưu được trang bị lại nhưng **kiểm lại từng slot** theo thân hiện tại — slot thân không có bị bỏ, slot fit không có giữ pháo hiện tại, mỗi pháo phải qua `canMountCannon` (tier thân + nghiên cứu), không thì lùi theo `fallbackCannon`. Tàu không có trong hồ sơ giữ nguyên (`skipped`), wreck bị bỏ qua. Tàu đổi pháo mất nhãn học thuyết, trừ khi hồ sơ ghi học thuyết đó và không slot nào lùi.
+- **Harbor · Loadout (L):** dưới thanh Fleet doctrine: "Fit profiles: Profile I ✎ [I ▸ Load] [I ⤓ Save] · Profile II ✎ [II ▸ Load] [II ⤓ Save]". Ô trống → Load bị khoá, tooltip "Empty slot — save … first". Save đè lên ô đã có → nút thành "Overwrite?" (bấm lần 2 trong 3,5 s). Load cập nhật ngay tàu đang neo (bus `harbor:fitProfile` → `HarborSession.fitProfile` → `syncFromProfile`), lưu profile, toast vd. "Loaded Profile II: 4 ships refit · 1 not in profile · 1 slot fell back to Swivel Gun".
+- **Shipyard (Y):** cùng cụm nút ở đầu cột "Your fleet", dưới "Refit whole fleet" (`ctx.fitProfile`).
+- **Hải đồ · briefing:** dropdown từng tàu có nhóm "Saved fit profiles" (chỉ hồ sơ có chứa tàu đó); "All ships" liệt kê hồ sơ không trống và chỉ áp cho tàu có trong hồ sơ. Set Sail gửi `doctrines:{uid:'fit:0'|'fit:1'}`; `HarborSession.setSail` gọi `applySailFits` (áp `applyFitProfile` cho đúng tàu đó) rồi `applySailDoctrines` cho phần còn lại. Lựa chọn được nhớ ở `profile.fleet[i].sailFit`; chọn học thuyết/Keep thì xoá.
+
 ---
 
 ## 7. Hải đồ & chiến dịch
@@ -705,6 +713,7 @@ Chuẩn bị: DevTools → Application → Local Storage. "Profile mới" = xoá
 | T36 | Harbor, đã nghiên cứu Long 9 + Demi-culverin: L → thanh Fleet doctrine → "Dismasting" → Whole fleet | Toast "Refit 3 ships · …"; Brigantine: L Chain Shot chỉ khi đã nghiên cứu Bar & Chain Shot, nếu chưa → Falconet và toast báo "fell back … (research Chain Shot)"; tải lại trang → pháo giữ nguyên |
 | T37 | Shipyard → "Refit whole fleet: Siege Train" → Whole fleet | Mọi thẻ tàu đổi pháo + nhãn "Siege Train"; tàu neo ở bến đổi vòng cung bắn ngay; Sloop tier I chỉ có falconet |
 | T38 | Hải đồ → briefing `reef_2` | Dòng "Quartermaster advises: Siege Train (1 enemy fort) …"; mỗi tàu được chọn có dropdown học thuyết; đặt tàu 2 = Siege Train, tàu 1 = Keep → Set Sail → trong trận tàu 2 mang fit Siege Train, tàu 1 giữ pháo cũ; lần sau mở briefing tàu 2 đã chọn sẵn Siege Train |
+| T39 | Harbor: L → "I ⤓ Save"; đổi học thuyết cả hạm đội; "II ⤓ Save"; ✎ đổi tên II; "I ▸ Load"; mở Shipyard → "II ▸ Load"; Hải đồ → briefing | Lúc đầu Load bị khoá (tooltip ô trống); save đè lần 2 hiện "Overwrite?"; Load I trả mọi tàu về pháo cũ, toast "Loaded Profile I: 3 ships refit"; tàu đóng sau khi lưu → "1 not in profile"; pháo chưa nghiên cứu/vượt tier → "… fell back to …"; tên có `<b>` hiện nguyên văn; dropdown tàu trong briefing có "⤓ Profile I / ⤓ <tên II>"; chọn Profile I cho tàu 1 → Set Sail → chỉ tàu 1 đổi pháo, lần sau briefing chọn sẵn Profile I; tải lại trang → hồ sơ còn |
 
 ---
 

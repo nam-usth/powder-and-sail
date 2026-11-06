@@ -1273,3 +1273,17 @@ html[data-reduce="1"] *, html[data-reduce="1"] *::before, html[data-reduce="1"] 
 .wc-pick-doc { grid-column: 3 / -1; display: flex; align-items: center; gap: 6px; margin-top: -2px; }
 .wc-pick-doc .mx-select { flex: 1 1 auto; min-height: 26px; font-size: 13.5px; }
 .wc-pick.is-off .wc-pick-doc, .wc-pick:not(.is-on) .wc-pick-doc { display: none; }
+
+/* ── Fleet fit profiles (Shipyard roster header · Meta/UI/FitProfileBar.js) ── */
+.sy-fit { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; padding-top: 5px; border-top: 1px dashed rgba(80,50,20,.3); font-size: 14px; }
+.sy-fit .fp-lbl { font-family: inherit; font-size: 14px; letter-spacing: 0; text-transform: none; font-style: italic; color: var(--mx-ink-2); }
+.sy-fit .fp-slot { display: inline-flex; align-items: center; gap: 4px; }
+.sy-fit .fp-name { font-family: var(--mx-f-head); font-size: 14px; color: var(--mx-ink); background: none; border: 0; border-bottom: 1px dotted rgba(80,50,20,.55); padding: 1px 3px; cursor: text; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sy-fit .fp-name i { font-style: normal; opacity: .55; font-size: 12px; }
+.sy-fit .fp-name-in { font-family: var(--mx-f-head); font-size: 14px; width: 12em; padding: 2px 5px; border: 1px solid rgba(80,50,20,.55); border-radius: 2px; background: rgba(255,252,240,.9); color: var(--mx-ink); }
+.sy-fit .fp-btn { font-family: var(--mx-f-head); font-size: 13px; padding: 2px 8px; min-height: 26px; white-space: nowrap; cursor: pointer; color: var(--mx-ink); background: rgba(255,252,240,.7); border: 1px solid rgba(122,90,32,.6); border-radius: 2px; }
+.sy-fit .fp-btn:hover:not(:disabled) { background: var(--mx-brass-face); }
+.sy-fit .fp-btn:disabled { opacity: .45; cursor: not-allowed; }
+.sy-fit .fp-btn.is-confirm { background: var(--mx-wax, #8c1e16); color: #fbeedd; border-color: rgba(60,10,6,.7); }
+.sy-fit .fp-btn-wrap { display: inline-flex; }
+.sy-fit .fp-slot.is-empty .fp-name { opacity: .7; }

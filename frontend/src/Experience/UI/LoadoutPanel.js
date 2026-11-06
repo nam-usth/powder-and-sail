@@ -8,6 +8,7 @@ import { DOCTRINES } from '../../data/doctrines.js';
 import { fitDoctrineReport } from '../../Meta/Doctrine.js';
 import { ms, doctrineName, doctrineDesc, refitSummary } from '../../Meta/UI/strings.js';
 import { toasts } from './ToastQueue.js';
+import { FitProfileBar } from '../../Meta/UI/FitProfileBar.js';
 
 // ── Helpers ───────────────────────────────────────────────────────
 const colHex = n => '#' + (n & 0xffffff).toString(16).padStart(6, '0');
@@ -302,12 +303,14 @@ export class LoadoutPanel {
           <button class="lp2-scope-btn lp2-doc-btn" data-dscope="sel">${esc(ms('doc_sel'))}</button>
           <button class="lp2-scope-btn lp2-doc-btn" data-dscope="fleet">${esc(ms('doc_fleet'))}</button>
         </div>
+        ${this._state.getFitProfiles ? '<div class="lp2-fit" id="lp2-fit"></div>' : ''}
       </div>`;
   }
 
   _wireDoctrineBar(body) {
     const sel = body.querySelector('#lp2-doc-sel');
     if (!sel) return;
+    this._wireFitBar(body);
     sel.addEventListener('change', () => {
       this._doctrine = sel.value || null;
       const d = body.querySelector('#lp2-doc-desc');
@@ -323,6 +326,27 @@ export class LoadoutPanel {
       if (!ships.length) { this._flashHint(ms('doc_noSel')); return; }
       this.applyDoctrine(id, ships);
     }));
+  }
+
+  /**
+   * Fleet fit profiles (Meta/FitProfiles.js): the HarborSession owns the
+   * profile, so save / load / rename go out on bus 'harbor:fitProfile'
+   * (handled synchronously: the moored ships are refit before emit returns).
+   */
+  _wireFitBar(body) {
+    const host = body.querySelector('#lp2-fit');
+    if (!host) { this._fitBar = null; return; }
+    const send = (op, slot, name) => {
+      this._bus.emit('harbor:fitProfile', { op, slot, name });
+      if (op === 'load') { this._picked = null; this._syncAll(); }
+    };
+    this._fitBar = new FitProfileBar(host, {
+      list: () => this._state.getFitProfiles?.() || [],
+      save: slot => send('save', slot),
+      load: slot => send('load', slot),
+      rename: (slot, name) => send('rename', slot, name),
+    }, 'lp');
+    this._fitBar.render(true);
   }
 
   /**

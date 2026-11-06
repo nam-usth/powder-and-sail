@@ -15,9 +15,11 @@ import {
   shipyardLevel, shipyardSlots, fleetCap, fleetCapBreakdown, rosterCap, tickRoster, hullOf, canBuild, startBuild,
   repairQuote, startRepair, salvageQuote, startSalvage, rushQuote, rush, scrapShip, mountedGuns,
 } from '../Shipyard.js';
-import { ms, hullName, className, fmtNum, fmtClock, roman, capBreakdownText, doctrineName, doctrineDesc, refitSummary } from './strings.js';
+import { ms, hullName, className, fmtNum, fmtClock, roman, capBreakdownText, doctrineName, doctrineDesc, refitSummary, fitProfileName, fitLoadSummary } from './strings.js';
 import { DOCTRINES, DOCTRINE_BY_ID } from '../../data/doctrines.js';
 import { applyDoctrineToRoster } from '../Doctrine.js';
+import { FitProfileBar } from './FitProfileBar.js';
+import { fitProfilesOf, saveFitProfile, applyFitProfile, renameFitProfile } from '../FitProfiles.js';
 import { icon, resIcon, hullSvg, tierBadge, tierOf } from './icons.js';
 import {
   esc, el, domId, call, nowOf, emitMetaChanged, ensureMetaCss, revealWhenStyled,
@@ -141,6 +143,7 @@ export class ShipyardPanel {
           <label class="sy-refit-l"><span data-f="refitL"></span>
             <select class="mx-select sy-refit-sel" data-f="refitSel"></select></label>
           <button type="button" class="mx-btn sm" data-act="refit" data-f="refitBtn">${icon('cannon')}<span data-f="refitBtnL"></span></button>
+          <div class="sy-fit" data-f="fit"></div>
         </div>
         <div class="sy-list" data-f="list"></div>
       </section>
@@ -155,6 +158,14 @@ export class ShipyardPanel {
     this._dialog = this._root.querySelector('.sy-panel');
     this._f = {};
     this._root.querySelectorAll('[data-f]').forEach((n) => { this._f[n.dataset.f] = n; });
+    // Fleet fit profiles (Meta/FitProfiles.js) — HarborSession ctx.fitProfile when
+    // available (syncs live guns + refits moored ships), else pure Meta + commit.
+    this._fitBar = new FitProfileBar(this._f.fit, {
+      list: () => fitProfilesOf(this.ctx.getProfile()),
+      save: (slot) => this._fitOp('save', slot),
+      load: (slot) => this._fitOp('load', slot),
+      rename: (slot, name) => this._fitOp('rename', slot, name),
+    }, 'sy');
     this._root.addEventListener('click', (e) => this._onClick(e));
     this._root.addEventListener('mousedown', (e) => { this._downOnVeil = e.target === this._root; });
     document.body.appendChild(this._root);
@@ -219,6 +230,7 @@ export class ShipyardPanel {
     if (!this._root) return;
     const p = profile || this.ctx.getProfile();
     const f = this._f;
+    this._fitBar?.render();
     const lv = shipyardLevel(p), slots = shipyardSlots(p);
     const busy = p.fleet.filter((s) => s.status === 'building').length;
     const maxTier = SHIP_TIERS.filter((t) => t.shipyardLevel <= lv).reduce((m, t) => Math.max(m, t.tier), 0);
@@ -336,6 +348,19 @@ export class ShipyardPanel {
   </div>
   <div class="sy-acts">${acts}</div>
 </article>`;
+  }
+
+  /** Save / load / rename a fit profile slot. */
+  _fitOp(op, slot, name) {
+    if (typeof this.ctx.fitProfile === 'function') { this.ctx.fitProfile(op, slot, name); this._render(); return; }
+    const p = this.ctx.getProfile(), fp = fitProfilesOf(p)[slot];
+    if (!fp) return;
+    if (op === 'save') call(this.ctx, 'toast', ms('fp_saved', fitProfileName(fp, slot), saveFitProfile(p, slot, null, nowOf(this.ctx))), 'good');
+    else if (op === 'load') { const r = applyFitProfile(p, slot); call(this.ctx, 'toast', fitLoadSummary(fitProfileName(fp, slot), r), r.fellBack.length ? 'info' : 'good'); }
+    else renameFitProfile(p, slot, name);
+    call(this.ctx, 'sfx', 'ui_click');
+    this._committed();
+    this._render();
   }
 
   /** Refit every roster ship to the chosen doctrine (Meta/Doctrine.applyDoctrineToRoster). */

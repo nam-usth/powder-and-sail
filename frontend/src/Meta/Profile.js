@@ -1,5 +1,6 @@
 import { CANNON_BY_ID, canMountCannon, cannonTechId, fallbackCannon } from '../data/cannons.js';
 import { techWithPrereqs } from '../data/upgrades.js';
+import { normalizeFitProfiles } from './FitProfiles.js';
 // ── PROFILE — persistent player save (design/gdd/campaign-meta.md) ──
 // Pure JS: no DOM, no Three.js. Storage is injected so tests run in Node.
 
@@ -109,6 +110,7 @@ export function newProfile(now = Date.now()) {
     lastResult: null,                  // last battle result for the harbor report
     stats: { battles: 0, wins: 0, sinks: 0, shipsLost: 0 },
     settings: {},
+    fitProfiles: normalizeFitProfiles(null),   // 2 saved whole-fleet cannon fits (Meta/FitProfiles)
   };
   STARTER_FLEET.forEach(hid => {
     const s = makeRosterShip(hid, { known: p.harbor.researched }, now);   // tier-I guns only
@@ -169,6 +171,7 @@ export function migrate(raw, now = Date.now()) {
   p.harbor.researched = p.harbor.researched.filter(id => typeof id === 'string');
   if (!(Number(raw.v) >= 2)) grantMountedGunResearch(raw.fleet, p.harbor.researched);
   p.fleet.forEach(s => legalizeLoadout(s, p.harbor.researched));
+  p.fitProfiles = normalizeFitProfiles(raw.fitProfiles);   // older saves: two empty slots
   if (typeof p.lastSeen !== 'number' || !isFinite(p.lastSeen)) p.lastSeen = now;
   // QA-010: coerce numeric fields (a string renown made `renown += n` concatenate)
   const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };

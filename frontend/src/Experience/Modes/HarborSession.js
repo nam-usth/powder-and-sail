@@ -11,6 +11,8 @@ import { applyOffline, harborCostMult } from '../../Meta/HarborEconomy.js';
 import { tickRoster }               from '../../Meta/Shipyard.js';
 import { abandonPendingBattle }     from '../../Meta/Campaign.js';
 import { applySailDoctrines }       from '../../Meta/Doctrine.js';
+import { saveFitProfile, applyFitProfile, renameFitProfile, fitProfilesOf, applySailFits } from '../../Meta/FitProfiles.js';
+import { ms, fitProfileName, fitLoadSummary } from '../../Meta/UI/strings.js';
 import { applySpeed }               from '../World/ShipEntity.js';
 import { CANNON_BY_ID }             from '../../data/cannons.js';
 import { bus }                      from '../EventBus.js';
@@ -106,6 +108,9 @@ export class HarborSession {
     this._bindLifecycle();
     // Loadout panel doctrine bar refit live ships → persist + refresh the yard
     bus.on('harbor:refit', () => { if (this._leaving) return; this._flush(); this.ui?.shipyard?.refresh?.(); });
+    // Fleet fit profiles (Loadout panel bar → Meta/FitProfiles; the Shipyard calls ctx.fitProfile)
+    st.getFitProfiles = () => fitProfilesOf(this.profile);
+    bus.on('harbor:fitProfile', ({ op, slot, name }) => { if (!this._leaving) this.fitProfile(op, slot, name); });
     this._mountUI();
   }
 
@@ -174,6 +179,36 @@ export class HarborSession {
     }
   }
 
+  /**
+   * Save / load / rename a fleet fit profile (Meta/FitProfiles.js). Live guns
+   * are synced to the roster first; a load refits the moored ships (same path
+   * as a Shipyard doctrine refit), saves, and toasts a summary.
+   * @param {'save'|'load'|'rename'} op
+   * @returns {object|null} the Meta result (ships saved | apply report | name)
+   */
+  fitProfile(op, slot, name) {
+    if (!this.game) return null;
+    const p = this.syncToProfile();
+    const list = fitProfilesOf(p);
+    if (!list[slot]) return null;
+    let r = null;
+    if (op === 'save') {
+      r = saveFitProfile(p, slot, null, this.now());
+      toasts.show(ms('fp_saved', fitProfileName(list[slot], slot), r), 2600, 'success');
+    } else if (op === 'load') {
+      r = applyFitProfile(p, slot);
+      this.syncFromProfile();
+      toasts.show(fitLoadSummary(fitProfileName(list[slot], slot), r), 4200, r.fellBack.length || !r.loaded ? 'warn' : 'success');
+    } else if (op === 'rename') {
+      r = renameFitProfile(p, slot, name);
+    } else return null;
+    this.game._vfx?.playSound?.('ui_click');
+    this._flush();
+    this.ui?.shipyard?.refresh?.();
+    bus.emit('harbor:fitProfiles', { op, slot });
+    return r;
+  }
+
   /** Make the moored ships match the roster's afloat ships. */
   reconcileShips() {
     const g = this.game, st = g._state;
@@ -204,9 +239,11 @@ export class HarborSession {
     if (!shipUids?.length) return;
     this._flush();
     // Pre-sail picker: chosen doctrines refit the sailing roster ships (Meta/Doctrine)
+    // ('fit:N' = load fit profile N for that ship — Meta/FitProfiles.applySailFits)
     if (doctrines) {
       const sailing = new Set(shipUids);
-      applySailDoctrines(this.profile, Object.fromEntries(Object.entries(doctrines).filter(([u]) => sailing.has(u))));
+      const fits = applySailFits(this.profile, Object.fromEntries(Object.entries(doctrines).filter(([u]) => sailing.has(u))));
+      applySailDoctrines(this.profile, fits.rest);
     }
     this.profile.battle = { missionId, shipUids: [...shipUids], seed: seed ?? null, startedAt: this.now(), started: false };
     saveProfile(this.store, this.profile, this.now());
@@ -240,6 +277,7 @@ export class HarborSession {
       onOpenWar: () => this.openWar(),
       onReturn: () => {},
       onProfileChanged: () => { this.syncFromProfile(); this._flush(); },
+      fitProfile: (op, slot, name) => this.fitProfile(op, slot, name),
     };
   }
 

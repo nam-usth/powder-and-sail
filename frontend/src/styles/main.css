@@ -3951,3 +3951,18 @@ body.lp-open #fleet-panel, body.lp-open #fleet-tabs { display: none !important; 
 .lp2-doc-sel { font: inherit; font-size: 12px; padding: 3px 6px; max-width: 190px; background: rgba(0,0,0,.35); color: var(--parchment); border: 1px solid rgba(200,163,90,.35); border-radius: 2px; }
 .lp2-doc-desc { flex: 1 1 160px; min-width: 0; font-size: 11px; font-style: italic; color: rgba(200,163,90,.7); }
 .lp2-doc-scope { display: flex; align-items: center; gap: 5px; margin-left: auto; }
+
+/* ── Fleet fit profiles (Loadout doctrine bar · Meta/UI/FitProfileBar.js) ── */
+.lp2-fit { flex: 1 1 100%; }
+.fp-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; }
+.fp-lbl { font-family: var(--display); font-size: 9px; letter-spacing: .1em; color: var(--brass-light); text-transform: uppercase; }
+.fp-slot { display: inline-flex; align-items: center; gap: 4px; }
+.fp-name { font: inherit; font-size: 12px; font-style: italic; padding: 2px 4px; background: none; border: 0; border-bottom: 1px dotted rgba(200,163,90,.5); color: var(--parchment); cursor: text; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-name i { font-style: normal; opacity: .6; font-size: 11px; }
+.fp-name-in { font: inherit; font-size: 12px; width: 13em; padding: 2px 4px; background: rgba(0,0,0,.35); color: var(--parchment); border: 1px solid rgba(200,163,90,.5); border-radius: 2px; }
+.fp-btn { font: inherit; font-size: 11.5px; padding: 3px 7px; white-space: nowrap; cursor: pointer; background: rgba(200,163,90,.12); color: var(--parchment); border: 1px solid rgba(200,163,90,.35); border-radius: 2px; }
+.fp-btn:hover:not(:disabled) { background: rgba(200,163,90,.25); }
+.fp-btn:disabled { opacity: .45; cursor: not-allowed; }
+.fp-btn.is-confirm { background: rgba(160,40,30,.55); border-color: rgba(220,120,90,.8); }
+.fp-btn-wrap { display: inline-flex; }
+.fp-slot.is-empty .fp-name { opacity: .7; }

@@ -24,6 +24,8 @@ import { comebackRate } from '../frontend/src/Experience/Systems/Naval/Commander
 import { MissionSystem, enemyAi } from '../frontend/src/Experience/Systems/Match/MissionSystem.js';
 import { fitDoctrine, fitDoctrineReport, applyDoctrineToRoster, applySailDoctrines, suggestDoctrines, groupFallbacks } from '../frontend/src/Meta/Doctrine.js';
 import { DOCTRINES } from '../frontend/src/data/doctrines.js';
+import { saveFitProfile, applyFitProfile, applySailFits, renameFitProfile, normalizeFitProfiles, fitChoiceSlot } from '../frontend/src/Meta/FitProfiles.js';
+import { FIT_PROFILE_SLOTS } from '../frontend/src/data/harbor.js';
 
 const T0 = 1_700_000_000_000;
 const memBackend = () => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), m }; };
@@ -439,6 +441,105 @@ suite('Meta · Fleet doctrines', () => {
     assertEqual(ids({ objective: { type: 'sink_all' }, enemies: [{ hull: 'sloop' }, { hull: 'cutter' }] })[0], 'antilight');
     assertEqual(ids({ objective: { type: 'sink_all' }, enemies: [{ hull: 'brig' }] })[0], 'broadside', 'no special threat → line of battle');
     for (const m of MISSIONS) assert(suggestDoctrines(m).length >= 1, m.id);
+  });
+});
+
+suite('Meta · Fleet fit profiles', () => {
+  const ALL_GUNS = CANNONS.map(c => cannonTechId(c.id)).filter(Boolean);
+  const lo = s => JSON.stringify(s.loadout);
+  test('save → change guns → load restores every saved ship (round-trip, persists through save/load)', () => {
+    const p = newProfile(T0);
+    p.harbor.researched = [...ALL_GUNS];
+    const [a, b, c] = p.fleet;
+    a.loadout = { L: 'demi_culv', R: 'long9', B: 'chain_shot' };
+    b.doctrine = 'antilight';
+    const snap = p.fleet.map(lo);
+    assertEqual(saveFitProfile(p, 1, null, T0 + 5), 3, 'three ships saved');
+    assertEqual(p.fitProfiles[1].savedAt, T0 + 5);
+    applyDoctrineToRoster(p, 'longrange');
+    assert(p.fleet.some((s, i) => lo(s) !== snap[i]), 'doctrine changed something');
+    // through storage: the slot survives a save/load
+    const store = makeStore(memBackend());
+    saveProfile(store, p, T0); const q = loadProfile(store, T0);
+    const r = applyFitProfile(q, 1);
+    assertEqual(q.fleet.map(lo).join(), snap.join(), 'every gun back');
+    assertEqual(r.loaded, 3); assertEqual(r.skipped.length, 0); assertEqual(r.fellBack.length, 0);
+    assertEqual(q.fleet[1].doctrine, 'antilight', 'saved doctrine label restored when nothing fell back');
+    assertEqual(q.fleet[0].doctrine, undefined, 'ship saved without a doctrine loses the longrange label');
+    assertEqual(applyFitProfile(q, 1).changed.length, 0, 'loading again changes nothing');
+    assertEqual(renameFitProfile(q, 0, '  <b>Fort busters & co, the long name</b> '), '<b>Fort busters & co', 'trimmed to 20 chars (escaped on render)');
+    assertEqual(renameFitProfile(q, 0, '   '), 'Profile I', 'blank → default');
+  });
+  test('load re-validates hull tier + research and falls back down the line', () => {
+    const p = newProfile(T0);
+    p.harbor.researched = [...ALL_GUNS];
+    const a = p.fleet[0];                                   // brigantine (tier II, standard L/R/B)
+    a.loadout = { L: 'demi_culv', R: 'demi_culv', B: 'long9' };
+    saveFitProfile(p, 0);
+    // tamper: an over-tier gun and an unresearched one in the saved fit
+    p.fitProfiles[0].fits[a.uid] = { L: 'cannon_royal', R: 'demi_culv', B: 'long9', S: 'long12' };
+    const r = applyFitProfile(p, 0, null, ['gun_demi_culv']);
+    assert(canMountCannon(CANNON_BY_ID.get(a.loadout.L), { hullTier: 2 }), 'L legal for tier II: ' + a.loadout.L);
+    assertEqual(a.loadout.B, 'swivel', 'Long 9 unresearched → Swivel');
+    assertEqual('S' in a.loadout, false, 'slot the hull lacks is dropped');
+    assert(r.fellBack.some(f => f.uid === a.uid && f.slot === 'B' && f.want === 'long9' && f.got === 'swivel'), 'B fallback reported');
+    assert(r.fellBack.some(f => f.slot === 'L' && f.want === 'cannon_royal'), 'over-tier gun reported');
+    for (const s of p.fleet) for (const id of Object.values(s.loadout)) if (id) assert(canMountCannon(CANNON_BY_ID.get(id), { hullTier: HULLS[s.hullId].tier }, ['gun_demi_culv']), `legal after load: ${s.hullId} ${id}`);
+    // a rebuilt hull under the same uid (sloop → brigantine): missing slot keeps the current gun
+    const sl = p.fleet[1]; sl.hullId = 'brigantine'; sl.loadout = { L: 'falconet', R: 'falconet', B: 'swivel' };
+    p.harbor.researched = [...ALL_GUNS];
+    applyFitProfile(p, 0, [sl.uid]);
+    assertEqual(sl.loadout.B, 'swivel', 'slot not in the saved (sloop) fit keeps its gun');
+  });
+  test('ships missing from a profile are skipped; wrecks ignored; subset save merges', () => {
+    const p = newProfile(T0);
+    p.harbor.researched = [...ALL_GUNS];
+    const [a, b, c] = p.fleet;
+    saveFitProfile(p, 0, [a.uid]);
+    assertEqual(Object.keys(p.fitProfiles[0].fits).join(), a.uid, 'subset saved');
+    saveFitProfile(p, 0, [b.uid]);
+    assertEqual(Object.keys(p.fitProfiles[0].fits).length, 2, 'subset save merges');
+    c.status = 'wreck';
+    const cB = lo(c); b.loadout = { L: 'carronade', R: 'carronade' };
+    a.loadout = { L: 'swivel', R: 'swivel', B: 'swivel' };
+    const r = applyFitProfile(p, 0);
+    assertEqual(r.changed.length, 2); assertEqual(r.skipped.length, 0, 'wreck neither changed nor skipped');
+    assertEqual(lo(c), cB);
+    const d = newProfile(T0).fleet[2]; d.uid = 'new_ship'; p.fleet.push(d); c.status = 'ready';
+    const r2 = applyFitProfile(p, 0);
+    assertEqual(r2.skipped.sort().join(), [c.uid, 'new_ship'].sort().join(), 'ships not in the profile reported as skipped');
+    assertEqual(applyFitProfile(p, 1).loaded, 0, 'empty slot loads nothing');
+  });
+  test('migrate gives older saves two empty, well-formed slots', () => {
+    const raw = JSON.parse(JSON.stringify(newProfile(T0))); delete raw.fitProfiles;
+    const m = migrate(raw, T0);
+    assertEqual(m.fitProfiles.length, FIT_PROFILE_SLOTS);
+    assertEqual(m.fitProfiles.map(f => f.name).join(), 'Profile I,Profile II');
+    assert(m.fitProfiles.every(f => !Object.keys(f.fits).length && f.savedAt === 0), 'empty');
+    const junk = normalizeFitProfiles([{ name: 42, fits: { x: { L: 'swivel', R: 5 }, y: 'bad' } }, null, { name: 'extra' }]);
+    assertEqual(junk.length, 2, 'extra slots dropped');
+    assertEqual(JSON.stringify(junk[0].fits), JSON.stringify({ x: { L: 'swivel' } }), 'bad entries dropped');
+  });
+  test('Set Sail with fit:N changes only the chosen ships and remembers the choice', () => {
+    const p = newProfile(T0);
+    p.harbor.researched = [...ALL_GUNS];
+    const [a, b, c] = p.fleet;
+    a.loadout = { L: 'demi_culv', R: 'demi_culv', B: 'chain_shot' };
+    b.loadout = { L: 'carronade', R: 'carronade' };
+    saveFitProfile(p, 1);
+    const savedA = lo(a);
+    for (const s of p.fleet) s.loadout = Object.fromEntries(Object.keys(s.loadout).map(k => [k, 'swivel']));
+    const bB = lo(b), cB = lo(c);
+    assertEqual(fitChoiceSlot('fit:1'), 1); assertEqual(fitChoiceSlot('fit:7'), -1); assertEqual(fitChoiceSlot('siege'), -1);
+    const r = applySailFits(p, { [a.uid]: 'fit:1', [b.uid]: 'keep', [c.uid]: 'antilight' });
+    assertEqual(lo(a), savedA, 'chosen ship loads the profile');
+    assertEqual(a.sailFit, 'fit:1', 'remembered');
+    assertEqual(lo(b), bB, 'other ships untouched'); assertEqual(lo(c), cB);
+    assertEqual(JSON.stringify(r.rest), JSON.stringify({ [b.uid]: 'keep', [c.uid]: 'antilight' }), 'non-fit choices handed to doctrines');
+    applySailDoctrines(p, r.rest);
+    assertEqual(c.doctrine, 'antilight');
+    applySailFits(p, { [a.uid]: 'keep' });
+    assertEqual(a.sailFit, undefined, 'a doctrine/keep choice clears the remembered profile');
   });
 });
 

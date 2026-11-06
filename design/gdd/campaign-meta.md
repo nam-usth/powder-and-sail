@@ -45,6 +45,33 @@ with histories, ranks earned through renown.
    "Quartermaster advises" hint is derived from mission data only
    (`suggestDoctrines`: forts → siege, prize → crippler/long range, heavy
    hulls → anti-heavy, mostly light → anti-light, else line of battle).
+4d. **Fleet fit profiles** (saved configurations; `Meta/FitProfiles.js`).
+   `profile.fitProfiles` holds exactly `FIT_PROFILE_SLOTS` (2) slots
+   `{name, savedAt, fits:{uid: loadout}, doctrineOf?:{uid: doctrine}}`, named
+   "Profile I"/"Profile II" by default, renamable (≤ `FIT_PROFILE_NAME_MAX` = 20
+   chars, control characters stripped, blank → default; always HTML-escaped on
+   render). `saveFitProfile(profile, slot, uids?)` snapshots every non-wreck
+   ship's loadout (a full save replaces the slot, a subset save merges).
+   `applyFitProfile(profile, slot, uids?, known)` → `{changed, skipped,
+   fellBack, loaded}`: each ship with a saved fit gets it re-validated for its
+   CURRENT hull — slots the hull lacks are dropped, slots the fit lacks keep the
+   current gun, and every gun must pass `canMountCannon` (hull tier + research)
+   or falls back along `CANNON_DOWNGRADE`; ships not in the profile keep their
+   guns (`skipped`); wrecks are ignored. A changed ship loses its doctrine label
+   unless the profile recorded one and nothing fell back. UI: "Fit profiles:
+   [I ▸ Load] [I ⤓ Save] [II ▸ Load] [II ⤓ Save]" with a ✎ rename in the
+   Loadout doctrine bar (harbor; bus `harbor:fitProfile` → `HarborSession.fitProfile`)
+   and the Shipyard roster header (`ctx.fitProfile`). Empty slot → Load
+   disabled with a tooltip; saving over a non-empty slot needs a second click
+   ("Overwrite?", 3.5 s). Loading refits the moored ships, saves, and toasts
+   "Loaded Profile II: 4 ships refit · 1 not in profile · 1 slot fell back to
+   Swivel Gun". The World Chart briefing lists the profiles under "Saved fit
+   profiles" in the per-ship dropdown (only profiles that hold that ship) and
+   in "All ships" (non-empty profiles; applied only to the ships they hold).
+   Set Sail carries `doctrines:{uid:'fit:N'}`; `applySailFits` applies those
+   per ship before `applySailDoctrines` handles the rest; the choice is
+   remembered on the roster ship (`sailFit`), cleared by any other choice.
+   Older saves migrate to two empty slots.
 5. Fleet cap for battle = `FLEET_CAP_BASE + (shipyard level − 1) + Σ barracks bonus`
    (barracks Lv 1/3/5/7 → +1 each), max `FLEET_CAP_MAX`. A Barracks needs a
    Research Lab at Lv 2 — the UI must say so: `Shipyard.fleetCapBreakdown(profile)`
@@ -71,17 +98,21 @@ with histories, ranks earned through renown.
 ## Edge Cases
 - Selling the last ship is not allowed (always ≥1 ship).
 - Shipyard demolished while building → build continues (timer is wall-clock), new builds blocked.
-- Profile from an older version → `migrate()` fills missing fields with defaults.
+- Profile from an older version → `migrate()` fills missing fields with defaults (incl. two empty fit-profile slots).
+- Fit profile saved before a hull was scrapped/rebuilt, research changed or the hull class changed → the load re-validates every slot and reports fallbacks; ships no longer in the roster are simply absent, new ships are "not in profile".
 
 ## Dependencies
 Profile (storage), data/harbor.js, data/campaign.js, Harbor (buildings), Sea Battle (results).
 
 ## Tuning Knobs
 All in `data/harbor.js` (hull catalog, timers, costs, ranks), `data/campaign.js`
-and `data/doctrines.js` (doctrine gun lists, briefing hint thresholds `DOCTRINE_HINT`).
+and `data/doctrines.js` (doctrine gun lists, briefing hint thresholds `DOCTRINE_HINT`);
+fit profiles: `FIT_PROFILE_SLOTS`, `FIT_PROFILE_NAME_MAX`, `FIT_PROFILE_DEFAULT_NAMES` in `data/harbor.js`.
 
 ## Acceptance Criteria
 Covered by `test/12_Meta.test.js` (Node-runnable): build/repair/salvage timers,
 battle result application, unlock rules, offline accrual, migration,
 fleet doctrines (tier + research respected with fallback; Set Sail refits only
-the chosen ships; unknown doctrine = keep).
+the chosen ships; unknown doctrine = keep), fleet fit profiles (save/load
+round-trip, tier + research re-validation with fallback, missing ships skipped,
+migration adds empty slots, Set Sail `fit:N` changes only the chosen ships).

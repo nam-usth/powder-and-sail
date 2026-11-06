@@ -199,3 +199,11 @@ export const RANKS = [
   { id: 'vice_admiral', renown: 220, nm: 'Vice Admiral' },
   { id: 'admiral',      renown: 400, nm: 'Admiral of the Isles' },
 ];
+
+// ── Fleet fit profiles (design/gdd/campaign-meta.md §4d) ──────
+/** Saved whole-fleet cannon configurations the player can switch between. */
+export const FIT_PROFILE_SLOTS = 2;
+/** Max characters in a fit profile's name. */
+export const FIT_PROFILE_NAME_MAX = 20;
+/** Default names (slot index → Roman numeral). */
+export const FIT_PROFILE_DEFAULT_NAMES = ['Profile I', 'Profile II'];

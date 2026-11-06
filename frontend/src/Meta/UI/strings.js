@@ -13,6 +13,8 @@ import { UI2 } from './strings.ui2.js';
 import { FR } from './strings.fr.js';
 import { JA } from './strings.ja.js';
 import { DOC } from './strings.doctrine.js';
+import { FP } from './strings.fitprofile.js';
+import { defaultFitName } from '../FitProfiles.js';
 import { DOCTRINE_BY_ID } from '../../data/doctrines.js';
 import { CANNON_BY_ID } from '../../data/cannons.js';
 import { groupFallbacks } from '../Doctrine.js';
@@ -430,7 +432,7 @@ Object.assign(MS.en, UI2.en);
 Object.assign(MS.vi, UI2.vi);
 MS.fr = FR;
 MS.ja = JA;
-for (const l of ['en', 'vi', 'fr', 'ja']) Object.assign(MS[l], DOC[l]);
+for (const l of ['en', 'vi', 'fr', 'ja']) Object.assign(MS[l], DOC[l], FP[l]);
 
 /** Active language code, tolerant of i18n not being initialised (Node tests). */
 function lang() {
@@ -551,6 +553,31 @@ export function refitSummary(r) {
   else {
     const nm = (id) => CANNON_BY_ID.get(id)?.nm || id;
     parts.push(ms('doc_fell', g[0].n, nm(g[0].got), nm(g[0].want)) + (g.length > 1 ? ` ${ms('doc_fellMore', g.slice(1).reduce((a, x) => a + x.n, 0))}` : ''));
+  }
+  return parts.join(' · ');
+}
+
+// ── Fleet fit profiles ───────────────────────────────────────────
+const FP_ROMAN = ['I', 'II', 'III', 'IV', 'V'];
+/** Display name of a fit-profile slot: the player's name, or the localised default. */
+export function fitProfileName(fp, slot) {
+  const nm = fp?.name;
+  return !nm || nm === defaultFitName(slot) ? ms('fp_default', FP_ROMAN[slot] || String(slot + 1)) : nm;
+}
+/**
+ * Toast line for a loaded profile:
+ * "Loaded Profile II: 4 ships refit · 1 not in profile · 1 slot fell back to Swivel Gun".
+ * @param {string} name display name
+ * @param {{changed:string[], skipped:string[], fellBack:object[], loaded:number}} r Meta/FitProfiles.applyFitProfile result
+ */
+export function fitLoadSummary(name, r) {
+  if (!r.loaded) return ms('fp_none', name);
+  const parts = [r.changed.length ? ms('fp_loaded', name, r.changed.length) : ms('fp_same', name)];
+  if (r.skipped.length) parts.push(ms('fp_skipped', r.skipped.length));
+  const g = groupFallbacks(r.fellBack);
+  if (g.length) {
+    const nm = (id) => CANNON_BY_ID.get(id)?.nm || id;
+    parts.push(ms('fp_fell', r.fellBack.length, g.map((x) => nm(x.got)).filter((v, i, a) => a.indexOf(v) === i).join(' / ')));
   }
   return parts.join(' · ');
 }

@@ -1671,3 +1671,12 @@ body.meta-modal-open #float-text-layer { display: none !important; }
 #lp .lp2-doc-sel { font: 400 14px/1.1 var(--pd-f-head) !important; color: var(--pd-ink) !important; background: rgba(255,250,234,.85) !important; border: 1px solid rgba(58,37,15,.55) !important; padding: 4px 6px !important; }
 #lp .lp2-doc-desc { font: italic 400 13px/1.2 var(--pd-f-fell, Georgia, serif) !important; color: var(--pd-ink-2) !important; }
 #lp .lp2-doc-btn { font-size: 12.5px !important; padding: 4px 8px !important; }
+
+/* Fleet fit profiles inside the parchment Loadout doctrine bar */
+#lp .lp2-fit { border-top: 1px dashed rgba(58,37,15,.3); padding-top: 5px; }
+#lp .fp-lbl { font: 400 14px/1 var(--pd-f-head) !important; letter-spacing: .03em !important; text-transform: none !important; color: var(--pd-ink) !important; }
+#lp .fp-name, #lp .fp-name-in { font: italic 400 13.5px/1.2 var(--pd-f-fell, Georgia, serif) !important; color: var(--pd-ink) !important; border-bottom-color: rgba(58,37,15,.45) !important; }
+#lp .fp-name-in { background: rgba(255,250,234,.9) !important; border: 1px solid rgba(58,37,15,.55) !important; }
+#lp .fp-btn { font: 400 12.5px/1.1 var(--pd-f-head) !important; color: var(--pd-ink) !important; background: rgba(255,250,234,.7) !important; border: 1px solid rgba(58,37,15,.5) !important; padding: 4px 8px !important; }
+#lp .fp-btn:hover:not(:disabled) { background: rgba(214,178,104,.55) !important; }
+#lp .fp-btn.is-confirm { background: rgba(140,30,22,.85) !important; color: #fbeedd !important; }

@@ -27,10 +27,11 @@ import { sailableShips, fleetCap, fleetCapBreakdown, tickRoster, hullOf } from '
 import { LANDS, HOLES, ISLANDS, ISLETS } from './worldCoasts.js';
 import {
   ms, hullName, rankName, regionName, regionDesc, missionName, missionDesc, isleName, className, factionName,
-  fmtNum, fmtClock, capBreakdownText, doctrineName, doctrineDesc, doctrineWhy,
+  fmtNum, fmtClock, capBreakdownText, doctrineName, doctrineDesc, doctrineWhy, fitProfileName,
 } from './strings.js';
 import { DOCTRINES, DOCTRINE_BY_ID, DOCTRINE_KEEP } from '../../data/doctrines.js';
 import { suggestDoctrines } from '../Doctrine.js';
+import { fitChoiceSlot, fitProfileHas, fitProfileSize, FIT_CHOICE } from '../FitProfiles.js';
 import { icon, resIcon, hullSvg, rankBadge, tierBadge, starIcon, flagSvg, laurel } from './icons.js';
 import { showHowToWin } from './HowToWin.js';
 import {
@@ -462,11 +463,32 @@ function lockReason(p, m) {
   return missing.length ? ms('wc_requires', missing.join(', ')) : '';
 }
 
-/** <option>s for a doctrine <select>: keep + every doctrine (+ a blank "mixed" row). */
-function docOptions(cur, mixed = false) {
+/**
+ * <option>s for a doctrine <select>: keep + every doctrine (+ a blank "mixed"
+ * row) + the saved fit profiles (Meta/FitProfiles) that hold this ship
+ * (`uid`), or any non-empty profile for the "All ships" row (uid = null).
+ */
+function docOptions(cur, mixed = false, p = null, uid = null) {
+  const fits = (p?.fitProfiles || []).map((fp, i) => ({ fp, i }))
+    .filter(({ i }) => (uid ? fitProfileHas(p, i, uid) : fitProfileSize(p, i) > 0));
   return (mixed ? `<option value="">—</option>` : '')
     + `<option value="${DOCTRINE_KEEP}" ${cur === DOCTRINE_KEEP ? 'selected' : ''}>${esc(ms('doc_keep'))}</option>`
-    + DOCTRINES.map((d) => `<option value="${d.id}" ${cur === d.id ? 'selected' : ''}>${d.icon} ${esc(doctrineName(d.id))}</option>`).join('');
+    + DOCTRINES.map((d) => `<option value="${d.id}" ${cur === d.id ? 'selected' : ''}>${d.icon} ${esc(doctrineName(d.id))}</option>`).join('')
+    + (fits.length ? `<optgroup label="${esc(ms('fp_group'))}">${fits.map(({ fp, i }) => {
+      const v = FIT_CHOICE + i;
+      return `<option value="${v}" ${cur === v ? 'selected' : ''}>${esc(ms('fp_pick', fitProfileName(fp, i)))}</option>`;
+    }).join('')}</optgroup>` : '');
+}
+/** Tooltip for a picker value (doctrine description / profile name). */
+function docTitle(v, p) {
+  const slot = fitChoiceSlot(v);
+  if (slot >= 0) return fitProfileName(p?.fitProfiles?.[slot], slot);
+  return doctrineDesc(v) || ms('doc_keep');
+}
+/** Is a picker value usable for this ship (a doctrine, keep, or a profile holding it)? */
+function docValid(v, p, uid) {
+  const slot = fitChoiceSlot(v);
+  return slot >= 0 ? fitProfileHas(p, slot, uid) : (v === DOCTRINE_KEEP || DOCTRINE_BY_ID.has(v));
 }
 
 function starsRow(n, cls = '') {
@@ -561,7 +583,9 @@ export class WorldChart {
       const ships = [...sailableShips(p)].sort((a, b) => (b.hpFrac ?? 1) - (a.hpFrac ?? 1));
       this._sel = new Set(ships.slice(0, cap).map((s) => s.uid));
       // pre-sail doctrine per ship: the one it last sailed with (profile.fleet[i].doctrine)
-      this._docs = Object.fromEntries(p.fleet.map((s) => [s.uid, DOCTRINE_BY_ID.has(s.doctrine) ? s.doctrine : DOCTRINE_KEEP]));
+      // (or the fit profile it last sailed with: profile.fleet[i].sailFit = 'fit:N')
+      this._docs = Object.fromEntries(p.fleet.map((s) => [s.uid,
+        docValid(s.sailFit, p, s.uid) ? s.sailFit : DOCTRINE_BY_ID.has(s.doctrine) ? s.doctrine : DOCTRINE_KEEP]));
     }
     this._sailing = false;
     this._root.classList.add('has-brief');
@@ -925,7 +949,7 @@ export class WorldChart {
     <h4 class="mx-sec sm"><span>${esc(ms('wc_fleet'))}</span><small data-f2="selN"></small></h4>
     ${this._docHintHtml(m)}
     <label class="wc-docall"><span>${esc(ms('doc_bar'))} · ${esc(ms('doc_all'))}</span>
-      <select class="mx-select wc-docsel" data-doc="all" data-f2="docAll">${docOptions('', true)}</select></label>
+      <select class="mx-select wc-docsel" data-doc="all" data-f2="docAll">${docOptions('', true, p)}</select></label>
     <div class="wc-picks" data-f2="picks"></div>
     <p class="wc-note wc-capnote" data-f2="capNote"></p>
     <p class="wc-note" data-f2="yard" hidden></p>
@@ -949,8 +973,9 @@ export class WorldChart {
 
   /** Give every sailable ship one doctrine (the "All ships" control / hint chips). */
   _setAllDocs(id, p) {
-    if (id !== DOCTRINE_KEEP && !DOCTRINE_BY_ID.has(id)) return;
-    for (const s of sailableShips(p)) this._docs[s.uid] = id;
+    if (id !== DOCTRINE_KEEP && !DOCTRINE_BY_ID.has(id) && fitChoiceSlot(id) < 0) return;
+    // a fit profile goes only to the ships it holds; the others keep their choice
+    for (const s of sailableShips(p)) if (docValid(id, p, s.uid)) this._docs[s.uid] = id;
     call(this.ctx, 'sfx', 'ui_click');
     this._renderPicker(p);
   }
@@ -973,7 +998,8 @@ export class WorldChart {
       if (picks.querySelector('.wc-empty')) picks.textContent = '';
       patchKeyed(picks, ships, {
         key: (s) => s.uid,
-        sig: (s) => [lang, s.nm, s.hullId, this._sel.has(s.uid), full, Math.round((s.hpFrac ?? 1) * 100), this._docs?.[s.uid] || DOCTRINE_KEEP].join('|'),
+        sig: (s) => [lang, s.nm, s.hullId, this._sel.has(s.uid), full, Math.round((s.hpFrac ?? 1) * 100), this._docs?.[s.uid] || DOCTRINE_KEEP,
+          (p.fitProfiles || []).map((fp, i) => fitProfileHas(p, i, s.uid) ? fp.name : '').join('/')].join('|'),
         html: (s) => {
           const h = hullOf(s), on = this._sel.has(s.uid), off = !on && full;
           const pct = Math.round((s.hpFrac ?? 1) * 100), low = (s.hpFrac ?? 1) < LOW_HP;
@@ -984,7 +1010,7 @@ export class WorldChart {
   <span class="wc-pick-ic sv-well wl-ready">${hullSvg(h.id)}</span>
   <span class="wc-pick-main"><span class="wc-pick-nm"><b>${esc(s.nm)}</b>${tierBadge(h.tier)}</span><small>${esc(hullName(h))}</small></span>
   <span class="wc-pick-hp"><span class="mx-bar hp" data-lvl="${pct < 40 ? 'low' : pct < 70 ? 'mid' : 'ok'}"><i style="width:${pct}%"></i></span><b>${pct}%</b>${low ? `<span class="wc-low">${icon('warn')}${esc(ms('wc_lowHp'))}</span>` : ''}</span>
-  <span class="wc-pick-doc"><select class="mx-select wc-docsel" data-uid="${uid}" data-fk="doc:${uid}" aria-label="${esc(ms('doc_bar') + ' — ' + s.nm)}" title="${esc(doctrineDesc(this._docs?.[s.uid]) || ms('doc_keep'))}">${docOptions(this._docs?.[s.uid] || DOCTRINE_KEEP)}</select></span>
+  <span class="wc-pick-doc"><select class="mx-select wc-docsel" data-uid="${uid}" data-fk="doc:${uid}" aria-label="${esc(ms('doc_bar') + ' — ' + s.nm)}" title="${esc(docTitle(this._docs?.[s.uid], p))}">${docOptions(this._docs?.[s.uid] || DOCTRINE_KEEP, false, p, s.uid)}</select></span>
 </label>`;
         },
       });
