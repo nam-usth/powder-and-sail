@@ -163,52 +163,87 @@ function genSprawl(seed) {
   return valid;
 }
 
-// ── HARBOR — the home port: one solid island, a waterfront of piers ──
-// AW (rev 3, per the user's reference): a single irregular landmass — no
-// inner bay. Its south shore (+Z, toward the RTS camera) is a straight stone
-// quay; finger piers run from it straight out into the open sea, ships
-// berth along them. Town plateau inland, sea walls and jungle on the far
-// shores. Analytic signed distance (world units, island-local) shared by the
-// grid (here) and the terrain mesh (World/IslandEntity).
+// ── HARBOR — the home port: a pirate island with a town peninsula ──
+// v5 (per the user's painted-map reference): a big irregular island. A flat
+// lowland in the middle holds the 16×16 build grid (deck level); a ridge of
+// rocky peaks with jungle valleys rises behind it (north), wide sand beaches
+// run round the south and west, and an arm to the east (the town peninsula)
+// carries the harbor town with a straight quay on its west face — timber
+// piers run from it west into the bay where the fleet berths. Sister islets
+// lie off the coast. Analytic, pure: shared by the grid (here) and the
+// terrain mesh (World/IslandEntity), which adds the mountains' relief.
 export const HARBOR = Object.freeze({
-  outerR: 29,                                     // mean coast radius (see harborCoastR)
-  quayZ:  9,                                      // straight quay line on the south shore
-  quayHalf: 16,                                   // quay half-length (x)
-  piers:  [-13, -6.5, 0, 6.5, 13],                // finger pier x positions
-  pierLen: 12,
-  coast:  [[2, 2.6, 0.6], [3, 2.0, 2.1], [5, 1.0, 0.3], [7, 0.4, 1.9], [11, 0.12, 4.0]],   // [k, amp, phase] (rev 4: high harmonics softened)
-  cornerK: 4.5,                                   // smooth-max radius where the quay cut meets the coast
-  islets: [[27.0, 24.0, 2.4], [-29.0, 19.0, 2.0], [30.5, 29.5, 1.1], [-26.5, 25.5, 1.0]],
+  outerR: 30,                                     // nominal radius (HOME_DEF.r; shore-field reach)
+  // mainland = smooth union of ellipses [cx, cz, rx, rz, rot]
+  body: [
+    [-5, -9, 35, 24, 0],                           // core: lowland + the ridge's foot
+    [-6, -34, 41, 17, 0.1],                      // north ridge
+    [-33, 2, 13, 20, 0.35],                       // west beach lobe
+    [-24, 14, 13, 7, 0.25],                       // south-west sweep
+    [15, 0, 16, 13, 0],                            // east lowland (peninsula root)
+    [31, -20, 13, 16, -0.25],                     // east hills
+  ],
+  bodyK: 7,                                       // smooth-union radius
+  coast: [[3, 0.9, 0.6], [5, 0.7, 2.1], [7, 0.45, 0.3], [11, 0.25, 4.0]],   // [k, amp, phase]
+  pen: [25, -2, 30, 40, 7.6],                     // town peninsula capsule [ax, az, bx, bz, r]
+  quayX: 22.5, quayZ0: 14.5, quayZ1: 37,          // straight quay on the peninsula's west face
+  piers: [19.5, 26, 32.5],                        // pier z positions (piers run toward -X)
+  pierLen: 10,
+  // flat lowland (relief-free) rectangle round the build grid [x0, x1, z0, z1]
+  lowland: [-20.6, 20.6, -20.6, 8.5],
+  beachW: 6.2,                                    // grass bank + sand from the plateau to the waterline
+  peaks: [[-31, -31, 12, 11.5], [-13, -38, 16.5, 13], [7, -37, 13.5, 12], [26, -27, 11, 10.5], [-39, -10, 7, 8]],   // [x, z, h, r]
+  terrace: [-5, -29.5, 5.6, 3.4],                 // shelf on the ridge flank: huts + lookout [x, z, y, r]
+  islets: [[-49, 27, 4.0], [49, 44, 3.2], [-58, -8, 2.6], [-26, 44, 2.2]],
+  cornerK: 4.5,
   cellWorld: 2.4,                                 // = BUILD_CELL_WORLD (pure data module)
-  cellMargin: 2.4,                                // cells keep ≥ this from the water (quay strip)
+  cellMargin: 6.6,                                // cells keep ≥ this from the waterline (bank + beach)
 });
 
-/** Coast radius at local (x, z): mean radius modulated by low-frequency harmonics. */
+function sdEllipse(x, z, [cx, cz, rx, rz, rot]) {
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const px = (x - cx) * c - (z - cz) * s, pz = (x - cx) * s + (z - cz) * c;
+  const k0 = Math.hypot(px / rx, pz / rz), k1 = Math.hypot(px / (rx * rx), pz / (rz * rz)) || 1e-6;
+  return k0 * (k0 - 1) / k1;
+}
+function sminP(a, b, k) { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; }
+
+/** Distance from (x, z) to the town peninsula's axis segment. */
+export function harborPenAxis(x, z) {
+  const [ax, az, bx, bz] = HARBOR.pen, dx = bx - ax, dz = bz - az;
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+  return Math.hypot(x - ax - dx * t, z - az - dz * t);
+}
+
+/** Legacy: coast radius at local (x, z) along the ray from the centre (approximate). */
 export function harborCoastR(x, z) {
-  const t = Math.atan2(x, z);
-  let r = HARBOR.outerR;
-  for (const [k, amp, ph] of HARBOR.coast) r += amp * Math.sin(k * t + ph);
-  return r;
+  const L = Math.hypot(x, z) || 1;
+  return L - harborMainSDF(x, z);
 }
 
 /**
- * Signed distance to the open water in front of the quay (negative = water).
- * Along the quay it is the straight quay line; past its ends it bends back so
- * the natural coast takes over.
+ * Signed distance to the berth water in front of the quay (negative = water):
+ * a box from the quay face out into the bay.
  */
 export function harborWaterSDF(x, z) {
-  // rev 4: soft hinge (quadratic smooth-ReLU) so the cut bends back without a kink
-  const v = Math.abs(x) - HARBOR.quayHalf - 2, k = 2.5;
-  const over = v >= k ? v : v <= -k ? 0 : (v + k) * (v + k) / (4 * k);
-  return (HARBOR.quayZ - z) + over * 1.3;
+  const cx = HARBOR.quayX - 7, cz = (HARBOR.quayZ0 + HARBOR.quayZ1) / 2;
+  const qx = Math.abs(x - cx) - 7, qz = Math.abs(z - cz) - (HARBOR.quayZ1 - HARBOR.quayZ0) / 2;
+  return Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
 }
 
 /** Smooth max (polynomial, radius k) — rounds the corner where two SDFs meet. */
 export function sdfSmax(a, b, k) { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.max(a, b) + h * h * k * 0.25; }
 
-/** Mainland only (no islets): coast smooth-cut by the quay waterfront. */
+/** Mainland only (no islets): ellipse union + peninsula, coast harmonics, the bay cut. */
 export function harborMainSDF(x, z) {
-  return sdfSmax(Math.hypot(x, z) - harborCoastR(x, z), -harborWaterSDF(x, z), HARBOR.cornerK);
+  let d = Infinity;
+  for (const e of HARBOR.body) d = d === Infinity ? sdEllipse(x, z, e) : sminP(d, sdEllipse(x, z, e), HARBOR.bodyK);
+  d = sminP(d, harborPenAxis(x, z) - HARBOR.pen[4], 4);
+  const t = Math.atan2(x, z);
+  let w = 0;
+  for (const [k, amp, ph] of HARBOR.coast) w += amp * Math.sin(k * t + ph);
+  d += w * (1 - Math.max(0, Math.min(1, (HARBOR.pen[4] + 3 - harborPenAxis(x, z)) / 3)));   // the town arm stays straight
+  return sdfSmax(d, -harborWaterSDF(x, z), HARBOR.cornerK);
 }
 
 /** Signed distance to HARBOR land (negative on land), islets included. */
@@ -218,13 +253,21 @@ export function harborLandSDF(x, z) {
   return d;
 }
 
+/** 0 inside the flat lowland round the build grid, rising to 1 over 7 u outside it. */
+export function harborReliefMask(x, z) {
+  const [x0, x1, z0, z1] = HARBOR.lowland;
+  const ox = Math.max(x0 - x, 0, x - x1), oz = Math.max(z0 - z, 0, z - z1);
+  const t = Math.min(1, Math.hypot(ox, oz) / 7);
+  return t * t * (3 - 2 * t);
+}
+
 function genHarbor(seed, G) {
   const off = (G - 1) / 2 * HARBOR.cellWorld;
   const valid = new Set();
   for (let r = 0; r < G; r++) {
     for (let c = 0; c < G; c++) {
       const x = c * HARBOR.cellWorld - off, z = r * HARBOR.cellWorld - off;
-      if (harborLandSDF(x, z) < -HARBOR.cellMargin) valid.add(`${c}_${r}`);
+      if (harborLandSDF(x, z) < -HARBOR.cellMargin && harborWaterSDF(x, z) > 2.4 && harborReliefMask(x, z) === 0) valid.add(`${c}_${r}`);
     }
   }
   return valid;

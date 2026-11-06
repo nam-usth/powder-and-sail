@@ -11,7 +11,7 @@ import { makeBuildingMesh, makeBuildingGhost, modelYaw, MODELLED_BUILDING_IDS }
 import { BUILDINGS } from '../frontend/src/data/buildings.js';
 import { DEFENSES } from '../frontend/src/data/defenses.js';
 import { BUILD_CELL_WORLD } from '../frontend/src/data/constants.js';
-import { generateShape, mirrorShape, harborLandSDF, harborWaterSDF } from '../frontend/src/data/islandShapes.js';
+import { generateShape, mirrorShape, harborLandSDF, harborWaterSDF, HARBOR } from '../frontend/src/data/islandShapes.js';
 import { islandCircles, pushOutside } from '../frontend/src/Experience/Systems/Naval/Navigation.js';
 
 const ALL = [...BUILDINGS, ...DEFENSES];
@@ -142,8 +142,8 @@ suite('Island art — HARBOR shape, berths, colliders', () => {
       for (const c of isl.colliders)
         assert(Math.hypot(b.x - c.x, b.z - c.z) > c.r + 1.5, `berth (${b.x},${b.z}) inside a collider`);
     }
-    // the water off the quay (between the piers) is sea, the town plateau is land
-    assert(!isl.landAt(40 + 3.25, -20 + 15), 'water off the quay should be sea');
+    // the bay off the quay (between the piers) is sea, the build lowland is land
+    assert(!isl.landAt(40 + HARBOR.quayX - 6, -20 + (HARBOR.piers[0] + HARBOR.piers[1]) / 2), 'water off the quay should be sea');
     assert(isl.landAt(40, -20 - 14), 'north terraces should be land');
     assert(isl.deckDropAt(40, -20 - 14) < 0.05, 'build terraces must be level with the deck');
     scene.remove(isl.grp);

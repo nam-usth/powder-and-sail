@@ -99,8 +99,8 @@ export class HarborSession {
       ship.mesh?.position.set(k.x, ship.mesh.position.y, k.z);
     });
 
-    st.camDist = 58;
-    game._cam.jumpTo(home.x, home.z + 6);
+    st.camDist = 80;                             // v5: the bigger pirate island (town arm SE, ridge N)
+    game._cam.jumpTo(home.x + 5, home.z + 9);
     st.selectedIslandId = home.def.id;
 
     music.play('harbor'); music.ambience('harbor');
